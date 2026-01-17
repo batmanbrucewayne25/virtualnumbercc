@@ -317,7 +317,7 @@ const ResellerListLayer = () => {
                       </td>
                       <td>
                         <span className='text-md mb-0 fw-medium text-success-600'>
-                          {formatCurrency(reseller.wallet_balance)}
+                          {formatCurrency(reseller.mst_wallet?.balance ?? 0)}
                         </span>
                       </td>
                       <td className='text-center'>

@@ -20,6 +20,7 @@ import AddSubscriptionPlanPage from "./pages/AddSubscriptionPlanPage";
 import ViewSubscriptionPlanPage from "./pages/ViewSubscriptionPlanPage";
 import EditSubscriptionPlanPage from "./pages/EditSubscriptionPlanPage";
 import AssignRolePage from "./pages/AssignRolePage";
+import AdminSettingPage from "./pages/AdminSettingPage";
 // import CalendarMainPage from "./pages/CalendarMainPage";
 // import CarouselPage from "./pages/CarouselPage";
 // import ChatMessagePage from "./pages/ChatMessagePage";
@@ -116,6 +117,7 @@ function App() {
           <Route exact path='/edit-subscription-plan/:id' element={<EditSubscriptionPlanPage />} />
           {/* <Route exact path='/alert' element={<AlertPage />} /> */}
           <Route exact path='/assign-role' element={<AssignRolePage />} />
+          <Route exact path='/admin-setting' element={<AdminSettingPage />} />
           {/* <Route exact path='/avatar' element={<AvatarPage />} /> */}
           {/* <Route exact path='/badges' element={<BadgesPage />} /> */}
           {/* <Route exact path='/button' element={<ButtonPage />} /> */}

@@ -61,6 +61,18 @@ const ViewResellerLayer = () => {
     });
   };
 
+  const formatDateTime = (dateString) => {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    return date.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
     return `₹${Number(amount).toFixed(2)}`;
@@ -271,9 +283,33 @@ const ViewResellerLayer = () => {
                 <div className='mb-16'>
                   <label className='form-label text-xs text-secondary-light mb-4'>Wallet Balance</label>
                   <p className='text-md fw-medium text-success-600 mb-0'>
-                    {formatCurrency(reseller.wallet_balance)}
+                    {formatCurrency(reseller.mst_wallet?.balance ?? 0)}
                   </p>
                 </div>
+                {reseller.mst_wallet && (
+                  <>
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Total Credit</label>
+                      <p className='text-md fw-medium text-success-600 mb-0'>
+                        {formatCurrency(reseller.mst_wallet.credit_amount ?? 0)}
+                      </p>
+                    </div>
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Total Debit</label>
+                      <p className='text-md fw-medium text-danger-600 mb-0'>
+                        {formatCurrency(reseller.mst_wallet.debit_amount ?? 0)}
+                      </p>
+                    </div>
+                    {reseller.mst_wallet.last_transaction_at && (
+                      <div className='mb-16'>
+                        <label className='form-label text-xs text-secondary-light mb-4'>Last Transaction</label>
+                        <p className='text-md fw-medium text-primary-light mb-0'>
+                          {formatDateTime(reseller.mst_wallet.last_transaction_at)}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <div className='mb-16'>
                   <label className='form-label text-xs text-secondary-light mb-4'>Status</label>

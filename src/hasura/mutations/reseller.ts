@@ -23,12 +23,22 @@ export const getMstResellers = async () => {
       signup_completed
       created_at
       updated_at
-      wallet_balance
       isDelete
       approval_date
       approved_by
       rejection_reason
       grace_period_days
+      mst_wallet {
+        id
+        reseller_id
+        user_type
+        balance
+        credit_amount
+        debit_amount
+        last_transaction_at
+        created_at
+        updated_at
+      }
     }
   }`;
 
@@ -89,7 +99,6 @@ export const getMstResellerById = async (id: string) => {
       signup_completed
       created_at
       updated_at
-      wallet_balance
       address
       dob
       gender
@@ -104,6 +113,17 @@ export const getMstResellerById = async (id: string) => {
       approved_by
       rejection_reason
       grace_period_days
+      mst_wallet {
+        id
+        reseller_id
+        user_type
+        balance
+        credit_amount
+        debit_amount
+        last_transaction_at
+        created_at
+        updated_at
+      }
     }
   }`;
 
