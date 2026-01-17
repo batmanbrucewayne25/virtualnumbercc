@@ -8,6 +8,17 @@ import HomePageThree from "./pages/HomePageThree";
 import HomePageTwo from "./pages/HomePageTwo";
 // import EmailPage from "./pages/EmailPage";
 import AddUserPage from "./pages/AddUserPage";
+import AddAdminPage from "./pages/AddAdminPage";
+import AdminListPage from "./pages/AdminListPage";
+import ViewAdminPage from "./pages/ViewAdminPage";
+import EditAdminPage from "./pages/EditAdminPage";
+import ResellerListPage from "./pages/ResellerListPage";
+import ViewResellerPage from "./pages/ViewResellerPage";
+import EditResellerPage from "./pages/EditResellerPage";
+import SubscriptionPlanListPage from "./pages/SubscriptionPlanListPage";
+import AddSubscriptionPlanPage from "./pages/AddSubscriptionPlanPage";
+import ViewSubscriptionPlanPage from "./pages/ViewSubscriptionPlanPage";
+import EditSubscriptionPlanPage from "./pages/EditSubscriptionPlanPage";
 import AssignRolePage from "./pages/AssignRolePage";
 // import CalendarMainPage from "./pages/CalendarMainPage";
 // import CarouselPage from "./pages/CarouselPage";
@@ -93,7 +104,16 @@ function App() {
           <Route exact path='/index-11' element={<HomePageEleven />} />
 
           {/* SL */}
-          <Route exact path='/add-admin' element={<AddUserPage />} />
+          <Route exact path='/add-admin' element={<AddAdminPage />} />
+          <Route exact path='/view-admin/:id' element={<ViewAdminPage />} />
+          <Route exact path='/edit-admin/:id' element={<EditAdminPage />} />
+          <Route exact path='/reseller-list' element={<ResellerListPage />} />
+          <Route exact path='/view-reseller/:id' element={<ViewResellerPage />} />
+          <Route exact path='/edit-reseller/:id' element={<EditResellerPage />} />
+          <Route exact path='/subscription-plan-list' element={<SubscriptionPlanListPage />} />
+          <Route exact path='/add-subscription-plan' element={<AddSubscriptionPlanPage />} />
+          <Route exact path='/view-subscription-plan/:id' element={<ViewSubscriptionPlanPage />} />
+          <Route exact path='/edit-subscription-plan/:id' element={<EditSubscriptionPlanPage />} />
           {/* <Route exact path='/alert' element={<AlertPage />} /> */}
           <Route exact path='/assign-role' element={<AssignRolePage />} />
           {/* <Route exact path='/avatar' element={<AvatarPage />} /> */}
@@ -165,7 +185,7 @@ function App() {
           {/* <Route exact path='/tooltip' element={<TooltipPage />} /> */}
           {/* <Route exact path='/typography' element={<TypographyPage />} /> */}
           <Route exact path='/users-grid' element={<UsersGridPage />} />
-          <Route exact path='/admin-list' element={<UsersListPage />} />
+          <Route exact path='/admin-list' element={<AdminListPage />} />
           <Route exact path='/view-details' element={<ViewDetailsPage />} />
           <Route exact path='/video-generator' element={<VideoGeneratorPage />} />
           {/* <Route exact path='/videos' element={<VideosPage />} /> */}

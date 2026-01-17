@@ -1,7 +1,216 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { getMstWalletTransactions, getMstWalletByResellerId, creditWallet, debitWallet } from "@/hasura/mutations/wallet";
+import { getMstResellers } from "@/hasura/mutations/reseller";
+import { getUserData } from "@/utils/auth";
 
 const WalletLayer = () => {
+  const [transactions, setTransactions] = useState([]);
+  const [wallet, setWallet] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState("all");
+  const [selectedResellerId, setSelectedResellerId] = useState("");
+  const [resellers, setResellers] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const [debitModalOpen, setDebitModalOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [debitAmount, setDebitAmount] = useState("");
+  const [transactionDescription, setTransactionDescription] = useState("");
+  const [transactionReference, setTransactionReference] = useState("");
+
+  useEffect(() => {
+    checkUserRole();
+  }, []);
+
+  useEffect(() => {
+    if (selectedResellerId || !isAdmin) {
+      fetchWalletData();
+    }
+  }, [selectedResellerId, isAdmin]);
+
+  const checkUserRole = () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const userRole = payload.role;
+        setIsAdmin(userRole === 'admin');
+        
+        if (userRole === 'admin') {
+          fetchResellers();
+        } else {
+          // For reseller, use their own ID
+          const userData = getUserData();
+          if (userData && userData.id) {
+            setSelectedResellerId(userData.id);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error decoding token:", err);
+      setIsAdmin(false);
+    }
+  };
+
+  const fetchResellers = async () => {
+    try {
+      const result = await getMstResellers();
+      if (result.success) {
+        setResellers(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching resellers:", err);
+    }
+  };
+
+  const fetchWalletData = async () => {
+    if (!selectedResellerId) return;
+
+    setLoading(true);
+    setError("");
+    try {
+      // Fetch wallet
+      const walletResult = await getMstWalletByResellerId(selectedResellerId);
+      if (walletResult.success && walletResult.data) {
+        setWallet(walletResult.data);
+        
+        // Fetch transactions
+        const transactionsResult = await getMstWalletTransactions(walletResult.data.id);
+        if (transactionsResult.success) {
+          setTransactions(transactionsResult.data || []);
+        } else {
+          setError("Failed to load transactions");
+        }
+      } else {
+        setWallet(null);
+        setTransactions([]);
+        if (!walletResult.message || walletResult.message !== "Wallet not found") {
+          setError("Failed to load wallet data");
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching wallet data:", err);
+      setError("An error occurred while loading wallet data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCredit = async () => {
+    if (!selectedResellerId) {
+      setError("Please select a reseller");
+      return;
+    }
+
+    const amount = parseFloat(creditAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Please enter a valid amount");
+      return;
+    }
+
+    setActionLoading(true);
+    setError("");
+
+    try {
+      const result = await creditWallet(
+        selectedResellerId,
+        amount,
+        transactionDescription || "Wallet credit",
+        transactionReference || null
+      );
+
+      if (result.success) {
+        setCreditAmount("");
+        setTransactionDescription("");
+        setTransactionReference("");
+        setCreditModalOpen(false);
+        fetchWalletData();
+      } else {
+        setError(result.message || "Failed to credit wallet");
+      }
+    } catch (err) {
+      console.error("Error crediting wallet:", err);
+      setError(err.message || "An error occurred while crediting wallet");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDebit = async () => {
+    if (!selectedResellerId) {
+      setError("Please select a reseller");
+      return;
+    }
+
+    const amount = parseFloat(debitAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Please enter a valid amount");
+      return;
+    }
+
+    setActionLoading(true);
+    setError("");
+
+    try {
+      const result = await debitWallet(
+        selectedResellerId,
+        amount,
+        transactionDescription || "Wallet debit",
+        transactionReference || null
+      );
+
+      if (result.success) {
+        setDebitAmount("");
+        setTransactionDescription("");
+        setTransactionReference("");
+        setDebitModalOpen(false);
+        fetchWalletData();
+      } else {
+        setError(result.message || "Failed to debit wallet");
+      }
+    } catch (err) {
+      console.error("Error debiting wallet:", err);
+      setError(err.message || "An error occurred while debiting wallet");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const filteredTransactions = transactions.filter((transaction) => {
+    const matchesSearch =
+      searchTerm === "" ||
+      transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.transaction_type?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesType =
+      transactionTypeFilter === "all" ||
+      transaction.transaction_type === transactionTypeFilter;
+
+    return matchesSearch && matchesType;
+  });
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const formatCurrency = (amount) => {
+    if (amount === null || amount === undefined) return "₹0.00";
+    return `₹${Number(amount).toFixed(2)}`;
+  };
+
   return (
     <>
       <div className='row gy-4'>
@@ -9,985 +218,434 @@ const WalletLayer = () => {
           <div className='card h-100 p-0 radius-12'>
             <div className='card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between'>
               <div className='d-flex align-items-center flex-wrap gap-3'>
-                <span className='text-md fw-medium text-secondary-light mb-0'>
-                  Show
-                </span>
-                <select
-                  className='form-select form-select-sm w-auto ps-12 py-6 radius-12 h-40-px'
-                  defaultValue='Select Number'
-                >
-                  <option value='Select Number' disabled>
-                    Select Number
-                  </option>
-                  <option value='1'>1</option>
-                  <option value='2'>2</option>
-                  <option value='3'>3</option>
-                  <option value='4'>4</option>
-                  <option value='5'>5</option>
-                  <option value='6'>6</option>
-                  <option value='7'>7</option>
-                  <option value='8'>8</option>
-                  <option value='9'>9</option>
-                  <option value='10'>10</option>
-                </select>
+                {isAdmin && (
+                  <select
+                    className='form-select form-select-sm w-auto ps-12 py-6 radius-12 h-40-px'
+                    value={selectedResellerId}
+                    onChange={(e) => setSelectedResellerId(e.target.value)}
+                  >
+                    <option value=''>Select Reseller</option>
+                    {resellers.map((reseller) => (
+                      <option key={reseller.id} value={reseller.id}>
+                        {reseller.business_name || reseller.email} ({reseller.first_name} {reseller.last_name})
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <form className='navbar-search'>
                   <input
                     type='text'
                     className='bg-base h-40-px w-auto'
                     name='search'
-                    placeholder='Search'
+                    placeholder='Search transactions'
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                   />
                   <Icon icon='ion:search-outline' className='icon' />
                 </form>
                 <select
                   className='form-select form-select-sm w-auto ps-12 py-6 radius-12 h-40-px'
-                  defaultValue='Select Status'
+                  value={transactionTypeFilter}
+                  onChange={(e) => setTransactionTypeFilter(e.target.value)}
                 >
-                  <option value='Select Status' disabled>
-                    Select Status
-                  </option>
-                  <option value='Active'>Active</option>
-                  <option value='Inactive'>Inactive</option>
+                  <option value='all'>All Types</option>
+                  <option value='CREDIT'>Credit</option>
+                  <option value='DEBIT'>Debit</option>
                 </select>
               </div>
-              <button
-                type='button'
-                className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-                data-bs-toggle='modal'
-                data-bs-target='#exampleModalEdit'
-              >
-                <Icon
-                  icon='ic:baseline-plus'
-                  className='icon text-xl line-height-1'
-                />
-                Connect Wallet
-              </button>
+              {selectedResellerId && (
+                <div className='d-flex gap-2'>
+                  <button
+                    type='button'
+                    className='btn btn-success text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+                    onClick={() => setCreditModalOpen(true)}
+                  >
+                    <Icon icon='ic:baseline-plus' className='icon text-xl line-height-1' />
+                    Credit
+                  </button>
+                  <button
+                    type='button'
+                    className='btn btn-danger text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+                    onClick={() => setDebitModalOpen(true)}
+                  >
+                    <Icon icon='ic:baseline-minus' className='icon text-xl line-height-1' />
+                    Debit
+                  </button>
+                </div>
+              )}
             </div>
             <div className='card-body p-24'>
-              <div className='table-responsive scroll-sm'>
-                <table className='table bordered-table sm-table mb-0'>
-                  <thead>
-                    <tr>
-                      <th scope='col'>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border input-form-dark'
-                              type='checkbox'
-                              name='checkbox'
-                              id='selectAll'
-                            />
-                          </div>
-                          S.L
-                        </div>
-                      </th>
-                      <th scope='col'>Aset</th>
-                      <th scope='col'>Amount</th>
-                      <th scope='col'>Price</th>
-                      <th scope='col'>Change %</th>
-                      <th scope='col'>Allocation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={1}
-                            />
-                          </div>
-                          01
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img1.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Bitcoin
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              BTC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.3464 BTC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-success-focus text-success-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-up-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={50}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "50%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={2}
-                            />
-                          </div>
-                          02
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img2.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Ethereum
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              ETH
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 ETH</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-success-focus text-success-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-up-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={80}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "80%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={3}
-                            />
-                          </div>
-                          03
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img3.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Litecoin
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              LTC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 LTC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-success-focus text-success-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-up-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={40}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "40%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={4}
-                            />
-                          </div>
-                          04
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img4.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Binance
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              BNB
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 BNB</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-success-focus text-success-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-up-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={70}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "70%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={5}
-                            />
-                          </div>
-                          05
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img6.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Dogecoin
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              DOGE
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 DOGE</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-danger-focus text-danger-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-down-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={40}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "40%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={6}
-                            />
-                          </div>
-                          06
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img5.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Polygon{" "}
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              MATIC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 MATIC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-danger-focus text-danger-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-down-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={80}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "80%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={7}
-                            />
-                          </div>
-                          06
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img5.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Polygon{" "}
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              MATIC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 MATIC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-danger-focus text-danger-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-down-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={80}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "80%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={8}
-                            />
-                          </div>
-                          06
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img5.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Polygon{" "}
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              MATIC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 MATIC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-danger-focus text-danger-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-down-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={80}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "80%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={9}
-                            />
-                          </div>
-                          06
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img5.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Polygon{" "}
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              MATIC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 MATIC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-danger-focus text-danger-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-down-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={80}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "80%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <div className='d-flex align-items-center gap-10'>
-                          <div className='form-check style-check d-flex align-items-center'>
-                            <input
-                              className='form-check-input radius-4 border border-neutral-400'
-                              type='checkbox'
-                              name='checkbox'
-                              id={10}
-                            />
-                          </div>
-                          06
-                        </div>
-                      </td>
-                      <td>
-                        <Link
-                          to='/marketplace-details'
-                          className='d-flex align-items-center'
-                        >
-                          <img
-                            src='assets/images/crypto/crypto-img5.png'
-                            alt='Wowdash'
-                            className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                          />
-                          <span className='flex-grow-1 d-flex flex-column'>
-                            <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                              Polygon{" "}
-                            </span>
-                            <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                              MATIC
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>0.5464 MATIC</td>
-                      <td>$2,753.00</td>
-                      <td>
-                        <span className='bg-danger-focus text-danger-600 px-16 py-6 rounded-pill fw-semibold text-xs'>
-                          <i className='ri-arrow-down-s-fill' />
-                          1.37%
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          className='progress w-100  bg-primary-50 rounded-pill h-8-px'
-                          role='progressbar'
-                          aria-label='Basic example'
-                          aria-valuenow={80}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className='progress-bar bg-primary-600 rounded-pill'
-                            style={{ width: "80%" }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className='d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24'>
-                <span>Showing 1 to 10 of 12 entries</span>
-                <ul className='pagination d-flex flex-wrap align-items-center gap-2 justify-content-center'>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px  text-md'
-                      to='#'
-                    >
-                      <Icon icon='ep:d-arrow-left' className='' />
-                    </Link>
-                  </li>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md bg-primary-600 text-white'
-                      to='#'
-                    >
-                      1
-                    </Link>
-                  </li>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px'
-                      to='#'
-                    >
-                      2
-                    </Link>
-                  </li>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                      to='#'
-                    >
-                      3
-                    </Link>
-                  </li>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                      to='#'
-                    >
-                      4
-                    </Link>
-                  </li>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                      to='#'
-                    >
-                      5
-                    </Link>
-                  </li>
-                  <li className='page-item'>
-                    <Link
-                      className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px  text-md'
-                      to='#'
-                    >
-                      {" "}
-                      <Icon icon='ep:d-arrow-right' className='' />{" "}
-                    </Link>
-                  </li>
-                </ul>
-              </div>
+              {error && (
+                <div className='alert alert-danger radius-8 mb-24' role='alert'>
+                  <Icon icon='material-symbols:error-outline' className='icon me-2' />
+                  {error}
+                </div>
+              )}
+
+              {!selectedResellerId && isAdmin ? (
+                <div className='text-center py-40'>
+                  <Icon icon='mdi:wallet-outline' className='icon text-6xl text-muted mb-3' />
+                  <p className='text-muted'>Please select a reseller to view wallet transactions</p>
+                </div>
+              ) : loading ? (
+                <div className='text-center py-40'>
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className='text-muted mt-3'>Loading wallet data...</p>
+                </div>
+              ) : !wallet ? (
+                <div className='text-center py-40'>
+                  <Icon icon='mdi:wallet-off' className='icon text-6xl text-muted mb-3' />
+                  <p className='text-muted'>No wallet found for this reseller</p>
+                </div>
+              ) : (
+                <>
+                  <div className='table-responsive scroll-sm'>
+                    <table className='table bordered-table sm-table mb-0'>
+                      <thead>
+                        <tr>
+                          <th scope='col'>S.L</th>
+                          <th scope='col'>Date</th>
+                          <th scope='col'>Type</th>
+                          <th scope='col'>Amount</th>
+                          <th scope='col'>Balance Before</th>
+                          <th scope='col'>Balance After</th>
+                          <th scope='col'>Description</th>
+                          <th scope='col'>Reference</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTransactions.length === 0 ? (
+                          <tr>
+                            <td colSpan="8" className='text-center py-40'>
+                              <Icon icon='mdi:receipt-text-outline' className='icon text-6xl text-muted mb-3' />
+                              <p className='text-muted'>No transactions found</p>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredTransactions.map((transaction, index) => (
+                            <tr key={transaction.id}>
+                              <td>{index + 1}</td>
+                              <td>{formatDate(transaction.created_at)}</td>
+                              <td>
+                                <span
+                                  className={`${
+                                    transaction.transaction_type === 'CREDIT'
+                                      ? "bg-success-focus text-success-600 border border-success-main"
+                                      : "bg-danger-focus text-danger-600 border border-danger-main"
+                                  } px-16 py-4 radius-4 fw-medium text-sm`}
+                                >
+                                  {transaction.transaction_type}
+                                </span>
+                              </td>
+                              <td>
+                                <span
+                                  className={`text-md fw-medium ${
+                                    transaction.transaction_type === 'CREDIT'
+                                      ? "text-success-600"
+                                      : "text-danger-600"
+                                  }`}
+                                >
+                                  {transaction.transaction_type === 'CREDIT' ? '+' : '-'}
+                                  {formatCurrency(transaction.amount)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className='text-md fw-normal text-secondary-light'>
+                                  {formatCurrency(transaction.balance_before)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className='text-md fw-medium text-primary-light'>
+                                  {formatCurrency(transaction.balance_after)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className='text-md fw-normal text-secondary-light'>
+                                  {transaction.description || "-"}
+                                </span>
+                              </td>
+                              <td>
+                                <span className='text-md fw-normal text-secondary-light'>
+                                  {transaction.reference || "-"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className='d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24'>
+                    <span>
+                      Showing {filteredTransactions.length} of {transactions.length} transaction(s)
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
         <div className='col-lg-3'>
           <div className='card h-100'>
-            <div className='card-body p-0'>
-              <div className='px-24 py-20'>
-                <span className='mb-8'>WowDash</span>
-                <h5 className='text-2xl'>$40,570.85</h5>
-                <div className='mt-24 pb-24 mb-24 border-bottom d-flex align-items-center gap-16 justify-content-between flex-wrap'>
-                  <div className='text-center d-flex align-items-center  flex-column'>
-                    <span className='w-60-px h-60-px bg-primary-50 text-primary-600 text-2xl d-inline-flex justify-content-center align-items-center rounded-circle '>
-                      <i className='ri-add-line' />
-                    </span>
-                    <span className='text-primary-light fw-medium mt-6'>
-                      Buy
-                    </span>
-                  </div>
-                  <div className='text-center d-flex align-items-center  flex-column'>
-                    <span className='w-60-px h-60-px bg-primary-50 text-primary-600 text-2xl d-inline-flex justify-content-center align-items-center rounded-circle '>
-                      <i className='ri-arrow-left-right-line' />
-                    </span>
-                    <span className='text-primary-light fw-medium mt-6'>
-                      Swap
-                    </span>
-                  </div>
-                  <div className='text-center d-flex align-items-center  flex-column'>
-                    <span className='w-60-px h-60-px bg-primary-50 text-primary-600 text-2xl d-inline-flex justify-content-center align-items-center rounded-circle '>
-                      <i className='ri-upload-2-line' />
-                    </span>
-                    <span className='text-primary-light fw-medium mt-6'>
-                      Send
-                    </span>
-                  </div>
-                  <div className='text-center d-flex align-items-center  flex-column'>
-                    <span className='w-60-px h-60-px bg-primary-50 text-primary-600 text-2xl d-inline-flex justify-content-center align-items-center rounded-circle '>
-                      <i className='ri-download-2-line' />
-                    </span>
-                    <span className='text-primary-light fw-medium mt-6'>
-                      Receive
-                    </span>
-                  </div>
-                </div>
-                <div className='d-flex align-items-center justify-content-between gap-8 pb-24 border-bottom'>
-                  <h6 className='text-lg mb-0'>Watchlist</h6>
-                  <Link to='#' className='text-primary-600 fw-medium text-md'>
-                    Sell all
-                  </Link>
-                </div>
-                <div className='d-flex align-items-center justify-content-between flex-wrap gap-8 py-16 border-bottom'>
-                  <div className='d-flex align-items-center'>
-                    <img
-                      src='assets/images/crypto/crypto-img1.png'
-                      alt='Wowdash'
-                      className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <div className='flex-grow-1 d-flex flex-column'>
-                      <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                        Bitcoin
-                      </span>
-                      <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                        BTC
-                      </span>
-                    </div>
-                  </div>
-                  <div className=' d-flex flex-column'>
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      $1,236.21
-                    </span>
-                    <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                      1.4363 BTC{" "}
-                    </span>
-                  </div>
-                </div>
-                <div className='d-flex align-items-center justify-content-between flex-wrap gap-8 py-16 border-bottom'>
-                  <div className='d-flex align-items-center'>
-                    <img
-                      src='assets/images/crypto/crypto-img2.png'
-                      alt='Wowdash'
-                      className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <div className='flex-grow-1 d-flex flex-column'>
-                      <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                        Ethereum
-                      </span>
-                      <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                        ETH
-                      </span>
-                    </div>
-                  </div>
-                  <div className=' d-flex flex-column'>
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      $1,236.21
-                    </span>
-                    <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                      1.4363 ETH{" "}
-                    </span>
-                  </div>
-                </div>
-                <div className='d-flex align-items-center justify-content-between flex-wrap gap-8 py-16 border-bottom'>
-                  <div className='d-flex align-items-center'>
-                    <img
-                      src='assets/images/crypto/crypto-img5.png'
-                      alt='Wowdash'
-                      className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <div className='flex-grow-1 d-flex flex-column'>
-                      <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                        Dogecoin
-                      </span>
-                      <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                        DOGE
-                      </span>
-                    </div>
-                  </div>
-                  <div className=' d-flex flex-column'>
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      $1,658
-                    </span>
-                    <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                      1.4363 DOGE
-                    </span>
-                  </div>
-                </div>
-                <div className='d-flex align-items-center justify-content-between flex-wrap gap-8 py-16'>
-                  <div className='d-flex align-items-center'>
-                    <img
-                      src='assets/images/crypto/crypto-img6.png'
-                      alt='Wowdash'
-                      className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <div className='flex-grow-1 d-flex flex-column'>
-                      <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                        Digibyte
-                      </span>
-                      <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                        DGB
-                      </span>
-                    </div>
-                  </div>
-                  <div className=' d-flex flex-column'>
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      $165,8
-                    </span>
-                    <span className='text-xs mb-0 fw-normal text-secondary-light'>
-                      1.4363 DGB
-                    </span>
-                  </div>
-                </div>
+            <div className='card-body p-24'>
+              <div className='mb-24'>
+                <span className='text-sm text-secondary-light mb-8 d-block'>Wallet Balance</span>
+                <h5 className='text-2xl text-primary-light mb-0'>
+                  {wallet ? formatCurrency(wallet.balance) : "₹0.00"}
+                </h5>
               </div>
+              {wallet && (
+                <>
+                  <div className='mt-24 pb-24 mb-24 border-bottom d-flex align-items-center gap-16 justify-content-between flex-wrap'>
+                    <div className='text-center d-flex align-items-center flex-column'>
+                      <span className='w-60-px h-60-px bg-success-50 text-success-600 text-2xl d-inline-flex justify-content-center align-items-center rounded-circle'>
+                        <Icon icon='ic:baseline-plus' />
+                      </span>
+                      <span className='text-primary-light fw-medium mt-6 text-sm'>Total Credit</span>
+                      <span className='text-success-600 fw-semibold mt-2'>
+                        {formatCurrency(wallet.credit_amount)}
+                      </span>
+                    </div>
+                    <div className='text-center d-flex align-items-center flex-column'>
+                      <span className='w-60-px h-60-px bg-danger-50 text-danger-600 text-2xl d-inline-flex justify-content-center align-items-center rounded-circle'>
+                        <Icon icon='ic:baseline-minus' />
+                      </span>
+                      <span className='text-primary-light fw-medium mt-6 text-sm'>Total Debit</span>
+                      <span className='text-danger-600 fw-semibold mt-2'>
+                        {formatCurrency(wallet.debit_amount)}
+                      </span>
+                    </div>
+                  </div>
+                  {wallet.last_transaction_at && (
+                    <div className='mb-16'>
+                      <span className='text-xs text-secondary-light mb-4 d-block'>Last Transaction</span>
+                      <span className='text-sm text-primary-light'>
+                        {formatDate(wallet.last_transaction_at)}
+                      </span>
+                    </div>
+                  )}
+                  <div className='mb-16'>
+                    <span className='text-xs text-secondary-light mb-4 d-block'>Wallet ID</span>
+                    <span className='text-sm text-primary-light font-monospace'>
+                      {wallet.id.substring(0, 8)}...
+                    </span>
+                  </div>
+                  <div>
+                    <span className='text-xs text-secondary-light mb-4 d-block'>User Type</span>
+                    <span className='text-sm text-primary-light'>
+                      {wallet.user_type || 'RESELLER'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
       </div>
-      {/* Modal Edit Currecny */}
-      <div
-        className='modal fade'
-        id='exampleModalEdit'
-        tabIndex={-1}
-        aria-labelledby='exampleModalEditLabel'
-        aria-hidden='true'
-      >
-        <div className='modal-dialog modal-dialog modal-dialog-centered'>
-          <div className='modal-content radius-16 bg-base'>
-            <div className='modal-header py-16 px-24 border border-top-0 border-start-0 border-end-0'>
-              <h1 className='modal-title fs-5' id='exampleModalEditLabel'>
-                Connect Wallet
-              </h1>
-              <button
-                type='button'
-                className='btn-close'
-                data-bs-dismiss='modal'
-                aria-label='Close'
-              />
-            </div>
-            <div className='modal-body p-24'>
-              <div className='d-flex flex-column gap-8'>
-                <Link
-                  to='#'
-                  className='d-flex align-items-center justify-content-between gap-8 p-16 border radius-8 bg-hover-neutral-50'
+
+      {/* Credit Modal */}
+      {creditModalOpen && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">Credit Wallet</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setCreditModalOpen(false);
+                    setCreditAmount("");
+                    setTransactionDescription("");
+                    setTransactionReference("");
+                    setError("");
+                  }}
+                  disabled={actionLoading}
+                  aria-label="Close"
+                />
+              </div>
+              <div className="modal-body p-24">
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Amount (₹) <span className='text-danger-600'>*</span>
+                  </label>
+                  <input
+                    type='number'
+                    step='0.01'
+                    min='0'
+                    className='form-control radius-8'
+                    placeholder='Enter amount to credit'
+                    value={creditAmount}
+                    onChange={(e) => setCreditAmount(e.target.value)}
+                    required
+                    disabled={actionLoading}
+                  />
+                </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Description
+                  </label>
+                  <textarea
+                    className='form-control radius-8'
+                    rows='3'
+                    placeholder='Enter transaction description (optional)'
+                    value={transactionDescription}
+                    onChange={(e) => setTransactionDescription(e.target.value)}
+                    disabled={actionLoading}
+                  />
+                </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Reference
+                  </label>
+                  <input
+                    type='text'
+                    className='form-control radius-8'
+                    placeholder='Enter reference (optional)'
+                    value={transactionReference}
+                    onChange={(e) => setTransactionReference(e.target.value)}
+                    disabled={actionLoading}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary radius-8"
+                  onClick={() => {
+                    setCreditModalOpen(false);
+                    setCreditAmount("");
+                    setTransactionDescription("");
+                    setTransactionReference("");
+                    setError("");
+                  }}
+                  disabled={actionLoading}
                 >
-                  <span className='d-flex align-items-center gap-16'>
-                    <img
-                      src='assets/images/crypto/wallet-icon1.png'
-                      alt='Wowdash'
-                      className='flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      Bitcoin
-                    </span>
-                  </span>
-                  <span className='text-secondary-light text-md'>
-                    <i className='ri-arrow-right-s-line' />
-                  </span>
-                </Link>
-                <Link
-                  to='#'
-                  className='d-flex align-items-center justify-content-between gap-8 p-16 border radius-8 bg-hover-neutral-50'
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success radius-8"
+                  onClick={handleCredit}
+                  disabled={actionLoading}
                 >
-                  <span className='d-flex align-items-center gap-16'>
-                    <img
-                      src='assets/images/crypto/wallet-icon2.png'
-                      alt='Wowdash'
-                      className='flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      Coinbase Wallet
-                    </span>
-                  </span>
-                  <span className='text-secondary-light text-md'>
-                    <i className='ri-arrow-right-s-line' />
-                  </span>
-                </Link>
-                <Link
-                  to='#'
-                  className='d-flex align-items-center justify-content-between gap-8 p-16 border radius-8 bg-hover-neutral-50'
-                >
-                  <span className='d-flex align-items-center gap-16'>
-                    <img
-                      src='assets/images/crypto/wallet-icon3.png'
-                      alt='Wowdash'
-                      className='flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      Exodus Wallet
-                    </span>
-                  </span>
-                  <span className='text-secondary-light text-md'>
-                    <i className='ri-arrow-right-s-line' />
-                  </span>
-                </Link>
-                <Link
-                  to='#'
-                  className='d-flex align-items-center justify-content-between gap-8 p-16 border radius-8 bg-hover-neutral-50'
-                >
-                  <span className='d-flex align-items-center gap-16'>
-                    <img
-                      src='assets/images/crypto/wallet-icon4.png'
-                      alt='Wowdash'
-                      className='flex-shrink-0 me-12 overflow-hidden'
-                    />
-                    <span className='text-md mb-0 fw-medium text-primary-light d-block'>
-                      Trust Wallet
-                    </span>
-                  </span>
-                  <span className='text-secondary-light text-md'>
-                    <i className='ri-arrow-right-s-line' />
-                  </span>
-                </Link>
+                  {actionLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Processing...
+                    </>
+                  ) : (
+                    "Credit Wallet"
+                  )}
+                </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Debit Modal */}
+      {debitModalOpen && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">Debit Wallet</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setDebitModalOpen(false);
+                    setDebitAmount("");
+                    setTransactionDescription("");
+                    setTransactionReference("");
+                    setError("");
+                  }}
+                  disabled={actionLoading}
+                  aria-label="Close"
+                />
+              </div>
+              <div className="modal-body p-24">
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Amount (₹) <span className='text-danger-600'>*</span>
+                  </label>
+                  <input
+                    type='number'
+                    step='0.01'
+                    min='0'
+                    className='form-control radius-8'
+                    placeholder='Enter amount to debit'
+                    value={debitAmount}
+                    onChange={(e) => setDebitAmount(e.target.value)}
+                    required
+                    disabled={actionLoading}
+                  />
+                </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Description
+                  </label>
+                  <textarea
+                    className='form-control radius-8'
+                    rows='3'
+                    placeholder='Enter transaction description (optional)'
+                    value={transactionDescription}
+                    onChange={(e) => setTransactionDescription(e.target.value)}
+                    disabled={actionLoading}
+                  />
+                </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Reference
+                  </label>
+                  <input
+                    type='text'
+                    className='form-control radius-8'
+                    placeholder='Enter reference (optional)'
+                    value={transactionReference}
+                    onChange={(e) => setTransactionReference(e.target.value)}
+                    disabled={actionLoading}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary radius-8"
+                  onClick={() => {
+                    setDebitModalOpen(false);
+                    setDebitAmount("");
+                    setTransactionDescription("");
+                    setTransactionReference("");
+                    setError("");
+                  }}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger radius-8"
+                  onClick={handleDebit}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Processing...
+                    </>
+                  ) : (
+                    "Debit Wallet"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

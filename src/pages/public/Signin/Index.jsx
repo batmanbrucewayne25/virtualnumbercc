@@ -2,8 +2,8 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import PasswordField from "@/components/Form/PasswordField";
-import { loginMstReseller } from "@/hasura/mutations";
-import { saveAuthToken, isAuthenticated, verifyPassword } from "@/utils/auth";
+import { login } from "@/utils/api";
+import { saveAuthToken, isAuthenticated } from "@/utils/auth";
 
 const SignInLayer = () => {
   const navigate = useNavigate();
@@ -30,36 +30,21 @@ const SignInLayer = () => {
 
     setLoading(true);
     try {
-      // Query user by email
-      const result = await loginMstReseller({ email: email.trim() });
+      // Call Node.js backend API for login
+      const result = await login(email.trim(), password);
 
-      if (!result.success || !result.user) {
-        setError("Invalid email or password.");
-        setLoading(false);
-        return;
+      if (result.success && result.data) {
+        // Save token and user data from backend response
+        const { token, user } = result.data;
+        saveAuthToken(token, user);
+        setError("");
+        navigate("/", { replace: true });
+      } else {
+        setError(result.message || "Invalid email or password.");
       }
-
-      const user = result.user;
-
-      // Verify password
-      if (!verifyPassword(password, user.password_hash)) {
-        setError("Invalid email or password.");
-        setLoading(false);
-        return;
-      }
-
-      // Generate token and save authentication data
-      const token = btoa(`${user.id}-${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9]/g, '');
-      
-      // Remove password_hash from user data before storing
-      const { password_hash, ...userData } = user;
-      
-      saveAuthToken(token, userData);
-      setError("");
-      navigate("/", { replace: true });
     } catch (err) {
       console.error("Login error:", err);
-      setError("Login failed. Please try again.");
+      setError(err.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }

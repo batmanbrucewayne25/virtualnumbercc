@@ -420,6 +420,28 @@ const MasterLayout = ({ children }) => {
                 </li>
               </ul>
             </li>
+            <li>
+                  <NavLink
+                    to='/reseller-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                  <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
+                    Reseller List
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to='/subscription-plan-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                  <i className='ri-circle-fill circle-icon text-warning-main w-auto' />{" "}
+                    Subscription Plans
+                  </NavLink>
+                </li>
 
 {/* Users Dropdown */}
 <li className='dropdown'>
@@ -433,7 +455,7 @@ const MasterLayout = ({ children }) => {
               <ul className='sidebar-submenu'>
                 <li>
                   <NavLink
-                    to='/users-list'
+                    to='/admin-list'
                     className={(navData) =>
                       navData.isActive ? "active-page" : ""
                     }
@@ -455,7 +477,7 @@ const MasterLayout = ({ children }) => {
                 </li> */}
                 <li>
                   <NavLink
-                    to='/add-user'
+                    to='/add-admin'
                     className={(navData) =>
                       navData.isActive ? "active-page" : ""
                     }
@@ -464,6 +486,7 @@ const MasterLayout = ({ children }) => {
                     Add Admin
                   </NavLink>
                 </li>
+            
                 {/* <li>
                   <NavLink
                     to='/view-profile'
