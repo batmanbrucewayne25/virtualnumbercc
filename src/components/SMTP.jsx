@@ -1,45 +1,100 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Icon } from "@iconify/react/dist/iconify.js";
+import { getUserData, getAuthToken } from "@/utils/auth";
+import { getMstSmtpConfigByResellerId, upsertMstSmtpConfig } from "@/hasura/mutations/smtpConfig";
 
 const SMTPSettings = () => {
   const [form, setForm] = useState({
-    smtpHost: "",
-    smtpPort: "",
-    encryption: "ssl",
-    smtpUser: "",
-    smtpPassword: "",
-    fromName: "",
-    fromEmail: "",
-    footerText: "",
-    testEmail: "",
+    host: "",
+    port: "",
+    username: "",
+    password: "",
+    from_email: "",
+    from_name: "",
+    is_active: true,
   });
 
-  const [logoPreview, setLogoPreview] = useState(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [resellerId, setResellerId] = useState(null);
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  useEffect(() => {
+    // Get logged-in reseller ID
+    const userData = getUserData();
+    const token = getAuthToken();
+    
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.role === 'reseller' && userData?.id) {
+          setResellerId(userData.id);
+          fetchSmtpConfig(userData.id);
+        } else {
+          setError("Only resellers can configure SMTP settings");
+          setFetching(false);
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+        setError("Failed to authenticate user");
+        setFetching(false);
+      }
+    } else {
+      setError("Please login to configure SMTP settings");
+      setFetching(false);
+    }
+  }, []);
 
-  const handleLogoUpload = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setLogoPreview(ev.target.result);
-      reader.readAsDataURL(e.target.files[0]);
+  const fetchSmtpConfig = async (resellerId) => {
+    setFetching(true);
+    setError("");
+    try {
+      const result = await getMstSmtpConfigByResellerId(resellerId);
+      if (result.success && result.data) {
+        setForm({
+          host: result.data.host || "",
+          port: result.data.port?.toString() || "",
+          username: result.data.username || "",
+          password: "", // Don't show password
+          from_email: result.data.from_email || "",
+          from_name: result.data.from_name || "",
+          is_active: result.data.is_active !== undefined ? result.data.is_active : true,
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching SMTP config:", err);
+    } finally {
+      setFetching(false);
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm({ 
+      ...form, 
+      [name]: type === "checkbox" ? checked : value 
+    });
+    setError("");
+  };
+
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
 
+    if (!resellerId) {
+      setError("Reseller ID not found. Please login again.");
+      return;
+    }
+
     const requiredFields = [
-      "smtpHost",
-      "smtpPort",
-      "smtpUser",
-      "smtpPassword",
-      "fromEmail",
+      "host",
+      "port",
+      "username",
+      "password",
+      "from_email",
     ];
 
     for (let field of requiredFields) {
@@ -49,121 +104,146 @@ const SMTPSettings = () => {
       }
     }
 
-    console.log("SMTP + Branding Payload:", {
-      ...form,
-      logo: logoPreview,
-    });
+    const port = parseInt(form.port);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      setError("Please enter a valid SMTP port (1-65535)");
+      return;
+    }
 
-    setSuccess("SMTP settings saved successfully");
-    // 🔐 Backend API call here
+    setLoading(true);
+    try {
+      const result = await upsertMstSmtpConfig(resellerId, {
+        host: form.host.trim(),
+        port: port,
+        username: form.username.trim(),
+        password: form.password, // Will be encrypted by backend
+        from_email: form.from_email.trim(),
+        from_name: form.from_name.trim() || null,
+        is_active: form.is_active,
+      });
+
+      if (result.success) {
+        setSuccess(result.message || "SMTP settings saved successfully");
+        // Clear password field after save
+        setForm(prev => ({ ...prev, password: "" }));
+        setTimeout(() => {
+          setSuccess("");
+        }, 3000);
+      } else {
+        setError(result.message || "Failed to save SMTP settings");
+      }
+    } catch (err) {
+      console.error("Error saving SMTP config:", err);
+      setError(err.message || "An error occurred while saving SMTP settings");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (fetching) {
+    return (
+      <div className='card h-100 p-0 radius-12 overflow-hidden'>
+        <div className='card-body p-40'>
+          <div className='text-center py-40'>
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <p className='text-muted mt-3'>Loading SMTP configuration...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className='card h-100 p-0 radius-12 overflow-hidden'>
       <div className='card-body p-40'>
+        {error && (
+          <div className='alert alert-danger radius-8 mb-24' role='alert'>
+            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className='alert alert-success radius-8 mb-24' role='alert'>
+            <Icon icon='material-symbols:check-circle-outline' className='icon me-2' />
+            {success}
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div className='row'>
 
-            {/* SMTP Host */}
+            {/* Host */}
             <div className='col-sm-12'>
               <div className='mb-20'>
                 <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  SMTP Host <span className='text-danger-600'>*</span>
+                  Host <span className='text-danger-600'>*</span>
                 </label>
                 <input
                   type='text'
-                  name='smtpHost'
+                  name='host'
                   className='form-control radius-8'
                   placeholder='smtp.yourdomain.com'
-                  value={form.smtpHost}
+                  value={form.host}
                   onChange={handleChange}
+                  disabled={loading}
+                  autoComplete="off"
                 />
               </div>
             </div>
 
-            {/* SMTP Port */}
+            {/* Port */}
             <div className='col-sm-6'>
               <div className='mb-20'>
                 <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  SMTP Port <span className='text-danger-600'>*</span>
+                  Port <span className='text-danger-600'>*</span>
                 </label>
                 <input
                   type='number'
-                  name='smtpPort'
+                  name='port'
                   className='form-control radius-8'
                   placeholder='465 or 587'
-                  value={form.smtpPort}
+                  value={form.port}
                   onChange={handleChange}
+                  disabled={loading}
                 />
               </div>
             </div>
 
-            {/* Encryption */}
+            {/* Username */}
             <div className='col-sm-6'>
               <div className='mb-20'>
                 <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  Encryption
-                </label>
-                <select
-                  name='encryption'
-                  className='form-control radius-8 form-select'
-                  value={form.encryption}
-                  onChange={handleChange}
-                >
-                  <option value='ssl'>SSL</option>
-                  <option value='tls'>TLS</option>
-                  <option value='none'>None</option>
-                </select>
-              </div>
-            </div>
-
-            {/* SMTP Username */}
-            <div className='col-sm-12'>
-              <div className='mb-20'>
-                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  SMTP Username <span className='text-danger-600'>*</span>
-                </label>
-                <input
-                  type='email'
-                  name='smtpUser'
-                  className='form-control radius-8'
-                  placeholder='no-reply@yourdomain.com'
-                  value={form.smtpUser}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            {/* SMTP Password */}
-            <div className='col-sm-12'>
-              <div className='mb-20'>
-                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  SMTP Password <span className='text-danger-600'>*</span>
-                </label>
-                <input
-                  type='password'
-                  name='smtpPassword'
-                  className='form-control radius-8'
-                  placeholder='App password'
-                  value={form.smtpPassword}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            {/* From Name */}
-            <div className='col-sm-6'>
-              <div className='mb-20'>
-                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  From Name
+                  Username <span className='text-danger-600'>*</span>
                 </label>
                 <input
                   type='text'
-                  name='fromName'
+                  name='username'
                   className='form-control radius-8'
-                  placeholder='Your Company Name'
-                  value={form.fromName}
+                  placeholder='no-reply@yourdomain.com'
+                  value={form.username}
                   onChange={handleChange}
+                  disabled={loading}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div className='col-sm-12'>
+              <div className='mb-20'>
+                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                  Password <span className='text-danger-600'>*</span>
+                </label>
+                <input
+                  type='password'
+                  name='password'
+                  className='form-control radius-8'
+                  placeholder='App password'
+                  value={form.password}
+                  onChange={handleChange}
+                  disabled={loading}
+                  autoComplete="new-password"
                 />
               </div>
             </div>
@@ -176,74 +256,58 @@ const SMTPSettings = () => {
                 </label>
                 <input
                   type='email'
-                  name='fromEmail'
+                  name='from_email'
                   className='form-control radius-8'
                   placeholder='support@yourdomain.com'
-                  value={form.fromEmail}
+                  value={form.from_email}
                   onChange={handleChange}
+                  disabled={loading}
+                  autoComplete="off"
                 />
               </div>
             </div>
 
-            {/* Logo Upload */}
-            <div className='col-sm-12'>
+            {/* From Name */}
+            <div className='col-sm-6'>
               <div className='mb-20'>
                 <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  Email Logo
+                  From Name
                 </label>
                 <input
-                  type='file'
+                  type='text'
+                  name='from_name'
                   className='form-control radius-8'
-                  accept='image/*'
-                  onChange={handleLogoUpload}
+                  placeholder='Your Company Name'
+                  value={form.from_name}
+                  onChange={handleChange}
+                  disabled={loading}
+                  autoComplete="off"
                 />
-                {logoPreview && (
-                  <img
-                    src={logoPreview}
-                    alt='Logo Preview'
-                    className='mt-12'
-                    style={{ maxHeight: 60 }}
+              </div>
+            </div>
+
+            {/* Active Status */}
+            <div className='col-sm-12'>
+              <div className='mb-20'>
+                <div className='form-check form-switch'>
+                  <input
+                    className='form-check-input'
+                    type='checkbox'
+                    id='is_active'
+                    name='is_active'
+                    checked={form.is_active}
+                    onChange={handleChange}
+                    disabled={loading}
                   />
-                )}
+                  <label
+                    className='form-check-label fw-semibold text-primary-light text-sm'
+                    htmlFor='is_active'
+                  >
+                    Active
+                  </label>
+                </div>
               </div>
             </div>
-
-            {/* Footer Text */}
-            <div className='col-sm-12'>
-              <div className='mb-20'>
-                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  Email Footer
-                </label>
-                <textarea
-                  name='footerText'
-                  className='form-control radius-8'
-                  placeholder='Company address, support email, disclaimer...'
-                  value={form.footerText}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            {/* Test Email */}
-            <div className='col-sm-12'>
-              <div className='mb-20'>
-                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  Test Email Address
-                </label>
-                <input
-                  type='email'
-                  name='testEmail'
-                  className='form-control radius-8'
-                  placeholder='your@email.com'
-                  value={form.testEmail}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            {/* Messages */}
-            {error && <p className='text-danger-600'>{error}</p>}
-            {success && <p className='text-success-600'>{success}</p>}
 
             {/* Buttons */}
             <div className='col-sm-12'>
@@ -252,21 +316,11 @@ const SMTPSettings = () => {
                   type='reset'
                   className='border border-danger-600 bg-hover-danger-200 text-danger-600 px-40 py-11 radius-8'
                   onClick={() => {
-                    setForm({
-                      smtpHost: "",
-                      smtpPort: "",
-                      encryption: "ssl",
-                      smtpUser: "",
-                      smtpPassword: "",
-                      fromName: "",
-                      fromEmail: "",
-                      footerText: "",
-                      testEmail: "",
-                    });
-                    setLogoPreview(null);
+                    fetchSmtpConfig(resellerId);
                     setError("");
                     setSuccess("");
                   }}
+                  disabled={loading}
                 >
                   Reset
                 </button>
@@ -274,8 +328,16 @@ const SMTPSettings = () => {
                 <button
                   type='submit'
                   className='btn btn-primary border border-primary-600 px-40 py-11 radius-8'
+                  disabled={loading}
                 >
-                  Save SMTP Settings
+                  {loading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Saving...
+                    </>
+                  ) : (
+                    "Save SMTP Settings"
+                  )}
                 </button>
               </div>
             </div>

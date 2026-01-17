@@ -26,8 +26,10 @@ const MasterLayout = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    // Function to handle dropdown clicks
     const handleDropdownClick = (event) => {
       event.preventDefault();
+      event.stopPropagation();
       const clickedLink = event.currentTarget;
       const clickedDropdown = clickedLink.closest(".dropdown");
 
@@ -35,13 +37,15 @@ const MasterLayout = ({ children }) => {
 
       const isActive = clickedDropdown.classList.contains("open");
 
-      // Close all dropdowns
+      // Close all other dropdowns
       const allDropdowns = document.querySelectorAll(".sidebar-menu .dropdown");
       allDropdowns.forEach((dropdown) => {
-        dropdown.classList.remove("open");
-        const submenu = dropdown.querySelector(".sidebar-submenu");
-        if (submenu) {
-          submenu.style.maxHeight = "0px"; // Collapse submenu
+        if (dropdown !== clickedDropdown) {
+          dropdown.classList.remove("open");
+          const submenu = dropdown.querySelector(".sidebar-submenu");
+          if (submenu) {
+            submenu.style.maxHeight = "0px";
+          }
         }
       });
 
@@ -50,48 +54,77 @@ const MasterLayout = ({ children }) => {
         clickedDropdown.classList.add("open");
         const submenu = clickedDropdown.querySelector(".sidebar-submenu");
         if (submenu) {
-          submenu.style.maxHeight = `${submenu.scrollHeight}px`; // Expand submenu
+          submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+        }
+      } else {
+        clickedDropdown.classList.remove("open");
+        const submenu = clickedDropdown.querySelector(".sidebar-submenu");
+        if (submenu) {
+          submenu.style.maxHeight = "0px";
         }
       }
     };
 
-    // Attach click event listeners to all dropdown triggers
-    const dropdownTriggers = document.querySelectorAll(
-      ".sidebar-menu .dropdown > a"
-    );
-
-    dropdownTriggers.forEach((trigger) => {
-      trigger.addEventListener("click", handleDropdownClick);
-    });
-
+    // Function to open dropdown containing active route
     const openActiveDropdown = () => {
       const allDropdowns = document.querySelectorAll(".sidebar-menu .dropdown");
       allDropdowns.forEach((dropdown) => {
-        const submenuLinks = dropdown.querySelectorAll(".sidebar-submenu li a, .sidebar-submenu li .nav-link");
+        const submenuLinks = dropdown.querySelectorAll(".sidebar-submenu li a, .sidebar-submenu li NavLink");
+        let hasActiveLink = false;
+        
         submenuLinks.forEach((link) => {
           const href = link.getAttribute("href");
           const to = link.getAttribute("to");
+          const navLink = link.closest("a") || link;
+          const isActive = navLink.classList.contains("active") || navLink.classList.contains("active-page");
+          
           if (
+            isActive ||
             href === location.pathname ||
             to === location.pathname ||
             (href && location.pathname.startsWith(href)) ||
             (to && location.pathname.startsWith(to))
           ) {
-            dropdown.classList.add("open");
-            const submenu = dropdown.querySelector(".sidebar-submenu");
-            if (submenu) {
-              submenu.style.maxHeight = `${submenu.scrollHeight}px`; // Expand submenu
-            }
+            hasActiveLink = true;
           }
         });
+
+        if (hasActiveLink) {
+          dropdown.classList.add("open");
+          const submenu = dropdown.querySelector(".sidebar-submenu");
+          if (submenu) {
+            submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+          }
+        }
       });
     };
 
-    // Open the submenu that contains the active route
-    openActiveDropdown();
+    // Wait for DOM to be ready, then set up dropdowns
+    const setupDropdowns = () => {
+      // First, open dropdowns with active routes
+      openActiveDropdown();
 
-    // Cleanup event listeners on unmount
+      // Then attach click handlers
+      const dropdownTriggers = document.querySelectorAll(
+        ".sidebar-menu .dropdown > a"
+      );
+
+      dropdownTriggers.forEach((trigger) => {
+        trigger.addEventListener("click", handleDropdownClick);
+      });
+    };
+
+    // Use requestAnimationFrame to ensure DOM is ready
+    const rafId = requestAnimationFrame(() => {
+      setTimeout(setupDropdowns, 0);
+    });
+
+    // Cleanup
     return () => {
+      cancelAnimationFrame(rafId);
+      const dropdownTriggers = document.querySelectorAll(
+        ".sidebar-menu .dropdown > a"
+      );
       dropdownTriggers.forEach((trigger) => {
         trigger.removeEventListener("click", handleDropdownClick);
       });
@@ -429,13 +462,13 @@ const MasterLayout = ({ children }) => {
             {/* Settings Dropdown - Only for Resellers */}
             {userRole === 'reseller' && (
               <li className='dropdown'>
-                <Link to='#'>
+                <a href='#' onClick={(e) => e.preventDefault()}>
                   <Icon
                     icon='icon-park-outline:setting-two'
                     className='menu-icon'
                   />
                   <span>Settings</span>
-                </Link>
+                </a>
                 <ul className='sidebar-submenu'>
                   <li>
                     <NavLink
@@ -501,17 +534,6 @@ const MasterLayout = ({ children }) => {
                     >
                       <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
                       Payment Gateway
-                    </NavLink>
-                  </li>
-                  <li>
-                    <NavLink
-                      to='/razorpay'
-                      className={(navData) =>
-                        navData.isActive ? "active-page" : ""
-                      }
-                    >
-                      <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
-                      Razorpay
                     </NavLink>
                   </li>
                   <li>
