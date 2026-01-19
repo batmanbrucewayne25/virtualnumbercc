@@ -1,5 +1,5 @@
 import express from 'express';
-import { login, register, verifyToken, refreshToken } from '../services/authService.js';
+import { login, register, verifyToken, refreshToken, forgotPassword, resetPassword } from '../services/authService.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -80,6 +80,59 @@ router.post('/refresh', async (req, res, next) => {
     }
 
     const result = await refreshToken(refreshToken);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Request password reset
+ * @access  Public
+ */
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email is required' 
+      });
+    }
+
+    const result = await forgotPassword(email);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password using token
+ * @access  Public
+ */
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Token and password are required' 
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Password must be at least 6 characters long' 
+      });
+    }
+
+    const result = await resetPassword(token, password);
     res.json(result);
   } catch (error) {
     next(error);

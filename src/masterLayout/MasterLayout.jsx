@@ -4,6 +4,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggleButton from "../helper/ThemeToggleButton";
 import { clearAuth, getAuthToken } from "@/utils/auth";
+import PermissionGuard from "@/components/PermissionGuard";
 
 const MasterLayout = ({ children }) => {
   let [sidebarActive, seSidebarActive] = useState(false);
@@ -320,110 +321,124 @@ const MasterLayout = ({ children }) => {
               </ul>
             </li> */}
 {/* Dashboard - Available for both Admin and Reseller */}
-<li>
-  <NavLink
-    to="/"
-    className={(navData) =>
-      navData.isActive ? "active-page" : ""
-    }
-  >
-    <Icon
-      icon="solar:home-smile-angle-outline"
-      className="menu-icon"
-    />
-    <span>Dashboard</span>
-  </NavLink>
-</li>
+<PermissionGuard module="Dashboard" action="view">
+  <li>
+    <NavLink
+      to="/"
+      className={(navData) =>
+        navData.isActive ? "active-page" : ""
+      }
+    >
+      <Icon
+        icon="solar:home-smile-angle-outline"
+        className="menu-icon"
+      />
+      <span>Dashboard</span>
+    </NavLink>
+  </li>
+</PermissionGuard>
 
             {/* Admin Menu Items */}
             {userRole === 'admin' && (
               <>
                 {/* Admin - Admin Only (Direct Navigation) */}
-                <li>
-                  <NavLink
-                    to='/admin-list'
-                    className={(navData) =>
-                      navData.isActive ? "active-page" : ""
-                    }
-                  >
-                    <Icon
-                      icon='flowbite:users-group-outline'
-                      className='menu-icon'
-                    />
-                    <span>Admin</span>
-                  </NavLink>
-                </li>
+                <PermissionGuard module="Admin" action="view">
+                  <li>
+                    <NavLink
+                      to='/admin-list'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <Icon
+                        icon='flowbite:users-group-outline'
+                        className='menu-icon'
+                      />
+                      <span>Admin</span>
+                    </NavLink>
+                  </li>
+                </PermissionGuard>
 
                 {/* Reseller List - Admin Only */}
-                <li>
-                  <NavLink
-                    to='/reseller-list'
-                    className={(navData) =>
-                      navData.isActive ? "active-page" : ""
-                    }
-                  >
-                    <Icon icon='solar:user-bold' className='menu-icon' />
-                    <span>Reseller List</span>
-                  </NavLink>
-                </li>
+                <PermissionGuard module="Reseller" action="view">
+                  <li>
+                    <NavLink
+                      to='/reseller-list'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <Icon icon='solar:user-bold' className='menu-icon' />
+                      <span>Reseller List</span>
+                    </NavLink>
+                  </li>
+                </PermissionGuard>
 
                 {/* Wallet Ledger - Admin Only */}
-                <li>
-                  <NavLink
-                    to="/invoice-list"
-                    className={(navData) =>
-                      navData.isActive ? "active-page" : ""
-                    }
-                  >
-                    <Icon icon="hugeicons:invoice-03" className="menu-icon" />
-                    <span>Wallet Ledger</span>
-                  </NavLink>
-                </li>
+                <PermissionGuard module="Wallet" action="view">
+                  <li>
+                    <NavLink
+                      to="/invoice-list"
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <Icon icon="hugeicons:invoice-03" className="menu-icon" />
+                      <span>Wallet Ledger</span>
+                    </NavLink>
+                  </li>
+                </PermissionGuard>
 
                 {/* Role & Access - Admin Only */}
-                <li className='dropdown'>
-                  <Link to='#'>
-                    <i className='ri-user-settings-line' />
-                    <span>Role &amp; Access</span>
-                  </Link>
-                  <ul className='sidebar-submenu'>
-                    <li>
-                      <NavLink
-                        to='/role-access'
-                        className={(navData) =>
-                          navData.isActive ? "active-page" : ""
-                        }
-                      >
-                        <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
-                        Role &amp; Access
-                      </NavLink>
-                    </li>
-                    <li>
-                      <NavLink
-                        to='/assign-role'
-                        className={(navData) =>
-                          navData.isActive ? "active-page" : ""
-                        }
-                      >
-                        <i className='ri-circle-fill circle-icon text-warning-main w-auto' />{" "}
-                        Assign Role
-                      </NavLink>
-                    </li>
-                  </ul>
-                </li>
+                <PermissionGuard permissionCode="ROLES_AND_ACCESS" action="view">
+                  <li className='dropdown'>
+                    <Link to='#'>
+                      <i className='ri-user-settings-line' />
+                      <span>Role &amp; Access</span>
+                    </Link>
+                    <ul className='sidebar-submenu'>
+                      <li>
+                        <NavLink
+                          to='/role-access'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
+                          Role &amp; Access
+                        </NavLink>
+                      </li>
+                      <PermissionGuard permissionCode="ASSIGN_ROLE" action="view">
+                        <li>
+                          <NavLink
+                            to='/assign-role'
+                            className={(navData) =>
+                              navData.isActive ? "active-page" : ""
+                            }
+                          >
+                            <i className='ri-circle-fill circle-icon text-warning-main w-auto' />{" "}
+                            Assign Role
+                          </NavLink>
+                        </li>
+                      </PermissionGuard>
+                    </ul>
+                  </li>
+                </PermissionGuard>
 
                 {/* Admin Setting - Admin Only */}
-                <li>
-                  <NavLink
-                    to='/admin-setting'
-                    className={(navData) =>
-                      navData.isActive ? "active-page" : ""
-                    }
-                  >
-                    <Icon icon='solar:settings-outline' className='menu-icon' />
-                    <span>Admin Setting</span>
-                  </NavLink>
-                </li>
+                <PermissionGuard permissionCode="ADMIN_SETTINGS" action="view">
+                  <li>
+                    <NavLink
+                      to='/admin-setting'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <Icon icon='solar:settings-outline' className='menu-icon' />
+                      <span>Admin Setting</span>
+                    </NavLink>
+                  </li>
+                </PermissionGuard>
               </>
             )}
 

@@ -32,6 +32,7 @@ import CompanyPage from "./pages/CompanyPage";
 import DropdownPage from "./pages/DropdownPage";
 import ErrorPage from "./pages/ErrorPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import InvoiceAddPage from "./pages/InvoiceAddPage";
 import InvoiceEditPage from "./pages/InvoiceEditPage";
 import InvoiceListPage from "./pages/InvoiceListPage";
@@ -74,17 +75,20 @@ import ViewDetailsPage from "./pages/ViewDetailsPage";
 import ViewProfilePage from "./pages/ViewProfilePage";
 import VoiceGeneratorPage from "./pages/VoiceGeneratorPage";
 import WalletPage from "./pages/WalletPage";
+import { PermissionProvider } from "@/contexts/PermissionContext";
 
 
 function App() {
   return (
-    <BrowserRouter>
-      <RouteScrollToTop />
-      <Routes>
+    <PermissionProvider>
+      <BrowserRouter>
+        <RouteScrollToTop />
+        <Routes>
         {/* Public routes */}
         <Route exact path='/sign-in' element={<SignInPage />} />
         <Route exact path='/sign-up' element={<SignUpPage />} />
         <Route exact path='/forgot-password' element={<ForgotPasswordPage />} />
+        <Route exact path='/reset-password' element={<ResetPasswordPage />} />
         <Route exact path='/access-denied' element={<AccessDeniedPage />} />
         <Route exact path='/coming-soon' element={<ComingSoonPage />} />
         <Route exact path='/maintenance' element={<MaintenancePage />} />
@@ -117,6 +121,7 @@ function App() {
           <Route exact path='/edit-subscription-plan/:id' element={<EditSubscriptionPlanPage />} />
           {/* <Route exact path='/alert' element={<AlertPage />} /> */}
           <Route exact path='/assign-role' element={<AssignRolePage />} />
+          <Route exact path='/role-access' element={<RoleAccessPage />} />
           <Route exact path='/admin-setting' element={<AdminSettingPage />} />
           {/* <Route exact path='/avatar' element={<AvatarPage />} /> */}
           {/* <Route exact path='/badges' element={<BadgesPage />} /> */}
@@ -172,7 +177,6 @@ function App() {
           {/* <Route exact path='/pricing' element={<PricingPage />} /> */}
           {/* <Route exact path='/progress' element={<ProgressPage />} /> */}
           {/* <Route exact path='/radio' element={<RadioPage />} /> */}
-          <Route exact path='/role-access' element={<RoleAccessPage />} />
           {/* <Route exact path='/star-rating' element={<StarRatingPage />} /> */}
           <Route exact path='/starred' element={<StarredPage />} />
           {/* <Route exact path='/switch' element={<SwitchPage />} /> */}
@@ -200,8 +204,9 @@ function App() {
 
         {/* Catch-all */}
         <Route exact path='*' element={<ErrorPage />} />
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+    </PermissionProvider>
   );
 }
 

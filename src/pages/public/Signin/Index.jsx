@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import PasswordField from "@/components/Form/PasswordField";
 import { login } from "@/utils/api";
 import { saveAuthToken, isAuthenticated } from "@/utils/auth";
+import { getUserWithPermissions } from "@/hasura/mutations/userPermissions";
 
 const SignInLayer = () => {
   const navigate = useNavigate();
@@ -36,7 +37,39 @@ const SignInLayer = () => {
       if (result.success && result.data) {
         // Save token and user data from backend response
         const { token, user } = result.data;
-        saveAuthToken(token, user);
+        
+        // Fetch user permissions after login
+        let permissions = null;
+        try {
+          const permResult = await getUserWithPermissions(user.email || email.trim());
+          if (permResult.success && permResult.data) {
+            const roleData = permResult.data.mst_roles;
+            if (roleData) {
+              // Transform permissions into map: { permission_code: { can_view, can_create, can_update, can_delete } }
+              const permMap = {};
+              roleData.mst_role_permissions?.forEach((rp) => {
+                if (rp.mst_permission?.permission_code) {
+                  permMap[rp.mst_permission.permission_code] = {
+                    can_view: rp.can_view || false,
+                    can_create: rp.can_create || false,
+                    can_update: rp.can_update || false,
+                    can_delete: rp.can_delete || false,
+                  };
+                }
+              });
+              permissions = permMap;
+            }
+          }
+        } catch (permError) {
+          console.error("Error fetching permissions:", permError);
+          // Continue login even if permissions fail to load
+        }
+        
+        saveAuthToken(token, user, permissions);
+        
+        // Dispatch event to refresh permissions in PermissionContext
+        window.dispatchEvent(new Event('permissionsUpdated'));
+        
         setError("");
         navigate("/", { replace: true });
       } else {
@@ -110,7 +143,7 @@ const SignInLayer = () => {
                     Remember me{" "}
                   </label>
                 </div>
-                <Link to='#' className='text-primary-600 fw-medium'>
+                <Link to='/forgot-password' className='text-primary-600 fw-medium'>
                   Forgot Password?
                 </Link>
               </div>

@@ -54,6 +54,20 @@ export const register = async (userData) => {
   });
 };
 
+export const forgotPassword = async (email) => {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: { email },
+  });
+};
+
+export const resetPassword = async (token, password) => {
+  return apiRequest('/auth/reset-password', {
+    method: 'POST',
+    body: { token, password },
+  });
+};
+
 /**
  * Admin Management API
  */

@@ -12,11 +12,29 @@ export const generateToken = () => {
 /**
  * Save authentication token and user data
  */
-export const saveAuthToken = (token, userData) => {
+export const saveAuthToken = (token, userData, permissions = null) => {
   localStorage.setItem('authToken', token);
   localStorage.setItem('userData', JSON.stringify(userData));
   localStorage.setItem('isAuthenticated', 'true');
   localStorage.setItem('tokenExpiry', (Date.now() + 7 * 24 * 60 * 60 * 1000).toString()); // 7 days
+  if (permissions) {
+    localStorage.setItem('userPermissions', JSON.stringify(permissions));
+  }
+};
+
+/**
+ * Get user permissions from localStorage
+ */
+export const getUserPermissions = () => {
+  const permissions = localStorage.getItem('userPermissions');
+  if (permissions) {
+    try {
+      return JSON.parse(permissions);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
 };
 
 /**
@@ -70,6 +88,7 @@ export const clearAuth = () => {
   localStorage.removeItem('userData');
   localStorage.removeItem('isAuthenticated');
   localStorage.removeItem('tokenExpiry');
+  localStorage.removeItem('userPermissions');
 };
 
 /**

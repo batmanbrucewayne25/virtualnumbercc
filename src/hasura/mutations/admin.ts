@@ -12,6 +12,7 @@ export const getMstSuperAdmins = async () => {
       email
       phone
       status
+      role_id
       created_at
       updated_at
     }
@@ -20,6 +21,7 @@ export const getMstSuperAdmins = async () => {
   try {
     const result = await graphqlRequest(QUERY);
     if (result?.errors) {
+      console.error("GraphQL errors in getMstSuperAdmins:", result.errors);
       return {
         success: false,
         message: result.errors[0]?.message || "Failed to fetch admins",
@@ -32,11 +34,14 @@ export const getMstSuperAdmins = async () => {
         data: result.data.mst_super_admin,
       };
     }
+    console.warn("No data returned from getMstSuperAdmins query");
     return {
       success: false,
+      message: "No data returned from query",
       data: [],
     };
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Error in getMstSuperAdmins:", error);
     return {
       success: false,
       message: error.message || "Failed to fetch admins",
@@ -67,6 +72,7 @@ export const getMstSuperAdminById = async (id: string) => {
       email
       phone
       status
+      role_id
       created_at
       updated_at
     }
@@ -155,6 +161,7 @@ export const updateMstSuperAdmin = async (id: string, data: {
   email?: string;
   phone?: string;
   status?: boolean;
+  role_id?: string | null;
 }) => {
   // Validate UUID format
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -165,37 +172,77 @@ export const updateMstSuperAdmin = async (id: string, data: {
     };
   }
 
-  const MUTATION = `mutation UpdateMstSuperAdmin(
-    $id: uuid!
-    $first_name: String
-    $last_name: String
-    $email: String
-    $phone: String
-    $status: Boolean
-  ) {
-    update_mst_super_admin_by_pk(
-      pk_columns: { id: $id }
-      _set: {
-        first_name: $first_name
-        last_name: $last_name
-        email: $email
-        phone: $phone
-        status: $status
-      }
-    ) {
-      id
-      first_name
-      last_name
-      email
-      phone
-      status
-      updated_at
-    }
-  }`;
-
   try {
-    const result = await graphqlRequest(MUTATION, { id, ...data });
+    // Build the _set object, only including fields that are explicitly provided (not undefined)
+    const setFields: any = {};
+    const variables: any = { id };
+    const setFieldsList: string[] = [];
+
+    if (data.first_name !== undefined) {
+      setFields.first_name = data.first_name;
+      variables.first_name = data.first_name;
+      setFieldsList.push('first_name: $first_name');
+    }
+    if (data.last_name !== undefined) {
+      setFields.last_name = data.last_name;
+      variables.last_name = data.last_name;
+      setFieldsList.push('last_name: $last_name');
+    }
+    if (data.email !== undefined) {
+      setFields.email = data.email;
+      variables.email = data.email;
+      setFieldsList.push('email: $email');
+    }
+    if (data.phone !== undefined) {
+      setFields.phone = data.phone;
+      variables.phone = data.phone;
+      setFieldsList.push('phone: $phone');
+    }
+    if (data.status !== undefined) {
+      setFields.status = data.status;
+      variables.status = data.status;
+      setFieldsList.push('status: $status');
+    }
+    if (data.role_id !== undefined) {
+      setFields.role_id = data.role_id;
+      variables.role_id = data.role_id;
+      setFieldsList.push('role_id: $role_id');
+    }
+
+    // Build variable definitions dynamically
+    const variableDefs: string[] = ['$id: uuid!'];
+    if (variables.first_name !== undefined) variableDefs.push('$first_name: String');
+    if (variables.last_name !== undefined) variableDefs.push('$last_name: String');
+    if (variables.email !== undefined) variableDefs.push('$email: String');
+    if (variables.phone !== undefined) variableDefs.push('$phone: String');
+    if (variables.status !== undefined) variableDefs.push('$status: Boolean');
+    if (variables.role_id !== undefined) variableDefs.push('$role_id: uuid');
+
+    // Build dynamic mutation - only include fields that are being updated
+    const setClause = setFieldsList.length > 0 
+      ? `_set: { ${setFieldsList.join(', ')} }`
+      : '';
+
+    const MUTATION = `mutation UpdateMstSuperAdmin(
+      ${variableDefs.join('\n      ')}
+    ) {
+      update_mst_super_admin_by_pk(
+        pk_columns: { id: $id }${setClause ? '\n        ' + setClause : ''}
+      ) {
+        id
+        first_name
+        last_name
+        email
+        phone
+        status
+        role_id
+        updated_at
+      }
+    }`;
+
+    const result = await graphqlRequest(MUTATION, variables);
     if (result?.errors) {
+      console.error("GraphQL errors in updateMstSuperAdmin:", result.errors);
       return {
         success: false,
         message: result.errors[0]?.message || "Failed to update admin",

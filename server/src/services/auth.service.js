@@ -2,6 +2,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { hasuraClient, getHasuraClient } from '../config/hasura.client.js';
 
+// JWT configuration with fallback
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
 export class AuthService {
   /**
    * Login user
@@ -151,7 +155,7 @@ export class AuthService {
   static async refreshToken(oldToken) {
     try {
       // Verify old token (allow expired tokens for refresh)
-      const decoded = jwt.verify(oldToken, process.env.JWT_SECRET, {
+      const decoded = jwt.verify(oldToken, JWT_SECRET, {
         ignoreExpiration: false
       });
 
@@ -214,8 +218,8 @@ export class AuthService {
       role: userType // 'admin' or 'reseller'
     };
 
-    return jwt.sign(payload, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+    return jwt.sign(payload, JWT_SECRET, {
+      expiresIn: JWT_EXPIRES_IN
     });
   }
 
@@ -225,6 +229,6 @@ export class AuthService {
    * @returns {object} Decoded token payload
    */
   static verifyToken(token) {
-    return jwt.verify(token, process.env.JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET);
   }
 }

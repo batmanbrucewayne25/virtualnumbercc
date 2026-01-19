@@ -5,6 +5,7 @@ import { getMstResellers, deleteMstReseller, approveMstReseller, rejectMstResell
 import { getUserData } from "@/utils/auth";
 import ApproveResellerModal from "./ApproveResellerModal";
 import RejectResellerModal from "./RejectResellerModal";
+import PermissionGuard from "@/components/PermissionGuard";
 
 const ResellerListLayer = () => {
   const [resellers, setResellers] = useState([]);
@@ -213,16 +214,18 @@ const ResellerListLayer = () => {
             <option value='inactive'>Inactive</option>
           </select>
         </div>
-        <Link
-          to='/add-reseller'
-          className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-        >
-          <Icon
-            icon='ic:baseline-plus'
-            className='icon text-xl line-height-1'
-          />
-          Add New Reseller
-        </Link>
+        <PermissionGuard module="Reseller" action="create">
+          <Link
+            to='/add-reseller'
+            className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+          >
+            <Icon
+              icon='ic:baseline-plus'
+              className='icon text-xl line-height-1'
+            />
+            Add New Reseller
+          </Link>
+        </PermissionGuard>
       </div>
       <div className='card-body p-24'>
         {error && (
@@ -335,29 +338,32 @@ const ResellerListLayer = () => {
                           </span>
                         ) : (
                           <div className='d-flex align-items-center gap-8 justify-content-center'>
-                            
-                            <button
-                              type='button'
-                              onClick={() => handleApproveClick(reseller)}
-                              className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-32-px h-32-px d-flex justify-content-center align-items-center rounded-circle border-0'
-                              title='Approve'
-                            >
-                              <Icon
-                                icon='material-symbols:check-circle-outline'
-                                className='icon text-lg'
-                              />
-                            </button>
-                            <button
-                              type='button'
-                              onClick={() => handleRejectClick(reseller)}
-                              className='bg-danger-focus text-danger-600 bg-hover-danger-200 fw-medium w-32-px h-32-px d-flex justify-content-center align-items-center rounded-circle border-0'
-                              title='Reject'
-                            >
-                              <Icon
-                                icon='material-symbols:cancel-outline'
-                                className='icon text-lg'
-                              />
-                            </button>
+                            <PermissionGuard module="Reseller" action="update">
+                              <button
+                                type='button'
+                                onClick={() => handleApproveClick(reseller)}
+                                className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-32-px h-32-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                                title='Approve'
+                              >
+                                <Icon
+                                  icon='material-symbols:check-circle-outline'
+                                  className='icon text-lg'
+                                />
+                              </button>
+                            </PermissionGuard>
+                            <PermissionGuard module="Reseller" action="update">
+                              <button
+                                type='button'
+                                onClick={() => handleRejectClick(reseller)}
+                                className='bg-danger-focus text-danger-600 bg-hover-danger-200 fw-medium w-32-px h-32-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                                title='Reject'
+                              >
+                                <Icon
+                                  icon='material-symbols:cancel-outline'
+                                  className='icon text-lg'
+                                />
+                              </button>
+                            </PermissionGuard>
                           </div>
                         )}
                       </td>
@@ -374,39 +380,45 @@ const ResellerListLayer = () => {
                       </td>
                       <td className='text-center'>
                         <div className='d-flex align-items-center gap-10 justify-content-center flex-wrap'>
-                          <Link
-                            to={`/view-reseller/${reseller.id}`}
-                            className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='View'
-                          >
-                            <Icon
-                              icon='majesticons:eye-line'
-                              className='icon text-xl'
-                            />
-                          </Link>
-                          <Link
-                            to={`/edit-reseller/${reseller.id}`}
-                            className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='Edit'
-                          >
-                            <Icon icon='lucide:edit' className='menu-icon' />
-                          </Link>
-                          <button
-                            type='button'
-                            onClick={() =>
-                              handleDelete(
-                                reseller.id,
-                                `${reseller.first_name} ${reseller.last_name}`
-                              )
-                            }
-                            className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
-                            title='Delete'
-                          >
-                            <Icon
-                              icon='fluent:delete-24-regular'
-                              className='menu-icon'
-                            />
-                          </button>
+                          <PermissionGuard module="Reseller" action="view">
+                            <Link
+                              to={`/view-reseller/${reseller.id}`}
+                              className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
+                              title='View'
+                            >
+                              <Icon
+                                icon='majesticons:eye-line'
+                                className='icon text-xl'
+                              />
+                            </Link>
+                          </PermissionGuard>
+                          <PermissionGuard module="Reseller" action="update">
+                            <Link
+                              to={`/edit-reseller/${reseller.id}`}
+                              className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
+                              title='Edit'
+                            >
+                              <Icon icon='lucide:edit' className='menu-icon' />
+                            </Link>
+                          </PermissionGuard>
+                          <PermissionGuard module="Reseller" action="delete">
+                            <button
+                              type='button'
+                              onClick={() =>
+                                handleDelete(
+                                  reseller.id,
+                                  `${reseller.first_name} ${reseller.last_name}`
+                                )
+                              }
+                              className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                              title='Delete'
+                            >
+                              <Icon
+                                icon='fluent:delete-24-regular'
+                                className='menu-icon'
+                              />
+                            </button>
+                          </PermissionGuard>
                         </div>
                       </td>
                     </tr>

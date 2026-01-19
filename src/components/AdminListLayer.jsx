@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSuperAdmins, deleteMstSuperAdmin } from "@/hasura/mutations/admin";
+import PermissionGuard from "@/components/PermissionGuard";
 
 const AdminListLayer = () => {
   const [admins, setAdmins] = useState([]);
@@ -102,16 +103,18 @@ const AdminListLayer = () => {
             <option value='inactive'>Inactive</option>
           </select>
         </div>
-        <Link
-          to='/add-admin'
-          className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-        >
-          <Icon
-            icon='ic:baseline-plus'
-            className='icon text-xl line-height-1'
-          />
-          Add New Admin
-        </Link>
+        <PermissionGuard module="Admin" action="create">
+          <Link
+            to='/add-admin'
+            className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+          >
+            <Icon
+              icon='ic:baseline-plus'
+              className='icon text-xl line-height-1'
+            />
+            Add New Admin
+          </Link>
+        </PermissionGuard>
       </div>
       <div className='card-body p-24'>
         {error && (
@@ -195,39 +198,45 @@ const AdminListLayer = () => {
                       </td>
                       <td className='text-center'>
                         <div className='d-flex align-items-center gap-10 justify-content-center'>
-                          <Link
-                            to={`/view-admin/${admin.id}`}
-                            className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='View'
-                          >
-                            <Icon
-                              icon='majesticons:eye-line'
-                              className='icon text-xl'
-                            />
-                          </Link>
-                          <Link
-                            to={`/edit-admin/${admin.id}`}
-                            className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='Edit'
-                          >
-                            <Icon icon='lucide:edit' className='menu-icon' />
-                          </Link>
-                          <button
-                            type='button'
-                            onClick={() =>
-                              handleDelete(
-                                admin.id,
-                                `${admin.first_name} ${admin.last_name}`
-                              )
-                            }
-                            className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
-                            title='Delete'
-                          >
-                            <Icon
-                              icon='fluent:delete-24-regular'
-                              className='menu-icon'
-                            />
-                          </button>
+                          <PermissionGuard module="Admin" action="view">
+                            <Link
+                              to={`/view-admin/${admin.id}`}
+                              className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
+                              title='View'
+                            >
+                              <Icon
+                                icon='majesticons:eye-line'
+                                className='icon text-xl'
+                              />
+                            </Link>
+                          </PermissionGuard>
+                          <PermissionGuard module="Admin" action="update">
+                            <Link
+                              to={`/edit-admin/${admin.id}`}
+                              className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
+                              title='Edit'
+                            >
+                              <Icon icon='lucide:edit' className='menu-icon' />
+                            </Link>
+                          </PermissionGuard>
+                          <PermissionGuard module="Admin" action="delete">
+                            <button
+                              type='button'
+                              onClick={() =>
+                                handleDelete(
+                                  admin.id,
+                                  `${admin.first_name} ${admin.last_name}`
+                                )
+                              }
+                              className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                              title='Delete'
+                            >
+                              <Icon
+                                icon='fluent:delete-24-regular'
+                                className='menu-icon'
+                              />
+                            </button>
+                          </PermissionGuard>
                         </div>
                       </td>
                     </tr>

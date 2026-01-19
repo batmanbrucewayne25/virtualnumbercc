@@ -1,515 +1,215 @@
-# Application Analysis Report
+# Virtual Number Application - Complete Analysis
 
-## Executive Summary
+## 🏗️ Project Structure
 
-This is a **Virtual Number/Reseller Management Admin Dashboard** application built with React and Vite. The application serves as an administrative platform for managing resellers, their verification processes, payment gateways, integrations (SMTP, WhatsApp), and various administrative functions.
+### **Frontend (React + Vite)**
+- **Location**: Root directory (`src/`)
+- **Framework**: React 18 with Vite
+- **Entry**: `src/main.jsx`
+- **Main Layout**: `src/masterLayout/MasterLayout.jsx`
+- **Pages**: `src/pages/` (122 files)
+- **Components**: `src/components/` (365 files)
+- **Utils**: `src/utils/api.js`, `src/utils/auth.js`
+- **Hasura Client**: `src/hasura/` (GraphQL mutations/queries)
 
----
+### **Backend (Express.js)**
+Two separate authentication systems exist:
 
-## 1. Technology Stack
+#### **1. New System (Recommended - `server/src/`)**
+- **Entry Point**: `server/src/index.js` (configured in package.json as `main`)
+- **Routes**: 
+  - `server/src/routes/auth.routes.js` → uses controllers
+  - `server/src/routes/admin.routes.js` → admin endpoints
+- **Controllers**: `server/src/controllers/auth.controller.js`
+- **Services**: 
+  - `server/src/services/auth.service.js` (AuthService class)
+  - `server/src/services/admin.service.js`
+- **Middleware**: 
+  - `server/src/middleware/auth.middleware.js`
+  - `server/src/middleware/error.middleware.js`
+- **Config**: `server/src/config/hasura.client.js` (HasuraClient class)
+- **Features**: 
+  - ✅ Supports admin login from `mst_super_admin` table
+  - ✅ Supports reseller login from `mst_reseller` table
+  - ⚠️ **ISSUE**: JWT_SECRET not using fallback constants
 
-### Frontend Framework
-- **React 18.2.0** - UI library
-- **Vite 6.1.0** - Build tool and dev server
-- **React Router DOM 6.22.1** - Client-side routing
+#### **2. Old System (`server/` root)**
+- **Entry Point**: `server/index.js` (alternative entry)
+- **Routes**: `server/routes/auth.js` → uses services directly
+- **Services**: 
+  - `server/services/authService.js` (function exports)
+  - `server/services/hasuraService.js` (GraphQL client)
+- **Middleware**: 
+  - `server/middleware/authMiddleware.js`
+  - `server/middleware/errorHandler.js`
+- **Features**: 
+  - ❌ Does NOT support admin login (only checks `mst_reseller`)
+  - ✅ Has JWT_SECRET fallback configured
 
-### Backend Integration
-- **Hasura GraphQL** - Backend API (via GraphQL queries/mutations)
-- External API endpoints for verification services:
-  - PAN verification: `https://virtualnumber.onrender.com/api/pan/verify`
-  - Aadhaar verification: `https://virtualnumber.onrender.com/api/aadhaar/*`
-  - GST verification: `https://virtualnumber.onrender.com/api/gst/verify`
+## 🔐 Authentication Flow Analysis
 
-### UI Libraries & Components
-- **Bootstrap 5.3.3** - CSS framework
-- **React Bootstrap 2.10.5** - React components
-- **ApexCharts 4.4.0** - Data visualization
-- **React ApexCharts 1.7.0** - React wrapper for ApexCharts
-- **DataTables 2.1.8** - Table functionality
-- **Flatpickr 4.6.13** - Date picker
-- **React Quill 2.0.0** - Rich text editor
-- **React Toastify 10.0.5** - Notifications
-- **FullCalendar 6.1.10** - Calendar component
-- **LightGallery 2.8.2** - Image gallery
-- **jQuery 3.7.1** - DOM manipulation (legacy support)
+### **Current Issue: JWT_SECRET Error**
 
-### Development Tools
-- **TypeScript** - Type checking (partial implementation)
-- **ESLint 9.19.0** - Code linting
-- **@vitejs/plugin-react** - Vite React plugin
+**Problem Location**: `server/src/services/auth.service.js`
 
----
+**Lines 217-228**: 
+```javascript
+return jwt.sign(payload, process.env.JWT_SECRET, {  // ❌ No fallback!
+  expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+});
 
-## 2. Application Architecture
-
-### Project Structure
-```
-virtualnumbercc/
-├── public/                    # Static assets
-│   ├── assets/               # CSS, images, fonts
-│   └── _redirects            # Netlify/Vercel redirects
-├── src/
-│   ├── components/           # Reusable UI components (351 files)
-│   ├── pages/               # Page components (110 files)
-│   │   └── public/          # Public pages (SignIn, Signup)
-│   ├── masterLayout/         # Main layout wrapper
-│   ├── hasura/              # GraphQL integration
-│   │   └── mutations/       # GraphQL queries/mutations
-│   ├── helper/              # Utility components
-│   ├── hook/                # Custom React hooks
-│   ├── utils/               # Utility functions
-│   │   └── auth.js          # Authentication utilities
-│   ├── types/               # TypeScript type definitions
-│   ├── App.jsx              # Main app component with routing
-│   └── main.jsx             # Application entry point
-├── package.json
-├── vite.config.js
-├── tsconfig.json
-└── eslint.config.js
+return jwt.verify(token, process.env.JWT_SECRET);  // ❌ No fallback!
 ```
 
-### Key Architectural Patterns
+**Root Cause**: 
+- Constants with fallbacks exist at top of file (lines 5-7)
+- But `generateToken()` and `verifyToken()` methods use `process.env.JWT_SECRET` directly
+- When `.env` file is missing or `JWT_SECRET` is undefined, JWT signing fails
 
-1. **Component-Based Architecture**: React functional components with hooks
-2. **Route Protection**: Protected routes using `ProtectedRoutes` wrapper
-3. **Layout System**: Master layout wrapper for consistent UI
-4. **GraphQL Integration**: Centralized Hasura client for data operations
-5. **Authentication**: Token-based auth stored in localStorage
+### **Authentication Paths**
 
----
-
-## 3. Core Features
-
-### 3.1 Authentication & Authorization
-
-**Authentication System:**
-- Token-based authentication using localStorage
-- Token expiry (7 days)
-- Password verification (currently plain text comparison - **SECURITY CONCERN**)
-- Protected routes with automatic redirect to sign-in
-
-**User Types:**
-- Admin users
-- Resellers (mst_reseller table)
-
-**Key Files:**
-- `src/utils/auth.js` - Authentication utilities
-- `src/helper/ProtectedRoutes.jsx` - Route protection
-- `src/pages/public/Signin/Index.jsx` - Sign-in page
-- `src/pages/public/Signup/Index.tsx` - Multi-step signup
-
-### 3.2 Reseller Management
-
-**Multi-Step Signup Process (7 Steps):**
-1. **Step 1**: Basic registration (name, email, phone, password)
-2. **Step 2**: Email & Phone OTP verification
-3. **Step 3**: OTP verification confirmation
-4. **Step 4**: PAN card verification
-5. **Step 5**: Aadhaar card verification
-6. **Step 6**: GST verification
-7. **Step 7**: Profile completion (image upload, address)
-
-**Reseller Data Model:**
-- Personal info: first_name, last_name, email, phone, dob, gender
-- Verification flags: is_email_verified, is_phone_verified, is_pan_verified, is_aadhaar_verified, is_gst_verified
-- Business info: business_name, legal_name, gstin, gst_pan_number, constitution_of_business
-- Status tracking: current_step, signup_completed, status
-
-**Key Files:**
-- `src/hasura/mutations/index.ts` - GraphQL mutations for reseller operations
-- `src/pages/public/Signup/steps/` - Individual signup steps
-
-### 3.3 Admin Dashboard
-
-**Dashboard Features:**
-- Statistics cards (Total Resellers, Sales, Subscribers)
-- User overview charts
-- Latest registered users
-- Top performers
-- Top countries
-- Generated content metrics
-
-**Key Files:**
-- `src/pages/HomePageOne.jsx` - Main dashboard
-- `src/components/DashBoardLayerOne.jsx` - Dashboard components
-
-### 3.4 User Management
-
-**Admin Features:**
-- Add Admin (`/add-admin`)
-- Admin List (`/admin-list`)
-- Users List (`/admin-list`)
-- Assign Roles (`/assign-role`)
-- Role & Access Management (`/role-access`)
-- View Profile (`/view-profile`)
-
-**Key Files:**
-- `src/pages/AddUserPage.jsx`
-- `src/pages/UsersListPage.jsx`
-- `src/pages/AssignRolePage.jsx`
-- `src/pages/RoleAccessPage.jsx`
-
-### 3.5 Payment & Financial Management
-
-**Payment Features:**
-- Payment Gateway Configuration (`/payment-gateway`)
-- Razorpay Integration (`/razorpay`)
-- Wallet Management (`/wallet`)
-- Invoice Management:
-  - Invoice List (`/invoice-list`)
-  - Invoice Add (`/invoice-add`)
-  - Invoice Edit (`/invoice-edit`)
-  - Invoice Preview (`/invoice-preview`)
-
-**Key Files:**
-- `src/pages/PaymentGatewayPage.jsx`
-- `src/pages/Razorpay.jsx`
-- `src/pages/WalletPage.jsx`
-- `src/pages/InvoiceListPage.jsx`
-
-### 3.6 Integration Management
-
-**SMTP Integration:**
-- SMTP Configuration (`/smtp`)
-- SMTP Templates (`/smtptemplate`)
-
-**WhatsApp Integration:**
-- WhatsApp Configuration (`/whatsapp`)
-- WhatsApp Templates (`/whatsapptemp`)
-
-**Key Files:**
-- `src/pages/SMTP.jsx`
-- `src/pages/Smtptemplate.jsx`
-- `src/pages/Whatsapp.jsx`
-- `src/pages/Whatsapptemp.jsx`
-
-### 3.7 Additional Features
-
-- **Company Settings** (`/company`)
-- **Language Management** (`/language`)
-- **Theme Toggle** (Dark/Light mode)
-- **Notifications** (`/notification`)
-- **Terms & Conditions** (`/terms-condition`)
-- **Referral System** (Link in sidebar)
-
----
-
-## 4. Data Flow
-
-### Authentication Flow
+#### **Path 1: New System (`src/` directory)**
 ```
-1. User enters credentials → SignIn page
-2. Query Hasura for user by email → loginMstReseller()
-3. Verify password (plain text comparison)
-4. Generate token → saveAuthToken()
-5. Store in localStorage → Redirect to dashboard
+Client Request
+  → server/src/index.js
+  → server/src/routes/auth.routes.js
+  → server/src/controllers/auth.controller.js
+  → server/src/services/auth.service.js (AuthService.login)
+    → Checks mst_super_admin (admin)
+    → Falls back to mst_reseller (reseller)
+    → Generates JWT token ⚠️ (has JWT_SECRET issue)
 ```
 
-### Signup Flow
+#### **Path 2: Old System (`server/` root)**
 ```
-1. Step 1: Basic registration → insertMstReseller()
-2. Step 2: OTP sent to email/phone
-3. Step 3: OTP verification → updateOtpVerificationStep()
-4. Step 4: PAN verification → External API → updatePanStep()
-5. Step 5: Aadhaar verification → External API → updateAadhaarStep()
-6. Step 6: GST verification → External API → updateGstStep()
-7. Step 7: Profile completion → completeSignupStep()
+Client Request
+  → server/index.js
+  → server/routes/auth.js
+  → server/services/authService.js (login function)
+    → Only checks mst_reseller ❌
+    → Generates JWT token ✅ (has fallback)
 ```
 
-### GraphQL Operations
-All database operations go through Hasura GraphQL:
-- Queries: User lookup, data fetching
-- Mutations: User creation, updates
-- Location: `src/hasura/index.js` (client) and `src/hasura/mutations/index.ts` (operations)
+## 📊 Database Schema
 
----
+### **Tables**
+1. **`mst_super_admin`**: Admin users (created by `seedAdmin.js`)
+   - Fields: `id`, `first_name`, `last_name`, `email`, `phone`, `password_hash`, `status`
+   - Used by: Admin authentication
 
-## 5. Security Analysis
+2. **`mst_reseller`**: Regular users/resellers
+   - Fields: `id`, `first_name`, `last_name`, `email`, `phone`, `password_hash`, `status`, `approval_date`, `rejection_reason`
+   - Used by: Reseller authentication
 
-### ⚠️ Security Concerns
+### **Seed Admin Script**
+- **Location**: `server/src/scripts/seedAdmin.js`
+- **Credentials**: 
+  - Email: `admin@virtualnumber.com`
+  - Password: `Admin@123`
+- **Creates**: Admin user in `mst_super_admin` table
+- **Password**: Hashed with bcrypt (starts with `$2b$`)
 
-1. **Password Storage**: 
-   - Passwords stored as plain text (password_hash field name is misleading)
-   - No hashing before storage
-   - Direct string comparison for verification
-   - **CRITICAL**: Should use bcrypt or similar hashing
+## ⚙️ Environment Configuration
 
-2. **Token Generation**:
-   - Simple base64 encoding, not cryptographically secure
-   - No JWT implementation
-   - Token stored in localStorage (vulnerable to XSS)
-
-3. **Authentication**:
-   - No refresh token mechanism
-   - Token expiry checked client-side only
-   - No server-side session validation
-
-4. **API Security**:
-   - Admin secret exposed in environment variables (client-side)
-   - No rate limiting visible
-   - External API calls without visible authentication
-
-### ✅ Security Strengths
-
-1. Route protection implemented
-2. Token expiry mechanism (7 days)
-3. Protected routes redirect to sign-in
-4. Password field component with show/hide toggle
-
----
-
-## 6. Code Quality
-
-### Strengths
-- ✅ Modern React patterns (hooks, functional components)
-- ✅ TypeScript partially implemented
-- ✅ ESLint configuration
-- ✅ Component-based architecture
-- ✅ Separation of concerns (components, pages, utils)
-- ✅ Path aliases configured (`@/` for src)
-
-### Areas for Improvement
-- ⚠️ Mixed JS/TS files (inconsistent typing)
-- ⚠️ Large component files (MasterLayout.jsx is 2145 lines)
-- ⚠️ Commented-out code in many files
-- ⚠️ jQuery dependency (legacy code)
-- ⚠️ No visible error boundaries
-- ⚠️ Limited TypeScript usage
-- ⚠️ No visible unit tests
-
----
-
-## 7. Dependencies Analysis
-
-### Production Dependencies (62 packages)
-**Core:**
-- react, react-dom, react-router-dom
-
-**UI/UX:**
-- bootstrap, react-bootstrap
-- apexcharts, react-apexcharts
-- datatables.net
-- flatpickr, react-datepicker
-- react-quill, react-quill-new
-- lightgallery, lightgallery.js
-
-**Utilities:**
-- uuid, jquery
-- react-toastify
-- react-modal-video
-- react-scroll-to-top
-
-**Development Dependencies:**
-- vite, @vitejs/plugin-react
-- eslint, eslint plugins
-- @types/react, @types/react-dom
-
-### Potential Issues
-- **jQuery dependency**: Legacy library, consider removing
-- **react-quill-new**: Duplicate of react-quill?
-- **Multiple drag-and-drop libraries**: @dnd-kit, @hello-pangea/dnd, react-beautiful-dnd
-
----
-
-## 8. Environment Configuration
-
-### Required Environment Variables
+### **Required Variables**
 ```env
-VITE_HASURA_GRAPHQL_ENDPOINT=https://your-hasura-instance/v1/graphql
-VITE_HASURA_ADMIN_SECRET=your_admin_secret
+JWT_SECRET=your-secret-key-here  # ⚠️ Currently missing or undefined
+JWT_EXPIRES_IN=7d
+HASURA_GRAPHQL_ENDPOINT=https://your-hasura-instance/v1/graphql
+HASURA_ADMIN_SECRET=your_hasura_admin_secret
+PORT=3001
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:5173
 ```
 
-### Configuration Files
-- `vite.config.js` - Vite configuration with path aliases
-- `tsconfig.json` - TypeScript configuration
-- `eslint.config.js` - ESLint rules
-- `public/_redirects` - Deployment redirects
+### **dotenv Loading**
+- `server/src/index.js`: Loads dotenv FIRST (line 2-3) ✅
+- `server/index.js`: Loads dotenv AFTER imports (line 3, 8) ⚠️
 
----
+## 🔧 Issues Found
 
-## 9. Routing Structure
+### **Critical Issues**
 
-### Public Routes
-- `/sign-in` - Sign in page
-- `/sign-up` - Multi-step signup
-- `/forgot-password` - Password recovery
-- `/access-denied` - Access denied page
-- `/coming-soon` - Coming soon page
-- `/maintenance` - Maintenance page
-- `/blank-page` - Blank page
+1. **JWT_SECRET Error** ⚠️
+   - **File**: `server/src/services/auth.service.js`
+   - **Lines**: 217, 228
+   - **Problem**: Uses `process.env.JWT_SECRET` directly without fallback
+   - **Fix**: Use constants `JWT_SECRET` and `JWT_EXPIRES_IN` defined at top
 
-### Protected Routes (Require Authentication)
-- `/` - Dashboard (HomePageOne)
-- `/index-2` through `/index-11` - Alternative dashboard views
-- `/add-admin` - Add admin user
-- `/assign-role` - Assign roles
-- `/admin-list` - Admin list
-- `/invoice-*` - Invoice management
-- `/smtp`, `/whatsapp` - Integration settings
-- `/payment-gateway`, `/razorpay` - Payment settings
-- `/role-access` - Role management
-- `/users-grid`, `/users-list` - User management
-- `/view-profile`, `/view-details` - Profile views
-- `/company` - Company settings
-- `/language` - Language settings
-- And many more...
+2. **Dual Authentication Systems**
+   - Two separate auth implementations exist
+   - Old system doesn't support admin login
+   - Causes confusion about which entry point is used
 
----
+3. **Missing Admin Support in Old System**
+   - `server/services/authService.js` only checks `mst_reseller`
+   - Admin users created by `seedAdmin.js` cannot login via old system
 
-## 10. Database Schema (Inferred from GraphQL)
+### **Code Quality Issues**
 
-### mst_reseller Table
-```typescript
-{
-  id: number
-  first_name: string
-  last_name: string
-  email: string
-  phone: string
-  password_hash: string  // Actually plain text
-  current_step: number (1-7)
-  signup_completed: boolean
-  status: boolean
-  
-  // Verification flags
-  is_email_verified: boolean
-  is_phone_verified: boolean
-  is_pan_verified: boolean
-  is_aadhaar_verified: boolean
-  is_gst_verified: boolean
-  
-  // PAN details
-  pan_number: string
-  pan_dob: string
-  pan_full_name: string
-  
-  // Aadhaar details
-  aadhaar_number: string
-  dob: string
-  gender: string
-  
-  // GST details
-  gstin: string
-  gst_pan_number: string
-  business_name: string
-  legal_name: string
-  gstin_status: string
-  constitution_of_business: string
-  nature_bus_activities: string
-  
-  // Profile
-  profile_image: string
-  address: string[]
-  business_address: string
-  
-  // Timestamps
-  created_at: timestamp
-  updated_at: timestamp
-}
-```
+1. **Inconsistent Error Handling**
+   - Old system: Throws errors directly
+   - New system: Uses asyncHandler wrapper
 
----
+2. **Password Hash Detection**
+   - Old system: Only checks `$2a$` and `$2b$`
+   - New system: Checks `$2a$`, `$2b$`, and legacy plain text
+   - Missing `$2y$` support in old system
 
-## 11. External Integrations
+## ✅ Recommendations
 
-### Verification APIs
-1. **PAN Verification**: `https://virtualnumber.onrender.com/api/pan/verify`
-2. **Aadhaar OTP Generation**: `https://virtualnumber.onrender.com/api/aadhaar/generate-otp`
-3. **Aadhaar OTP Submission**: `https://virtualnumber.onrender.com/api/aadhaar/submit-otp`
-4. **GST Verification**: `https://virtualnumber.onrender.com/api/gst/verify`
+### **Immediate Fixes**
 
-### Payment Gateways
-- Razorpay integration configured
+1. **Fix JWT_SECRET in auth.service.js**
+   ```javascript
+   // Change from:
+   return jwt.sign(payload, process.env.JWT_SECRET, {...});
+   
+   // To:
+   return jwt.sign(payload, JWT_SECRET, {...});
+   ```
 
-### Communication
-- SMTP for email
-- WhatsApp Business API
+2. **Ensure .env file exists** in `server/` directory
+   - Copy from `.env.example` if available
+   - Set `JWT_SECRET` value
 
----
+3. **Use single entry point** (recommend `server/src/index.js`)
+   - Deprecate `server/index.js` or merge functionality
 
-## 12. Recommendations
+### **Long-term Improvements**
 
-### Critical (Security)
-1. **Implement password hashing** (bcrypt/argon2)
-2. **Use JWT tokens** instead of simple base64 encoding
-3. **Move admin secret to server-side** (never expose in client)
-4. **Implement refresh tokens** for better security
-5. **Add rate limiting** for authentication endpoints
-6. **Implement CSRF protection**
+1. **Consolidate Authentication Systems**
+   - Choose one system (recommend `src/` structure)
+   - Remove duplicate code
+   - Ensure admin login support
 
-### High Priority
-1. **Complete TypeScript migration** (currently partial)
-2. **Add error boundaries** for better error handling
-3. **Implement proper error logging** (Sentry, LogRocket, etc.)
-4. **Add unit tests** (Jest, React Testing Library)
-5. **Remove jQuery dependency** (use native JS or React)
-6. **Clean up commented code**
+2. **Add Environment Variable Validation**
+   - Validate required env vars on startup
+   - Provide clear error messages if missing
 
-### Medium Priority
-1. **Split large components** (MasterLayout.jsx)
-2. **Implement code splitting** for better performance
-3. **Add loading states** consistently across app
-4. **Optimize bundle size** (remove unused dependencies)
-5. **Add API response caching** where appropriate
-6. **Implement proper form validation** library (Formik, React Hook Form)
+3. **Standardize Password Hash Detection**
+   - Support all bcrypt variants (`$2a$`, `$2b$`, `$2y$`)
+   - Remove legacy plain text support (after migration)
 
-### Low Priority
-1. **Add Storybook** for component documentation
-2. **Implement E2E tests** (Playwright, Cypress)
-3. **Add performance monitoring** (Web Vitals)
-4. **Improve accessibility** (ARIA labels, keyboard navigation)
-5. **Add internationalization** (i18n) if needed
+4. **Add Logging**
+   - Log authentication attempts
+   - Log missing environment variables
 
----
+## 🚀 Current State Summary
 
-## 13. Deployment
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Frontend | ✅ Working | React app with Hasura integration |
+| Backend Entry (src/) | ⚠️ Has Issues | JWT_SECRET not using fallback |
+| Backend Entry (root) | ✅ Working | But missing admin support |
+| Admin Login | ⚠️ Partial | Only works with `src/` system |
+| Reseller Login | ✅ Working | Works in both systems |
+| Seed Admin Script | ✅ Working | Creates admin correctly |
 
-### Build Configuration
-- **Build command**: `npm run build`
-- **Output directory**: `dist/` (Vite default)
-- **Preview**: `npm run preview`
+## 📝 Next Steps
 
-### Deployment Platforms
-- Netlify/Vercel ready (has `_redirects` file)
-- Can be deployed to any static hosting service
-
-### Environment Setup
-1. Set `VITE_HASURA_GRAPHQL_ENDPOINT`
-2. Set `VITE_HASURA_ADMIN_SECRET`
-3. Build and deploy
-
----
-
-## 14. Application Purpose
-
-Based on the codebase analysis, this application is:
-
-**A Virtual Number/Reseller Management Platform** that allows:
-- Resellers to register and complete multi-step KYC verification (PAN, Aadhaar, GST)
-- Admins to manage resellers, users, and system settings
-- Integration with payment gateways (Razorpay)
-- Communication integrations (SMTP, WhatsApp)
-- Financial tracking (wallets, invoices)
-- Role-based access control
-
-**Target Users:**
-- Resellers (end users registering through signup)
-- Administrators (managing the platform)
-
----
-
-## 15. Conclusion
-
-This is a **feature-rich admin dashboard** for managing a virtual number/reseller business. The application has a solid foundation with modern React patterns but requires **critical security improvements**, especially around password handling and authentication. The codebase is well-organized but would benefit from TypeScript migration, testing, and code cleanup.
-
-**Overall Assessment:**
-- **Functionality**: ⭐⭐⭐⭐ (4/5) - Comprehensive feature set
-- **Security**: ⭐⭐ (2/5) - Critical issues need addressing
-- **Code Quality**: ⭐⭐⭐ (3/5) - Good structure, needs refinement
-- **Maintainability**: ⭐⭐⭐ (3/5) - Could be improved with TypeScript and tests
-
----
-
-**Generated**: $(date)
-**Application**: Virtual Number/Reseller Management Dashboard
-**Version**: Based on package.json v0.0.0
+1. Fix JWT_SECRET usage in `auth.service.js`
+2. Test admin login with seeded credentials
+3. Decide on single entry point strategy
+4. Add environment variable validation
+5. Update documentation with correct setup steps
