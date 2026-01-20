@@ -89,6 +89,29 @@ export class AdminService {
       // Hash password
       const password_hash = await this.hashPassword(password);
 
+      // Get role name if role_id is provided
+      let roleName = null;
+      if (otherData.role_id) {
+        try {
+          const roleQuery = `
+            query GetRoleById($id: uuid!) {
+              mst_role_by_pk(id: $id) {
+                id
+                role_name
+              }
+            }
+          `;
+          const client = getHasuraClient();
+          const roleResult = await client.client.request(roleQuery, { id: otherData.role_id });
+          if (roleResult.mst_role_by_pk) {
+            roleName = roleResult.mst_role_by_pk.role_name;
+          }
+        } catch (roleError) {
+          console.warn('Could not fetch role name:', roleError);
+          // Continue without role name
+        }
+      }
+
       // Create admin in Hasura
       const mutation = `
         mutation InsertAdmin(
@@ -98,6 +121,7 @@ export class AdminService {
           $phone: String
           $password_hash: String!
           $status: Boolean!
+          $role_id: uuid
         ) {
           insert_mst_super_admin_one(object: {
             first_name: $first_name
@@ -106,6 +130,7 @@ export class AdminService {
             phone: $phone
             password_hash: $password_hash
             status: $status
+            role_id: $role_id
           }) {
             id
             first_name
@@ -113,6 +138,7 @@ export class AdminService {
             email
             phone
             status
+            role_id
             created_at
           }
         }
@@ -121,12 +147,66 @@ export class AdminService {
       const variables = {
         ...otherData,
         password_hash,
-        phone: otherData.phone || null
+        phone: otherData.phone || null,
+        role_id: otherData.role_id || null
       };
 
       const client = getHasuraClient();
       const data = await client.client.request(mutation, variables);
-      return data.insert_mst_super_admin_one;
+      const createdAdmin = data.insert_mst_super_admin_one;
+
+      // Send welcome email with credentials
+      try {
+        console.log('[Admin Creation] 📧 Attempting to send welcome email to:', createdAdmin.email);
+        console.log('[Admin Creation] Role name:', roleName || 'No role assigned');
+        console.log('[Admin Creation] Password available:', password ? 'Yes' : 'No');
+        
+        // Import email service - use relative path from server/src/services to server/services
+        // Path: ../../services/emailService.js (up two levels from src/services to server, then into services)
+        const emailModule = await import('../../services/emailService.js');
+        console.log('[Admin Creation] Email module imported. Available exports:', Object.keys(emailModule));
+        
+        if (!emailModule.sendAdminWelcomeEmail) {
+          console.error('[Admin Creation] ❌ sendAdminWelcomeEmail function not found in emailService module');
+          console.error('[Admin Creation] Available exports:', Object.keys(emailModule));
+          throw new Error('sendAdminWelcomeEmail function not found in emailService module');
+        }
+
+        console.log('[Admin Creation] Calling sendAdminWelcomeEmail with:', {
+          email: createdAdmin.email,
+          firstName: createdAdmin.first_name,
+          lastName: createdAdmin.last_name,
+          hasPassword: !!password,
+          roleName: roleName
+        });
+        
+        const emailResult = await emailModule.sendAdminWelcomeEmail(
+          createdAdmin.email,
+          createdAdmin.first_name,
+          createdAdmin.last_name,
+          password, // Send plain password in email
+          roleName
+        );
+
+        console.log('[Admin Creation] Email result:', JSON.stringify(emailResult, null, 2));
+
+        if (!emailResult.success) {
+          console.error('[Admin Creation] ❌ Failed to send admin welcome email:', emailResult.message);
+          // Don't fail admin creation if email fails, just log it
+        } else {
+          console.log('[Admin Creation] ✅ Welcome email sent successfully! Message ID:', emailResult.messageId);
+        }
+      } catch (emailError) {
+        console.error('[Admin Creation] ❌ Error sending admin welcome email:', emailError.message);
+        console.error('[Admin Creation] Error name:', emailError.name);
+        console.error('[Admin Creation] Error code:', emailError.code);
+        if (emailError.stack) {
+          console.error('[Admin Creation] Error stack:', emailError.stack);
+        }
+        // Don't fail admin creation if email fails
+      }
+
+      return createdAdmin;
     } catch (error) {
       console.error('Error creating admin:', error);
       throw new Error(error.message || 'Failed to create admin in database');

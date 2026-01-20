@@ -139,4 +139,43 @@ router.post('/reset-password', async (req, res, next) => {
   }
 });
 
+/**
+ * @route   POST /api/auth/change-password
+ * @desc    Change password for authenticated user
+ * @access  Private
+ */
+router.post('/change-password', authenticateToken, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const { userId, role } = req.user;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Current password and new password are required' 
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'New password must be at least 6 characters long' 
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'New password must be different from current password' 
+      });
+    }
+
+    const { changePassword } = await import('../services/authService.js');
+    const result = await changePassword(userId, currentPassword, newPassword, role);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

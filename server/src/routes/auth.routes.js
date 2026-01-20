@@ -3,7 +3,8 @@ import {
   login,
   register,
   verifyToken,
-  refreshToken
+  refreshToken,
+  changePassword
 } from '../controllers/auth.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
@@ -36,5 +37,12 @@ router.post('/verify', authMiddleware, verifyToken);
  * @access  Public
  */
 router.post('/refresh', refreshToken);
+
+/**
+ * @route   POST /api/auth/change-password
+ * @desc    Change password for authenticated user
+ * @access  Private
+ */
+router.post('/change-password', authMiddleware, changePassword);
 
 export default router;

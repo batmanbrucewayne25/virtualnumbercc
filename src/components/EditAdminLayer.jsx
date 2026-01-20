@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSuperAdminById, updateMstSuperAdmin } from "@/hasura/mutations/admin";
+import { getMstRoles } from "@/hasura/mutations/role";
 
 const EditAdminLayer = () => {
   const { id } = useParams();
@@ -10,14 +11,39 @@ const EditAdminLayer = () => {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [roles, setRoles] = useState([]);
+  const [loadingRoles, setLoadingRoles] = useState(true);
   
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
     email: "",
     phone: "",
+    role_id: "",
     status: true,
   });
+
+  useEffect(() => {
+    const fetchRoles = async () => {
+      setLoadingRoles(true);
+      try {
+        const result = await getMstRoles();
+        if (result.success) {
+          // Filter only active roles
+          const activeRoles = (result.data || []).filter(role => role.is_active);
+          setRoles(activeRoles);
+        } else {
+          console.error("Failed to load roles:", result.message);
+        }
+      } catch (err) {
+        console.error("Error fetching roles:", err);
+      } finally {
+        setLoadingRoles(false);
+      }
+    };
+
+    fetchRoles();
+  }, []);
 
   useEffect(() => {
     const currentId = id;
@@ -52,6 +78,7 @@ const EditAdminLayer = () => {
             last_name: result.data.last_name || "",
             email: result.data.email || "",
             phone: result.data.phone || "",
+            role_id: result.data.role_id || "",
             status: result.data.status !== undefined ? result.data.status : true,
           });
         } else {
@@ -125,6 +152,7 @@ const EditAdminLayer = () => {
         last_name: formData.last_name,
         email: formData.email,
         phone: formData.phone || null,
+        role_id: formData.role_id || null,
         status: formData.status,
       });
 
@@ -263,6 +291,35 @@ const EditAdminLayer = () => {
                       value={formData.phone}
                       onChange={handleChange}
                     />
+                  </div>
+
+                  <div className='mb-20'>
+                    <label
+                      htmlFor='role_id'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Role
+                    </label>
+                    <select
+                      className='form-control radius-8'
+                      id='role_id'
+                      name='role_id'
+                      value={formData.role_id}
+                      onChange={handleChange}
+                      disabled={loadingRoles}
+                    >
+                      <option value=''>Select a role (Optional)</option>
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.role_name}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingRoles && (
+                      <small className='text-muted d-block mt-2'>
+                        Loading roles...
+                      </small>
+                    )}
                   </div>
 
                   <div className='mb-24'>

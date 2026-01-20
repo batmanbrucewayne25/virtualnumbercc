@@ -75,6 +75,8 @@ import ViewDetailsPage from "./pages/ViewDetailsPage";
 import ViewProfilePage from "./pages/ViewProfilePage";
 import VoiceGeneratorPage from "./pages/VoiceGeneratorPage";
 import WalletPage from "./pages/WalletPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
+import ClientHubPage from "./pages/public/ClientHub/index";
 import { PermissionProvider } from "@/contexts/PermissionContext";
 
 
@@ -89,6 +91,7 @@ function App() {
         <Route exact path='/sign-up' element={<SignUpPage />} />
         <Route exact path='/forgot-password' element={<ForgotPasswordPage />} />
         <Route exact path='/reset-password' element={<ResetPasswordPage />} />
+        <Route exact path='/clienthub/:resellerId' element={<ClientHubPage />} />
         <Route exact path='/access-denied' element={<AccessDeniedPage />} />
         <Route exact path='/coming-soon' element={<ComingSoonPage />} />
         <Route exact path='/maintenance' element={<MaintenancePage />} />
@@ -198,6 +201,7 @@ function App() {
           <Route exact path='/view-profile' element={<ViewProfilePage />} />
           <Route exact path='/voice-generator' element={<VoiceGeneratorPage />} />
           <Route exact path='/wallet' element={<WalletPage />} />
+          <Route exact path='/change-password' element={<ChangePasswordPage />} />
           {/* <Route exact path='/widgets' element={<WidgetsPage />} /> */}
           {/* <Route exact path='/wizard' element={<WizardPage />} /> */}
         </Route>

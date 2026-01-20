@@ -333,6 +333,139 @@ export const resetPassword = async (token, newPassword) => {
 };
 
 /**
+ * Change password for authenticated user
+ */
+export const changePassword = async (userId, currentPassword, newPassword, userRole) => {
+  try {
+    // Get user from database
+    let user = null;
+    
+    if (userRole === 'admin') {
+      const query = `
+        query GetAdminById($id: uuid!) {
+          mst_super_admin_by_pk(id: $id) {
+            id
+            email
+            password_hash
+            status
+          }
+        }
+      `;
+      const result = await client.request(query, { id: userId });
+      user = result.mst_super_admin_by_pk;
+    } else if (userRole === 'reseller') {
+      const query = `
+        query GetResellerById($id: uuid!) {
+          mst_reseller_by_pk(id: $id) {
+            id
+            email
+            password_hash
+            status
+          }
+        }
+      `;
+      const result = await client.request(query, { id: userId });
+      user = result.mst_reseller_by_pk;
+    }
+
+    if (!user) {
+      return {
+        success: false,
+        message: 'User not found.'
+      };
+    }
+
+    // Check if user is active
+    if (!user.status) {
+      return {
+        success: false,
+        message: 'Account is inactive. Please contact support.'
+      };
+    }
+
+    // Verify current password
+    const isHashed = user.password_hash?.startsWith('$2a$') || user.password_hash?.startsWith('$2b$');
+    let passwordValid = false;
+    
+    if (isHashed) {
+      passwordValid = await comparePassword(currentPassword, user.password_hash);
+    } else {
+      // Legacy: plain text password
+      if (currentPassword === user.password_hash) {
+        passwordValid = true;
+      }
+    }
+
+    if (!passwordValid) {
+      return {
+        success: false,
+        message: 'Current password is incorrect.'
+      };
+    }
+
+    // Hash new password
+    const passwordHash = await hashPassword(newPassword);
+
+    // Update password in database
+    let updated = false;
+    
+    if (userRole === 'admin') {
+      const mutation = `
+        mutation UpdateAdminPassword($id: uuid!, $password_hash: String!) {
+          update_mst_super_admin_by_pk(
+            pk_columns: { id: $id }
+            _set: { password_hash: $password_hash }
+          ) {
+            id
+            email
+          }
+        }
+      `;
+      const result = await client.request(mutation, {
+        id: userId,
+        password_hash: passwordHash
+      });
+      updated = !!result.update_mst_super_admin_by_pk;
+    } else if (userRole === 'reseller') {
+      const mutation = `
+        mutation UpdateResellerPassword($id: uuid!, $password_hash: String!) {
+          update_mst_reseller_by_pk(
+            pk_columns: { id: $id }
+            _set: { password_hash: $password_hash }
+          ) {
+            id
+            email
+          }
+        }
+      `;
+      const result = await client.request(mutation, {
+        id: userId,
+        password_hash: passwordHash
+      });
+      updated = !!result.update_mst_reseller_by_pk;
+    }
+
+    if (updated) {
+      return {
+        success: true,
+        message: 'Password changed successfully.'
+      };
+    }
+
+    return {
+      success: false,
+      message: 'Failed to update password. Please try again.'
+    };
+  } catch (error) {
+    console.error('Change password error:', error);
+    return {
+      success: false,
+      message: error.message || 'An error occurred. Please try again later.'
+    };
+  }
+};
+
+/**
  * Register new user
  */
 export const register = async ({ first_name, last_name, email, phone, password }) => {

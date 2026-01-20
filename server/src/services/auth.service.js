@@ -231,4 +231,133 @@ export class AuthService {
   static verifyToken(token) {
     return jwt.verify(token, JWT_SECRET);
   }
+
+  /**
+   * Change password for authenticated user
+   * @param {string} userId 
+   * @param {string} currentPassword 
+   * @param {string} newPassword 
+   * @param {string} userRole - 'admin' or 'reseller'
+   * @returns {Promise<{success: boolean, message: string}>}
+   */
+  static async changePassword(userId, currentPassword, newPassword, userRole) {
+    try {
+      const client = getHasuraClient();
+      let user = null;
+
+      // Get user from database based on role
+      if (userRole === 'admin') {
+        const query = `
+          query GetAdminById($id: uuid!) {
+            mst_super_admin_by_pk(id: $id) {
+              id
+              email
+              password_hash
+              status
+            }
+          }
+        `;
+        const result = await client.client.request(query, { id: userId });
+        user = result.mst_super_admin_by_pk;
+      } else if (userRole === 'reseller') {
+        const query = `
+          query GetResellerById($id: uuid!) {
+            mst_reseller_by_pk(id: $id) {
+              id
+              email
+              password_hash
+              status
+            }
+          }
+        `;
+        const result = await client.client.request(query, { id: userId });
+        user = result.mst_reseller_by_pk;
+      }
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found.'
+        };
+      }
+
+      // Check if user is active
+      if (!user.status) {
+        return {
+          success: false,
+          message: 'Account is inactive. Please contact support.'
+        };
+      }
+
+      // Verify current password
+      const passwordValid = await this.verifyPassword(currentPassword, user.password_hash);
+
+      if (!passwordValid) {
+        return {
+          success: false,
+          message: 'Current password is incorrect.'
+        };
+      }
+
+      // Hash new password
+      const passwordHash = await this.hashPassword(newPassword);
+
+      // Update password in database
+      let updated = false;
+
+      if (userRole === 'admin') {
+        const mutation = `
+          mutation UpdateAdminPassword($id: uuid!, $password_hash: String!) {
+            update_mst_super_admin_by_pk(
+              pk_columns: { id: $id }
+              _set: { password_hash: $password_hash }
+            ) {
+              id
+              email
+            }
+          }
+        `;
+        const result = await client.client.request(mutation, {
+          id: userId,
+          password_hash: passwordHash
+        });
+        updated = !!result.update_mst_super_admin_by_pk;
+      } else if (userRole === 'reseller') {
+        const mutation = `
+          mutation UpdateResellerPassword($id: uuid!, $password_hash: String!) {
+            update_mst_reseller_by_pk(
+              pk_columns: { id: $id }
+              _set: { password_hash: $password_hash }
+            ) {
+              id
+              email
+            }
+          }
+        `;
+        const result = await client.client.request(mutation, {
+          id: userId,
+          password_hash: passwordHash
+        });
+        updated = !!result.update_mst_reseller_by_pk;
+      }
+
+      if (updated) {
+        return {
+          success: true,
+          message: 'Password changed successfully.'
+        };
+      }
+
+      return {
+        success: false,
+        message: 'Failed to update password. Please try again.'
+      };
+    } catch (error) {
+      console.error('Change password error:', error);
+      return {
+        success: false,
+        message: error.message || 'An error occurred. Please try again later.'
+      };
+    }
+  }
 }

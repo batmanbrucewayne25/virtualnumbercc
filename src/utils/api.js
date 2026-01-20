@@ -69,6 +69,30 @@ export const resetPassword = async (token, password) => {
 };
 
 /**
+ * Change password for authenticated user
+ */
+export const changePassword = async (data) => {
+  return apiRequest('/auth/change-password', {
+    method: 'POST',
+    body: data,
+  });
+};
+
+/**
+ * Dashboard API
+ */
+export const getDashboardStats = async () => {
+  return apiRequest('/dashboard/stats');
+};
+
+export const getChartData = async () => {
+  return apiRequest('/dashboard/charts');
+};
+
+// Alias for backward compatibility
+export const getDashboardChartData = getChartData;
+
+/**
  * Admin Management API
  */
 export const getAdmins = async () => {

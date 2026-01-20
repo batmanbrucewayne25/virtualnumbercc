@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
 
 const app = express();
@@ -32,6 +33,7 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

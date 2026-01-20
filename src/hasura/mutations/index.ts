@@ -177,3 +177,6 @@ export default {
   updateGstStep,
   completeSignupStep,
 };
+
+// Export customer mutations
+export * from "./customer";

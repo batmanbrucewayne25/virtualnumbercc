@@ -95,3 +95,47 @@ export const refreshToken = asyncHandler(async (req, res) => {
     data: result
   });
 });
+
+/**
+ * @desc    Change password for authenticated user
+ * @route   POST /api/auth/change-password
+ */
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const { userId, role } = req.user;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'Current password and new password are required'
+    });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password must be at least 6 characters long'
+    });
+  }
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password must be different from current password'
+    });
+  }
+
+  const result = await AuthService.changePassword(userId, currentPassword, newPassword, role);
+  
+  if (result.success) {
+    res.json({
+      success: true,
+      message: result.message
+    });
+  } else {
+    res.status(400).json({
+      success: false,
+      message: result.message
+    });
+  }
+});

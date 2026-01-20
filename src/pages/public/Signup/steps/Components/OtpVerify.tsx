@@ -53,11 +53,26 @@ const OtpVerify = ({ title, label, onBack, onVerify }: OtpVerifyProps) => {
                 onChange={(e) => setOtp(e.target.value)}
             />
 
-            <button className="btn btn-outline-secondary w-100 mb-12" onClick={onBack}>
+            <button 
+                type="button"
+                className="btn btn-outline-secondary w-100 mb-12" 
+                onClick={(e) => {
+                    e.preventDefault();
+                    onBack();
+                }}
+            >
                 Back
             </button>
 
-            <button className="btn btn-primary w-100" onClick={handleVerify}>
+            <button 
+                type="button"
+                className="btn btn-primary w-100" 
+                onClick={(e) => {
+                    e.preventDefault();
+                    handleVerify();
+                }}
+                disabled={loading}
+            >
                 {loading ? "Please wait..." : "Verify & Continue"}
             </button>
         </>

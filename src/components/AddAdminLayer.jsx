@@ -1,14 +1,17 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import PasswordField from "./Form/PasswordField";
 import { createAdmin } from "@/utils/api";
+import { getMstRoles } from "@/hasura/mutations/role";
 
 const AddAdminLayer = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [roles, setRoles] = useState([]);
+  const [loadingRoles, setLoadingRoles] = useState(true);
   
   const [formData, setFormData] = useState({
     first_name: "",
@@ -17,8 +20,31 @@ const AddAdminLayer = () => {
     phone: "",
     password: "",
     confirmPassword: "",
+    role_id: "",
     status: true,
   });
+
+  useEffect(() => {
+    const fetchRoles = async () => {
+      setLoadingRoles(true);
+      try {
+        const result = await getMstRoles();
+        if (result.success) {
+          // Filter only active roles
+          const activeRoles = (result.data || []).filter(role => role.is_active);
+          setRoles(activeRoles);
+        } else {
+          console.error("Failed to load roles:", result.message);
+        }
+      } catch (err) {
+        console.error("Error fetching roles:", err);
+      } finally {
+        setLoadingRoles(false);
+      }
+    };
+
+    fetchRoles();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -71,6 +97,7 @@ const AddAdminLayer = () => {
         email: formData.email,
         phone: formData.phone || null,
         password: formData.password,
+        role_id: formData.role_id || null,
         status: formData.status,
       });
 
@@ -194,6 +221,35 @@ const AddAdminLayer = () => {
                       value={formData.phone}
                       onChange={handleChange}
                     />
+                  </div>
+
+                  <div className='mb-20'>
+                    <label
+                      htmlFor='role_id'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Role
+                    </label>
+                    <select
+                      className='form-control radius-8'
+                      id='role_id'
+                      name='role_id'
+                      value={formData.role_id}
+                      onChange={handleChange}
+                      disabled={loadingRoles}
+                    >
+                      <option value=''>Select a role (Optional)</option>
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.role_name}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingRoles && (
+                      <small className='text-muted d-block mt-2'>
+                        Loading roles...
+                      </small>
+                    )}
                   </div>
 
                   <div className='row'>

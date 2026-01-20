@@ -40,7 +40,7 @@ export const getAdminById = asyncHandler(async (req, res) => {
  * @route   POST /api/admin/create
  */
 export const createAdmin = asyncHandler(async (req, res) => {
-  const { first_name, last_name, email, phone, password, status } = req.body;
+  const { first_name, last_name, email, phone, password, status, role_id } = req.body;
 
   // Validate required fields
   if (!first_name || !last_name || !email || !password) {
@@ -64,12 +64,13 @@ export const createAdmin = asyncHandler(async (req, res) => {
     email,
     phone: phone || null,
     password,
-    status: status !== undefined ? status : true
+    status: status !== undefined ? status : true,
+    role_id: role_id || null
   });
 
   res.status(201).json({
     success: true,
-    message: 'Admin created successfully',
+    message: 'Admin created successfully. Welcome email has been sent.',
     data: result
   });
 });

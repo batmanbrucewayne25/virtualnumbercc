@@ -427,16 +427,35 @@ const MasterLayout = ({ children }) => {
 
                 {/* Admin Setting - Admin Only */}
                 <PermissionGuard permissionCode="ADMIN_SETTINGS" action="view">
-                  <li>
-                    <NavLink
-                      to='/admin-setting'
-                      className={(navData) =>
-                        navData.isActive ? "active-page" : ""
-                      }
-                    >
+                  <li className='dropdown'>
+                    <a href='#' onClick={(e) => e.preventDefault()}>
                       <Icon icon='solar:settings-outline' className='menu-icon' />
-                      <span>Admin Setting</span>
-                    </NavLink>
+                      <span>Settings</span>
+                    </a>
+                    <ul className='sidebar-submenu'>
+                      <li>
+                        <NavLink
+                          to='/admin-setting'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
+                          Admin Setting
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to='/change-password'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-warning-main w-auto' />{" "}
+                          Reset Password
+                        </NavLink>
+                      </li>
+                    </ul>
                   </li>
                 </PermissionGuard>
               </>
@@ -549,6 +568,17 @@ const MasterLayout = ({ children }) => {
                     >
                       <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
                       Payment Gateway
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to='/change-password'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <i className='ri-circle-fill circle-icon text-danger-600 w-auto' />{" "}
+                      Reset Password
                     </NavLink>
                   </li>
                   <li>
