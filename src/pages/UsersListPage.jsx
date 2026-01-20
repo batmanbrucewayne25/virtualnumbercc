@@ -8,7 +8,7 @@ const UsersListPage = () => {
       {/* MasterLayout */}
       <MasterLayout>
         {/* Breadcrumb */}
-        <Breadcrumb title='Admin' />
+        <Breadcrumb title='Users' />
 
         {/* UsersListLayer */}
         <UsersListLayer />

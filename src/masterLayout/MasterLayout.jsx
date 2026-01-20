@@ -464,6 +464,19 @@ const MasterLayout = ({ children }) => {
             {/* Reseller Menu Items */}
             {userRole === 'reseller' && (
               <>
+                {/* Dashboard - Reseller Only */}
+                <li>
+                  <NavLink
+                    to='/reseller-dashboard'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='solar:home-smile-angle-outline' className='menu-icon' />
+                    <span>Dashboard</span>
+                  </NavLink>
+                </li>
+
                 {/* Subscription Plan - Reseller Only */}
                 <li>
                   <NavLink
@@ -487,6 +500,32 @@ const MasterLayout = ({ children }) => {
                   >
                     <Icon icon='flowbite:users-group-outline' className='menu-icon' />
                     <span>Users</span>
+                  </NavLink>
+                </li>
+
+                {/* New Customers - Reseller Only */}
+                <li>
+                  <NavLink
+                    to='/customer-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='mdi:account-group' className='menu-icon' />
+                    <span>New Customers</span>
+                  </NavLink>
+                </li>
+
+                {/* Transactions - Reseller Only */}
+                <li>
+                  <NavLink
+                    to='/transaction-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='mdi:receipt-text-outline' className='menu-icon' />
+                    <span>Transactions</span>
                   </NavLink>
                 </li>
 

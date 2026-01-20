@@ -93,6 +93,21 @@ export const getChartData = async () => {
 export const getDashboardChartData = getChartData;
 
 /**
+ * Reseller Dashboard API
+ */
+export const getResellerDashboardStats = async () => {
+  return apiRequest('/reseller-dashboard/stats');
+};
+
+export const getResellerDashboardCharts = async () => {
+  return apiRequest('/reseller-dashboard/charts');
+};
+
+export const getExpiringNumbers = async () => {
+  return apiRequest('/reseller-dashboard/expiring-numbers');
+};
+
+/**
  * Admin Management API
  */
 export const getAdmins = async () => {

@@ -286,6 +286,202 @@ export const sendAdminWelcomeEmail = async (email, firstName, lastName, password
 };
 
 /**
+ * Send virtual number assignment email to customer and admin
+ */
+export const sendVirtualNumberEmail = async (email, recipientName, virtualNumber, resellerName) => {
+  try {
+    const transporter = createTransporter();
+    
+    if (!transporter) {
+      console.error('Email transporter not available. SMTP not configured.');
+      return {
+        success: false,
+        message: 'Email service not configured. Please contact administrator.'
+      };
+    }
+
+    const mailOptions = {
+      from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
+      to: email,
+      subject: 'Virtual Number Assigned - Your Account is Active',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Virtual Number Assigned</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h2 style="color: #2c3e50; margin-top: 0;">Virtual Number Assigned</h2>
+          </div>
+          
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6;">
+            <p>Hello ${recipientName},</p>
+            
+            <p>Congratulations! Your account has been approved and your virtual number has been successfully generated.</p>
+            
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; text-align: center;">
+              <p style="margin: 10px 0; font-size: 24px; font-weight: bold; color: #28a745;">${virtualNumber}</p>
+            </div>
+            
+            <p>Your virtual number is now active and ready to use. You can start using it for your business communications.</p>
+            
+            <p><strong>Reseller:</strong> ${resellerName}</p>
+            
+            <p style="color: #6c757d; font-size: 13px; margin-top: 30px;">
+              If you have any questions or need assistance, please contact your reseller: ${resellerName}
+            </p>
+          </div>
+          
+          <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
+            <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        Virtual Number Assigned
+        
+        Hello ${recipientName},
+        
+        Congratulations! Your account has been approved and your virtual number has been successfully generated.
+        
+        Your Virtual Number: ${virtualNumber}
+        
+        Your virtual number is now active and ready to use. You can start using it for your business communications.
+        
+        Reseller: ${resellerName}
+        
+        If you have any questions or need assistance, please contact your reseller: ${resellerName}
+        
+        © ${new Date().getFullYear()} Virtual Number. All rights reserved.
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log('Virtual number email sent:', info.messageId);
+    
+    return {
+      success: true,
+      messageId: info.messageId
+    };
+  } catch (error) {
+    console.error('Error sending virtual number email:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to send email'
+    };
+  }
+};
+
+/**
+ * Send Razorpay payment link email to customer
+ */
+export const sendRazorpayLinkEmail = async (email, recipientName, razorpayLink, planName, planAmount, resellerName) => {
+  try {
+    const transporter = createTransporter();
+    
+    if (!transporter) {
+      console.error('Email transporter not available. SMTP not configured.');
+      return {
+        success: false,
+        message: 'Email service not configured. Please contact administrator.'
+      };
+    }
+
+    const mailOptions = {
+      from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
+      to: email,
+      subject: 'Complete Your Payment - Virtual Number Subscription',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Payment Link</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h2 style="color: #2c3e50; margin-top: 0;">Complete Your Payment</h2>
+          </div>
+          
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6;">
+            <p>Hello ${recipientName},</p>
+            
+            <p>Your account has been approved! To activate your virtual number, please complete the payment using the link below.</p>
+            
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <p style="margin: 10px 0;"><strong>Subscription Plan:</strong> ${planName}</p>
+              <p style="margin: 10px 0;"><strong>Amount:</strong> ₹${Number(planAmount).toFixed(2)}</p>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${razorpayLink}" 
+                 style="display: inline-block; background-color: #007bff; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Pay Now with Razorpay
+              </a>
+            </div>
+            
+            <p style="color: #6c757d; font-size: 14px;">Or copy and paste this link into your browser:</p>
+            <p style="word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 12px; color: #495057;">
+              ${razorpayLink}
+            </p>
+            
+            <p><strong>Reseller:</strong> ${resellerName}</p>
+            
+            <p style="color: #dc3545; font-size: 13px; margin-top: 30px;">
+              <strong>Note:</strong> Your virtual number will be activated automatically after successful payment.
+            </p>
+          </div>
+          
+          <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
+            <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        Complete Your Payment
+        
+        Hello ${recipientName},
+        
+        Your account has been approved! To activate your virtual number, please complete the payment using the link below.
+        
+        Subscription Plan: ${planName}
+        Amount: ₹${Number(planAmount).toFixed(2)}
+        
+        Payment Link: ${razorpayLink}
+        
+        Reseller: ${resellerName}
+        
+        Note: Your virtual number will be activated automatically after successful payment.
+        
+        © ${new Date().getFullYear()} Virtual Number. All rights reserved.
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log('Razorpay link email sent:', info.messageId);
+    
+    return {
+      success: true,
+      messageId: info.messageId
+    };
+  } catch (error) {
+    console.error('Error sending Razorpay link email:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to send email'
+    };
+  }
+};
+
+/**
  * Verify SMTP configuration
  */
 export const verifySMTPConfig = async () => {

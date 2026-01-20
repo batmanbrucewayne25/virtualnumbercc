@@ -77,6 +77,11 @@ import VoiceGeneratorPage from "./pages/VoiceGeneratorPage";
 import WalletPage from "./pages/WalletPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ClientHubPage from "./pages/public/ClientHub/index";
+import CustomerListPage from "./pages/CustomerListPage";
+import ViewCustomerPage from "./pages/ViewCustomerPage";
+import TransactionListPage from "./pages/TransactionListPage";
+import ViewUserPage from "./pages/ViewUserPage";
+import ResellerDashboardPage from "./pages/ResellerDashboardPage";
 import { PermissionProvider } from "@/contexts/PermissionContext";
 
 
@@ -122,6 +127,12 @@ function App() {
           <Route exact path='/add-subscription-plan' element={<AddSubscriptionPlanPage />} />
           <Route exact path='/view-subscription-plan/:id' element={<ViewSubscriptionPlanPage />} />
           <Route exact path='/edit-subscription-plan/:id' element={<EditSubscriptionPlanPage />} />
+          <Route exact path='/customer-list' element={<CustomerListPage />} />
+          <Route exact path='/view-customer/:id' element={<ViewCustomerPage />} />
+          <Route exact path='/transaction-list' element={<TransactionListPage />} />
+          <Route exact path='/users-list' element={<UsersListPage />} />
+          <Route exact path='/view-user/:id' element={<ViewUserPage />} />
+          <Route exact path='/reseller-dashboard' element={<ResellerDashboardPage />} />
           {/* <Route exact path='/alert' element={<AlertPage />} /> */}
           <Route exact path='/assign-role' element={<AssignRolePage />} />
           <Route exact path='/role-access' element={<RoleAccessPage />} />

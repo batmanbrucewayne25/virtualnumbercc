@@ -180,3 +180,9 @@ export default {
 
 // Export customer mutations
 export * from "./customer";
+
+// Export transaction mutations
+export * from "./transaction";
+
+// Export user mutations
+export * from "./user";

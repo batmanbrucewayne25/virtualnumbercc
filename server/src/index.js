@@ -7,6 +7,8 @@ import cors from 'cors';
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
+import customerRoutes from './routes/customer.routes.js';
+import resellerDashboardRoutes from './routes/resellerDashboard.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
 
 const app = express();
@@ -34,6 +36,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/customer', customerRoutes);
+app.use('/api/reseller-dashboard', resellerDashboardRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

@@ -271,6 +271,11 @@ export const getMstCustomersByReseller = async (resellerId: string) => {
       kyc_status
       created_at
       updated_at
+      pan_number
+      pan_full_name
+      aadhaar_number
+      gstin
+      business_name
     }
   }`;
 
