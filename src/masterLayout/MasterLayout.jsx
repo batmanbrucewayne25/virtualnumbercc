@@ -3,18 +3,22 @@ import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggleButton from "../helper/ThemeToggleButton";
-import { clearAuth, getAuthToken } from "@/utils/auth";
+import { clearAuth, getAuthToken, getUserData } from "@/utils/auth";
 import PermissionGuard from "@/components/PermissionGuard";
 
 const MasterLayout = ({ children }) => {
   let [sidebarActive, seSidebarActive] = useState(false);
   let [mobileMenu, setMobileMenu] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [userName, setUserName] = useState("");
+  const [userDisplayName, setUserDisplayName] = useState("");
   const location = useLocation(); // Hook to get the current route
 
-  // Get user role from JWT token
+  // Get user role and name from JWT token and localStorage
   useEffect(() => {
     const token = getAuthToken();
+    const userData = getUserData();
+    
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
@@ -22,6 +26,33 @@ const MasterLayout = ({ children }) => {
       } catch (err) {
         console.error("Error decoding token:", err);
         setUserRole(null);
+      }
+    }
+
+    // Get user name from localStorage
+    if (userData) {
+      // For admin: use first_name + last_name or name
+      if (userData.role === 'admin' || userData.role === 'super_admin') {
+        const name = userData.first_name && userData.last_name
+          ? `${userData.first_name} ${userData.last_name}`.trim()
+          : userData.name || userData.email || "Admin";
+        setUserName(name);
+        setUserDisplayName(name);
+      }
+      // For reseller: use business_name or first_name + last_name
+      else if (userData.role === 'reseller') {
+        const name = userData.business_name 
+          || (userData.first_name && userData.last_name ? `${userData.first_name} ${userData.last_name}`.trim() : null)
+          || userData.name 
+          || userData.email 
+          || "Reseller";
+        setUserName(name);
+        setUserDisplayName(name);
+      }
+      // Fallback
+      else {
+        setUserName(userData.name || userData.email || "User");
+        setUserDisplayName(userData.name || userData.email || "User");
       }
     }
   }, []);
@@ -1544,8 +1575,8 @@ const MasterLayout = ({ children }) => {
             </div>
             <div className='col-auto'>
               <div className='d-flex flex-wrap align-items-center gap-3'>
-                {/* ThemeToggleButton */}
-                <ThemeToggleButton />
+                {/* ThemeToggleButton - Hidden */}
+                {/* <ThemeToggleButton /> */}
                 {/* <div className='dropdown d-none d-sm-inline-block'>
                   <button
                     className='has-indicator w-40-px h-40-px bg-neutral-200 rounded-circle d-flex justify-content-center align-items-center'
@@ -1755,7 +1786,8 @@ const MasterLayout = ({ children }) => {
                   </div>
                 </div> */}
                 {/* Language dropdown end */}
-                <div className='dropdown'>
+                {/* Message dropdown - Hidden */}
+                {/* <div className='dropdown'>
                   <button
                     className='has-indicator w-40-px h-40-px bg-neutral-200 rounded-circle d-flex justify-content-center align-items-center'
                     type='button'
@@ -1938,9 +1970,10 @@ const MasterLayout = ({ children }) => {
                       </Link>
                     </div>
                   </div>
-                </div>
+                </div> */}
                 {/* Message dropdown end */}
-                <div className='dropdown'>
+                {/* Notification dropdown - Hidden */}
+                {/* <div className='dropdown'>
                   <button
                     className='has-indicator w-40-px h-40-px bg-neutral-200 rounded-circle d-flex justify-content-center align-items-center'
                     type='button'
@@ -2088,8 +2121,8 @@ const MasterLayout = ({ children }) => {
                       </Link>
                     </div>
                   </div>
-                </div>
-                {/* Notification dropdown end */}
+                </div> */}
+                {/* Notification dropdown end - Hidden */}
                 <div className='dropdown'>
                   <button
                     className='d-flex justify-content-center align-items-center rounded-circle'
@@ -2106,10 +2139,10 @@ const MasterLayout = ({ children }) => {
                     <div className='py-12 px-16 radius-8 bg-primary-50 mb-16 d-flex align-items-center justify-content-between gap-2'>
                       <div>
                         <h6 className='text-lg text-primary-light fw-semibold mb-2'>
-                          Shaidul Islam
+                          {userDisplayName || userName || "User"}
                         </h6>
                         <span className='text-secondary-light fw-medium text-sm'>
-                          Admin
+                          {userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : "User"}
                         </span>
                       </div>
                       <button type='button' className='hover-text-danger'>
@@ -2121,46 +2154,10 @@ const MasterLayout = ({ children }) => {
                     </div>
                     <ul className='to-top-list'>
                       <li>
-                        <Link
-                          className='dropdown-item text-black px-0 py-8 hover-bg-transparent hover-text-primary d-flex align-items-center gap-3'
-                          to='/view-profile'
-                        >
-                          <Icon
-                            icon='solar:user-linear'
-                            className='icon text-xl'
-                          />{" "}
-                          My Profile
-                        </Link>
-                      </li>
-                      {/* <li>
-                        <Link
-                          className='dropdown-item text-black px-0 py-8 hover-bg-transparent hover-text-primary d-flex align-items-center gap-3'
-                          to='/email'
-                        >
-                          <Icon
-                            icon='tabler:message-check'
-                            className='icon text-xl'
-                          />{" "}
-                          Inbox
-                        </Link>
-                      </li> */}
-                      <li>
-                        <Link
-                          className='dropdown-item text-black px-0 py-8 hover-bg-transparent hover-text-primary d-flex align-items-center gap-3'
-                          to='/company'
-                        >
-                          <Icon
-                            icon='icon-park-outline:setting-two'
-                            className='icon text-xl'
-                          />
-                          Setting
-                        </Link>
-                      </li>
-                      <li>
                         <button
                           type='button'
                           onClick={logout}
-                          className='dropdown-item text-black px-0 py-8 hover-bg-transparent hover-text-danger d-flex align-items-center gap-3 btn btn-unstyled'
+                          className='dropdown-item text-black px-0 py-8 hover-bg-transparent hover-text-danger d-flex align-items-center gap-3 btn btn-unstyled w-100'
                         >
                           <Icon icon='lucide:power' className='icon text-xl' />{" "}
                           Log Out

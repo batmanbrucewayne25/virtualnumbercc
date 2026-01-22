@@ -43,20 +43,8 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
 
     setLoading(true);
     try {
-      const res = await fetch(
-        "https://virtualnumber.onrender.com/api/aadhaar/generate-otp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id_number: aadhaarNumber }),
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-
-      const result = await res.json();
+      const { generateAadhaarOTP } = await import("@/utils/api");
+      const result = await generateAadhaarOTP(aadhaarNumber);
 
       // Check multiple possible response structures
       if (result.success) {
@@ -111,23 +99,8 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
 
     setLoading(true);
     try {
-      const res = await fetch(
-        "https://virtualnumber.onrender.com/api/aadhaar/submit-otp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            request_id: requestId,
-            otp: aadhaarOtp,
-          }),
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-
-      const result = await res.json();
+      const { submitAadhaarOTP } = await import("@/utils/api");
+      const result = await submitAadhaarOTP(requestId, aadhaarOtp);
       
       // Check multiple possible response structures
       const data = result.data?.data || result.data || result;

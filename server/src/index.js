@@ -10,6 +10,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import customerRoutes from "./routes/customer.routes.js";
 import resellerDashboardRoutes from "./routes/resellerDashboard.routes.js";
 import razorpayRoutes from "./routes/razorpay.routes.js";
+import kycRoutes from "./routes/kyc.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 
 const app = express();
@@ -43,6 +44,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/customer", customerRoutes);
 app.use("/api/reseller-dashboard", resellerDashboardRoutes);
 app.use("/api/razorpay", razorpayRoutes);
+app.use("/api/kyc", kycRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

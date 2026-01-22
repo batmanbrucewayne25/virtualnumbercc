@@ -284,19 +284,24 @@ const ResellerListLayer = () => {
                       <td>{index + 1}</td>
                       <td>{formatDate(reseller.created_at)}</td>
                       <td>
-                        <div className='d-flex align-items-center'>
-                          <div className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center'>
-                            <Icon
-                              icon='solar:user-bold'
-                              className='icon text-primary-600 text-xl'
-                            />
+                        <Link 
+                          to={`/view-reseller/${reseller.id}`}
+                          className='text-decoration-none'
+                        >
+                          <div className='d-flex align-items-center hover-text-primary'>
+                            <div className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center'>
+                              <Icon
+                                icon='solar:user-bold'
+                                className='icon text-primary-600 text-xl'
+                              />
+                            </div>
+                            <div className='flex-grow-1'>
+                              <span className='text-md mb-0 fw-normal text-secondary-light hover-text-primary'>
+                                {reseller.first_name} {reseller.last_name}
+                              </span>
+                            </div>
                           </div>
-                          <div className='flex-grow-1'>
-                            <span className='text-md mb-0 fw-normal text-secondary-light'>
-                              {reseller.first_name} {reseller.last_name}
-                            </span>
-                          </div>
-                        </div>
+                        </Link>
                       </td>
                       <td>
                         <span className='text-md mb-0 fw-normal text-secondary-light'>

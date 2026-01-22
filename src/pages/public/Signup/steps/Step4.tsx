@@ -31,16 +31,8 @@ const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
 
     setLoading(true);
     try {
-      const response = await fetch(
-        "https://virtualnumber.onrender.com/api/pan/verify",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id_number: trimmedPan }),
-        }
-      );
-
-      const result = await response.json();
+      const { verifyPAN } = await import("@/utils/api");
+      const result = await verifyPAN(trimmedPan);
 
       if (result.success && result.data?.data) {
         const data = result.data.data;

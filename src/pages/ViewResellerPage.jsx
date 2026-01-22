@@ -1,6 +1,6 @@
 import MasterLayout from "../masterLayout/MasterLayout";
 import Breadcrumb from "../components/Breadcrumb";
-import ViewResellerLayer from "../components/ViewResellerLayer";
+import ViewResellerDashboardLayer from "../components/ViewResellerDashboardLayer";
 
 const ViewResellerPage = () => {
   return (
@@ -8,10 +8,10 @@ const ViewResellerPage = () => {
       {/* MasterLayout */}
       <MasterLayout>
         {/* Breadcrumb */}
-        <Breadcrumb title='View Reseller' />
+        <Breadcrumb title='Reseller Dashboard' />
 
-        {/* ViewResellerLayer */}
-        <ViewResellerLayer />
+        {/* ViewResellerDashboardLayer */}
+        <ViewResellerDashboardLayer />
       </MasterLayout>
     </>
   );

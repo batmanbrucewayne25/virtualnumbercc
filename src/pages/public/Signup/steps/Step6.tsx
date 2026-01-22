@@ -41,19 +41,8 @@ const Step5 = ({ email, onBack, onContinue }: Step5Props) => {
 
     setLoading(true);
     try {
-      const res = await fetch(
-        "https://virtualnumber.onrender.com/api/gst/verify",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id_number: gst,
-            filing_status_get: true,
-          }),
-        }
-      );
-
-      const result = await res.json();
+      const { verifyGST } = await import("@/utils/api");
+      const result = await verifyGST(gst, true);
       const data = result.data?.data;
 
       if (result.success && data?.gstin) {

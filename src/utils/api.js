@@ -108,6 +108,44 @@ export const getExpiringNumbers = async () => {
 };
 
 /**
+ * KYC Verification API
+ */
+export const generateAadhaarOTP = async (idNumber) => {
+  return apiRequest('/kyc/aadhaar/generate-otp', {
+    method: 'POST',
+    body: { id_number: idNumber },
+  });
+};
+
+export const submitAadhaarOTP = async (requestId, otp) => {
+  return apiRequest('/kyc/aadhaar/submit-otp', {
+    method: 'POST',
+    body: { request_id: requestId, otp },
+  });
+};
+
+export const verifyPAN = async (panNumber, dob = null) => {
+  return apiRequest('/kyc/pan/verify', {
+    method: 'POST',
+    body: { id_number: panNumber, ...(dob && { dob }) },
+  });
+};
+
+export const verifyGST = async (gstNumber, filingStatusGet = true) => {
+  return apiRequest('/kyc/gst/verify', {
+    method: 'POST',
+    body: { id_number: gstNumber, filing_status_get: filingStatusGet },
+  });
+};
+
+export const verifyGSTSpecial = async (gstNumber, filingStatusGet = true) => {
+  return apiRequest('/kyc/gst/verify-sp', {
+    method: 'POST',
+    body: { id_number: gstNumber, filing_status_get: filingStatusGet },
+  });
+};
+
+/**
  * Admin Management API
  */
 export const getAdmins = async () => {
