@@ -15,8 +15,6 @@ export class DashboardService {
         activeAdminCountResult,
         resellerCountResult,
         activeResellerCountResult,
-        // Note: Virtual numbers and expiration data will need actual table names
-        // These are placeholders - adjust based on your actual schema
       ] = await Promise.all([
         // Total Admin Count
         client.client.request(`
@@ -127,7 +125,6 @@ export class DashboardService {
         
         if (virtualNumbersQuery && tableName) {
           const virtualNumbersResult = await client.client.request(virtualNumbersQuery);
-          // Access the result correctly based on the query alias
           activeVirtualNumbersCount = virtualNumbersResult.activeCount?.aggregate?.count || 0;
           
           // Get soon to expire numbers (within next 30 days)
@@ -193,6 +190,88 @@ export class DashboardService {
         // Continue with 0 values
       }
 
+      // Get transaction/payment statistics from mst_transaction table
+      let paymentStats = {
+        total_transactions: 0,
+        successful_transactions: 0,
+        total_amount: 0,
+        today_transactions: 0,
+        today_amount: 0,
+        active_resellers: 0
+      };
+
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        
+        const transactionStatsResult = await client.client.request(`
+          query GetTransactionStats {
+            total: mst_transaction_aggregate {
+              aggregate {
+                count
+                sum {
+                  amount
+                }
+              }
+            }
+            successful: mst_transaction_aggregate(
+              where: { status: { _in: ["success", "captured"] } }
+            ) {
+              aggregate {
+                count
+                sum {
+                  amount
+                }
+              }
+            }
+            today: mst_transaction_aggregate(
+              where: { created_at: { _gte: "${today}" } }
+            ) {
+              aggregate {
+                count
+                sum {
+                  amount
+                }
+              }
+            }
+            resellers_with_transactions: mst_transaction(distinct_on: reseller_id) {
+              reseller_id
+            }
+          }
+        `);
+        
+        paymentStats.total_transactions = transactionStatsResult.total?.aggregate?.count || 0;
+        paymentStats.total_amount = transactionStatsResult.total?.aggregate?.sum?.amount || 0;
+        paymentStats.successful_transactions = transactionStatsResult.successful?.aggregate?.count || 0;
+        paymentStats.today_transactions = transactionStatsResult.today?.aggregate?.count || 0;
+        paymentStats.today_amount = transactionStatsResult.today?.aggregate?.sum?.amount || 0;
+        paymentStats.active_resellers = transactionStatsResult.resellers_with_transactions?.length || 0;
+      } catch (error) {
+        console.warn('Error fetching transaction statistics:', error.message);
+      }
+
+      // Count resellers with Razorpay configured
+      let configuredResellersCount = 0;
+      try {
+        const configuredResellersResult = await client.client.request(`
+          query GetConfiguredResellers {
+            mst_razorpay_config_aggregate(
+              where: { 
+                is_active: { _eq: true }
+                key_id: { _is_null: false }
+              }
+            ) {
+              aggregate {
+                count
+              }
+            }
+          }
+        `);
+        
+        configuredResellersCount = configuredResellersResult.mst_razorpay_config_aggregate?.aggregate?.count || 0;
+      } catch (error) {
+        console.warn('Error fetching configured resellers count:', error.message);
+      }
+
       return {
         totalAdmins: adminCountResult.mst_super_admin_aggregate?.aggregate?.count || 0,
         activeAdmins: activeAdminCountResult.mst_super_admin_aggregate?.aggregate?.count || 0,
@@ -200,6 +279,8 @@ export class DashboardService {
         activeCustomers: activeResellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
         activeVirtualNumbers: activeVirtualNumbersCount,
         soonToExpireNumbers: soonToExpireCount,
+        paymentStats: paymentStats,
+        configuredResellers: configuredResellersCount,
       };
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -252,6 +333,27 @@ export class DashboardService {
         }
       `);
 
+      // Get transaction data over time
+      let transactionData = [];
+      try {
+        const transactionsResult = await client.client.request(`
+          query GetTransactionsOverTime {
+            mst_transaction(
+              order_by: { created_at: desc }
+              limit: 500
+            ) {
+              created_at
+              amount
+              status
+              reseller_id
+            }
+          }
+        `);
+        transactionData = transactionsResult.mst_transaction || [];
+      } catch (error) {
+        console.warn('Error fetching transaction data for charts:', error.message);
+      }
+
       // Process data for charts
       const processTimeSeriesData = (data, days = 30) => {
         const result = {};
@@ -278,15 +380,46 @@ export class DashboardService {
         };
       };
 
+      // Process transaction amounts per day
+      const processTransactionAmounts = (data, days = 30) => {
+        const result = {};
+        const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        
+        for (let i = 0; i < days; i++) {
+          const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+          const dateKey = date.toISOString().split('T')[0];
+          result[dateKey] = 0;
+        }
+
+        data.forEach(item => {
+          if (item.created_at && (item.status === 'success' || item.status === 'captured')) {
+            const itemDate = new Date(item.created_at).toISOString().split('T')[0];
+            if (result[itemDate] !== undefined) {
+              result[itemDate] += parseFloat(item.amount) || 0;
+            }
+          }
+        });
+
+        return {
+          dates: Object.keys(result),
+          values: Object.values(result),
+        };
+      };
+
       return {
         adminRegistrations: processTimeSeriesData(adminRegistrations.mst_super_admin || [], 30),
         resellerRegistrations: processTimeSeriesData(resellerRegistrations.mst_reseller || [], 30),
+        transactionCounts: processTimeSeriesData(transactionData, 30),
+        transactionAmounts: processTransactionAmounts(transactionData, 30),
         last7Days: {
           admins: adminRegistrations.mst_super_admin?.filter(a => 
             new Date(a.created_at) >= last7Days
           ).length || 0,
           resellers: resellerRegistrations.mst_reseller?.filter(r => 
             new Date(r.created_at) >= last7Days
+          ).length || 0,
+          transactions: transactionData.filter(t =>
+            new Date(t.created_at) >= last7Days
           ).length || 0,
         },
         last30Days: {
@@ -296,6 +429,9 @@ export class DashboardService {
           resellers: resellerRegistrations.mst_reseller?.filter(r => 
             new Date(r.created_at) >= last30Days
           ).length || 0,
+          transactions: transactionData.filter(t =>
+            new Date(t.created_at) >= last30Days
+          ).length || 0,
         },
       };
     } catch (error) {
@@ -304,4 +440,3 @@ export class DashboardService {
     }
   }
 }
-

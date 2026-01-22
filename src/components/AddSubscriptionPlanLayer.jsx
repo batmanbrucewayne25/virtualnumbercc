@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { createMstSubscriptionPlan } from "@/hasura/mutations/subscriptionPlan";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getUserData } from "@/utils/auth";
+import { createRazorpayPlanAndSubscription } from "@/services/razorpayApi";
 
 const AddSubscriptionPlanLayer = () => {
   const navigate = useNavigate();
@@ -134,14 +135,52 @@ const AddSubscriptionPlanLayer = () => {
       // Use logged-in reseller ID if reseller, otherwise use selected reseller_id
       const resellerId = isReseller ? loggedInResellerId : formData.reseller_id;
       
+      let razorpayPlanId = formData.razorpay_plan_id;
+      let razorpaySubscriptionId = formData.razorpay_link_id;
+
+      // Automatically create Razorpay plan and subscription if not manually provided
+      if (!razorpayPlanId) {
+        try {
+          const razorpayResult = await createRazorpayPlanAndSubscription({
+            reseller_id: resellerId,
+            plan_name: formData.plan_name,
+            amount: parseFloat(formData.amount),
+            currency: formData.currency || "INR",
+            duration_days: parseInt(formData.duration_days),
+            description: formData.description || null,
+            total_count: 1, // Default to 1 billing cycle
+          });
+
+          if (razorpayResult.success && razorpayResult.data) {
+            razorpayPlanId = razorpayResult.data.plan_id;
+            razorpaySubscriptionId = razorpayResult.data.subscription_id;
+            
+            // Update form data to show the created IDs
+            setFormData(prev => ({
+              ...prev,
+              razorpay_plan_id: razorpayPlanId,
+              razorpay_link_id: razorpaySubscriptionId
+            }));
+          } else {
+            throw new Error(razorpayResult.message || "Failed to create Razorpay plan and subscription");
+          }
+        } catch (razorpayError) {
+          console.error("Error creating Razorpay plan/subscription:", razorpayError);
+          setError(razorpayError.message || "Failed to create Razorpay plan and subscription. Please ensure Razorpay credentials are configured.");
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Create subscription plan in database with Razorpay IDs
       const result = await createMstSubscriptionPlan({
         reseller_id: resellerId,
         plan_name: formData.plan_name,
         amount: parseFloat(formData.amount),
         currency: formData.currency || "INR",
         duration_days: parseInt(formData.duration_days),
-        razorpay_plan_id: formData.razorpay_plan_id || null,
-        razorpay_link_id: formData.razorpay_link_id || null,
+        razorpay_plan_id: razorpayPlanId || null,
+        razorpay_link_id: razorpaySubscriptionId || null,
         is_active: formData.is_active,
         description: formData.description || null,
       });
@@ -312,16 +351,22 @@ const AddSubscriptionPlanLayer = () => {
                           className='form-label fw-semibold text-primary-light text-sm mb-8'
                         >
                           Razorpay Plan ID
+                          <small className='text-muted ms-2'>(Auto-generated)</small>
                         </label>
                         <input
                           type='text'
                           className='form-control radius-8'
                           id='razorpay_plan_id'
                           name='razorpay_plan_id'
-                          placeholder='Enter Razorpay plan ID'
+                          placeholder='Will be created automatically'
                           value={formData.razorpay_plan_id}
                           onChange={handleChange}
+                          readOnly
+                          style={{ backgroundColor: '#f8f9fa', cursor: 'not-allowed' }}
                         />
+                        <small className='text-muted'>
+                          This will be automatically created in Razorpay when you submit the form.
+                        </small>
                       </div>
                     </div>
                     <div className='col-sm-6'>
@@ -330,17 +375,23 @@ const AddSubscriptionPlanLayer = () => {
                           htmlFor='razorpay_link_id'
                           className='form-label fw-semibold text-primary-light text-sm mb-8'
                         >
-                          Razorpay Link ID
+                          Razorpay Subscription ID
+                          <small className='text-muted ms-2'>(Auto-generated)</small>
                         </label>
                         <input
                           type='text'
                           className='form-control radius-8'
                           id='razorpay_link_id'
                           name='razorpay_link_id'
-                          placeholder='Enter Razorpay link ID'
+                          placeholder='Will be created automatically'
                           value={formData.razorpay_link_id}
                           onChange={handleChange}
+                          readOnly
+                          style={{ backgroundColor: '#f8f9fa', cursor: 'not-allowed' }}
                         />
+                        <small className='text-muted'>
+                          This will be automatically created in Razorpay when you submit the form.
+                        </small>
                       </div>
                     </div>
                   </div>
@@ -396,7 +447,7 @@ const AddSubscriptionPlanLayer = () => {
                       {loading ? (
                         <>
                           <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                          Creating...
+                          Creating Plan & Subscription...
                         </>
                       ) : (
                         "Create Plan"
