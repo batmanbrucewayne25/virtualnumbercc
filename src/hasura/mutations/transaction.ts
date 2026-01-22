@@ -298,3 +298,173 @@ export const updateMstTransactionStatus = async (
   }
 };
 
+/**
+ * Get all transactions (for super admin)
+ */
+export const getMstTransactions = async (options?: {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  resellerId?: string;
+}) => {
+  const { limit = 100, offset = 0, status, resellerId } = options || {};
+
+  let whereConditions: string[] = [];
+  if (status && status !== "all") {
+    whereConditions.push(`status: { _eq: "${status}" }`);
+  }
+  if (resellerId) {
+    whereConditions.push(`reseller_id: { _eq: "${resellerId}" }`);
+  }
+
+  const whereClause = whereConditions.length > 0 
+    ? `where: { ${whereConditions.join(", ")} }` 
+    : "";
+
+  const QUERY = `query GetMstTransactions($limit: Int!, $offset: Int!) {
+    mst_transaction(
+      ${whereClause}
+      order_by: { created_at: desc }
+      limit: $limit
+      offset: $offset
+    ) {
+      id
+      transaction_number
+      customer_id
+      reseller_id
+      virtual_number_id
+      transaction_type
+      payment_mode
+      payment_method
+      amount
+      currency
+      status
+      razorpay_payment_id
+      razorpay_order_id
+      reference_number
+      payment_date
+      failure_reason
+      customer_email
+      customer_phone
+      customer_name
+      description
+      notes
+      created_at
+      updated_at
+      mst_customer {
+        id
+        profile_name
+        email
+        phone
+      }
+      mst_virtual_number {
+        id
+        virtual_number
+      }
+      mst_reseller {
+        id
+        business_name
+        first_name
+        last_name
+        email
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY, { limit, offset });
+    
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch transactions",
+        data: [],
+      };
+    }
+    
+    if (result?.data?.mst_transaction) {
+      return {
+        success: true,
+        data: result.data.mst_transaction,
+      };
+    }
+    
+    return {
+      success: true,
+      data: [],
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch transactions",
+      data: [],
+    };
+  }
+};
+
+/**
+ * Get transaction statistics (for super admin dashboard)
+ */
+export const getMstTransactionStats = async () => {
+  const today = new Date().toISOString().split('T')[0];
+
+  const QUERY = `query GetMstTransactionStats {
+    total: mst_transaction_aggregate {
+      aggregate {
+        count
+        sum {
+          amount
+        }
+      }
+    }
+    successful: mst_transaction_aggregate(where: { status: { _in: ["success", "captured"] } }) {
+      aggregate {
+        count
+        sum {
+          amount
+        }
+      }
+    }
+    failed: mst_transaction_aggregate(where: { status: { _eq: "failed" } }) {
+      aggregate {
+        count
+      }
+    }
+    pending: mst_transaction_aggregate(where: { status: { _in: ["pending", "authorized"] } }) {
+      aggregate {
+        count
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY);
+    
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch transaction stats",
+        data: null,
+      };
+    }
+    
+    return {
+      success: true,
+      data: {
+        total_count: result?.data?.total?.aggregate?.count || 0,
+        total_amount: result?.data?.total?.aggregate?.sum?.amount || 0,
+        successful_count: result?.data?.successful?.aggregate?.count || 0,
+        successful_amount: result?.data?.successful?.aggregate?.sum?.amount || 0,
+        failed_count: result?.data?.failed?.aggregate?.count || 0,
+        pending_count: result?.data?.pending?.aggregate?.count || 0,
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch transaction stats",
+      data: null,
+    };
+  }
+};
+

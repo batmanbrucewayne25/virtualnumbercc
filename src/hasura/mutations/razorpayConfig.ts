@@ -18,6 +18,7 @@ export const getMstRazorpayConfigByResellerId = async (resellerId: string) => {
       id
       reseller_id
       key_id
+      webhook_secret
       is_active
       created_at
       updated_at
@@ -26,11 +27,6 @@ export const getMstRazorpayConfigByResellerId = async (resellerId: string) => {
 
   try {
     const result = await graphqlRequest(QUERY, { reseller_id: resellerId });
-    
-    // Debug logging
-    console.log("Razorpay GET - Query:", QUERY);
-    console.log("Razorpay GET - Variables:", { reseller_id: resellerId });
-    console.log("Razorpay GET - Response:", result);
     
     if (result?.errors) {
       console.error("Razorpay GET - Errors:", result.errors);
@@ -67,8 +63,8 @@ export const getMstRazorpayConfigByResellerId = async (resellerId: string) => {
 export const upsertMstRazorpayConfig = async (
   resellerId: string,
   data: {
-    key_id: string;
-    key_secret: string;
+    key_id?: string;
+    key_secret?: string;
     webhook_secret?: string;
     is_active?: boolean;
   }
@@ -88,8 +84,8 @@ export const upsertMstRazorpayConfig = async (
     // Update existing
     const UPDATE_MUTATION = `mutation UpdateMstRazorpayConfig(
       $id: uuid!
-      $key_id: String!
-      $key_secret: String!
+      $key_id: String
+      $key_secret: String
       $webhook_secret: String
       $is_active: Boolean
     ) {
@@ -112,8 +108,8 @@ export const upsertMstRazorpayConfig = async (
     try {
       const result = await graphqlRequest(UPDATE_MUTATION, {
         id: checkResult.data.id,
-        key_id: data.key_id,
-        key_secret: data.key_secret,
+        key_id: data.key_id || null,
+        key_secret: data.key_secret || null,
         webhook_secret: data.webhook_secret || null,
         is_active: data.is_active !== undefined ? data.is_active : true,
       });
@@ -147,8 +143,8 @@ export const upsertMstRazorpayConfig = async (
     // Create new
     const INSERT_MUTATION = `mutation InsertMstRazorpayConfig(
       $reseller_id: uuid!
-      $key_id: String!
-      $key_secret: String!
+      $key_id: String
+      $key_secret: String
       $webhook_secret: String
       $is_active: Boolean
     ) {
@@ -169,8 +165,8 @@ export const upsertMstRazorpayConfig = async (
     try {
       const result = await graphqlRequest(INSERT_MUTATION, {
         reseller_id: resellerId,
-        key_id: data.key_id,
-        key_secret: data.key_secret,
+        key_id: data.key_id || null,
+        key_secret: data.key_secret || null,
         webhook_secret: data.webhook_secret || null,
         is_active: data.is_active !== undefined ? data.is_active : true,
       });
@@ -200,5 +196,50 @@ export const upsertMstRazorpayConfig = async (
         message: error.message || "Failed to create Razorpay config",
       };
     }
+  }
+};
+
+/**
+ * Get all resellers with Razorpay configured (for super admin)
+ */
+export const getResellersWithRazorpayConfig = async () => {
+  const QUERY = `query GetResellersWithRazorpayConfig {
+    mst_razorpay_config(where: { is_active: { _eq: true } }) {
+      id
+      reseller_id
+      key_id
+      is_active
+      created_at
+      mst_reseller {
+        id
+        first_name
+        last_name
+        email
+        business_name
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY);
+    
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch reseller configs",
+        data: [],
+      };
+    }
+    
+    return {
+      success: true,
+      data: result?.data?.mst_razorpay_config || [],
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch reseller configs",
+      data: [],
+    };
   }
 };
