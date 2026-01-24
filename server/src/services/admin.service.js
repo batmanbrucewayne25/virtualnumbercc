@@ -74,9 +74,10 @@ export class AdminService {
   /**
    * Create new admin
    * @param {object} adminData 
+   * @param {string} creatorAdminId - ID of the admin creating this admin (for SMTP config lookup)
    * @returns {Promise<object>}
    */
-  static async createAdmin(adminData) {
+  static async createAdmin(adminData, creatorAdminId = null) {
     try {
       const { password, ...otherData } = adminData;
 
@@ -180,12 +181,23 @@ export class AdminService {
           roleName: roleName
         });
         
+        // Use creator's admin ID for SMTP config (the one who is creating this admin)
+        // This ensures we use the SMTP config of the logged-in admin, not the new admin
+        const smtpAdminId = creatorAdminId || createdAdmin.id;
+        console.log('[Admin Creation] Calling sendAdminWelcomeEmail with:', {
+          newAdminId: createdAdmin.id,
+          creatorAdminId: creatorAdminId,
+          smtpAdminId: smtpAdminId,
+          note: 'Using creator admin ID for SMTP config lookup'
+        });
+        
         const emailResult = await emailModule.sendAdminWelcomeEmail(
           createdAdmin.email,
           createdAdmin.first_name,
           createdAdmin.last_name,
           password, // Send plain password in email
-          roleName
+          roleName,
+          smtpAdminId // Pass creator's admin ID to fetch template and SMTP config
         );
 
         console.log('[Admin Creation] Email result:', JSON.stringify(emailResult, null, 2));

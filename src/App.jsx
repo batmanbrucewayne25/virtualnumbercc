@@ -21,6 +21,9 @@ import ViewSubscriptionPlanPage from "./pages/ViewSubscriptionPlanPage";
 import EditSubscriptionPlanPage from "./pages/EditSubscriptionPlanPage";
 import AssignRolePage from "./pages/AssignRolePage";
 import AdminSettingPage from "./pages/AdminSettingPage";
+import AdminSMTPPage from "./pages/AdminSMTPPage";
+import AdminWhatsAppPage from "./pages/AdminWhatsAppPage";
+import AdminSmtpTemplatePage from "./pages/AdminSmtpTemplatePage";
 // import CalendarMainPage from "./pages/CalendarMainPage";
 // import CarouselPage from "./pages/CarouselPage";
 // import ChatMessagePage from "./pages/ChatMessagePage";
@@ -137,6 +140,9 @@ function App() {
           <Route exact path='/assign-role' element={<AssignRolePage />} />
           <Route exact path='/role-access' element={<RoleAccessPage />} />
           <Route exact path='/admin-setting' element={<AdminSettingPage />} />
+          <Route exact path='/admin-smtp' element={<AdminSMTPPage />} />
+          <Route exact path='/admin-whatsapp' element={<AdminWhatsAppPage />} />
+          <Route exact path='/admin-smtp-template' element={<AdminSmtpTemplatePage />} />
           {/* <Route exact path='/avatar' element={<AvatarPage />} /> */}
           {/* <Route exact path='/badges' element={<BadgesPage />} /> */}
           {/* <Route exact path='/button' element={<ButtonPage />} /> */}

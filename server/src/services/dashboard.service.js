@@ -272,13 +272,36 @@ export class DashboardService {
         console.warn('Error fetching configured resellers count:', error.message);
       }
 
+      // Get total wallet recharge revenue (sum of all credit transactions)
+      let totalWalletRecharge = 0;
+      try {
+        const walletRechargeResult = await client.client.request(`
+          query GetTotalWalletRecharge {
+            mst_wallet_transaction_aggregate(
+              where: { transaction_type: { _eq: "credit" } }
+            ) {
+              aggregate {
+                sum {
+                  amount
+                }
+              }
+            }
+          }
+        `);
+        totalWalletRecharge = Number(walletRechargeResult.mst_wallet_transaction_aggregate?.aggregate?.sum?.amount || 0);
+      } catch (error) {
+        console.warn('Error fetching wallet recharge revenue:', error.message);
+      }
+
       return {
         totalAdmins: adminCountResult.mst_super_admin_aggregate?.aggregate?.count || 0,
         activeAdmins: activeAdminCountResult.mst_super_admin_aggregate?.aggregate?.count || 0,
-        totalCustomers: resellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
+        totalResellers: resellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
+        totalCustomers: resellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0, // Keep for backward compatibility
         activeCustomers: activeResellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
         activeVirtualNumbers: activeVirtualNumbersCount,
         soonToExpireNumbers: soonToExpireCount,
+        totalWalletRecharge: totalWalletRecharge,
         paymentStats: paymentStats,
         configuredResellers: configuredResellersCount,
       };
@@ -437,6 +460,87 @@ export class DashboardService {
     } catch (error) {
       console.error('Error fetching chart data:', error);
       throw new Error(error.message || 'Failed to fetch chart data');
+    }
+  }
+
+  /**
+   * Get expiring numbers list for Super Admin (all expiring numbers)
+   * @returns {Promise<Array>}
+   */
+  static async getExpiringNumbers() {
+    try {
+      const client = getHasuraClient();
+      
+      const today = new Date().toISOString().split('T')[0];
+      const thirtyDaysLater = new Date();
+      thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+      const expiryDate = thirtyDaysLater.toISOString().split('T')[0];
+
+      const query = `
+        query GetExpiringNumbers($today: date!, $expiry_date: date!) {
+          mst_virtual_number(
+            where: { 
+              status: { _eq: "active" }
+              expiry_date: { _gte: $today, _lte: $expiry_date }
+            }
+            order_by: { expiry_date: asc }
+          ) {
+            id
+            virtual_number
+            expiry_date
+            mst_customer {
+              id
+              profile_name
+              business_name
+              pan_full_name
+              email
+            }
+            mst_reseller {
+              id
+              business_name
+              first_name
+              last_name
+            }
+          }
+        }
+      `;
+
+      const result = await client.client.request(query, {
+        today,
+        expiry_date: expiryDate,
+      });
+
+      if (result.errors) {
+        console.error('GraphQL errors in getExpiringNumbers:', result.errors);
+        throw new Error(result.errors[0]?.message || 'GraphQL query failed');
+      }
+
+      const numbers = result.mst_virtual_number || [];
+      
+      // Calculate days left for each number
+      const numbersWithDaysLeft = numbers.map((vn) => {
+        const expiry = new Date(vn.expiry_date);
+        const todayDate = new Date();
+        const diffTime = expiry - todayDate;
+        const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        return {
+          ...vn,
+          daysLeft: daysLeft > 0 ? daysLeft : 0,
+          customerName: vn.mst_customer?.business_name || 
+                       vn.mst_customer?.profile_name || 
+                       vn.mst_customer?.pan_full_name || 
+                       "N/A",
+          resellerName: vn.mst_reseller?.business_name || 
+                       `${vn.mst_reseller?.first_name || ""} ${vn.mst_reseller?.last_name || ""}`.trim() || 
+                       "N/A",
+        };
+      });
+
+      return numbersWithDaysLeft;
+    } catch (error) {
+      console.error('Error fetching expiring numbers:', error);
+      throw error;
     }
   }
 }

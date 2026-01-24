@@ -89,6 +89,31 @@ export class ResellerDashboardService {
       const creditAmount = wallet ? Number(wallet.credit_amount) || 0 : 0;
       const debitAmount = wallet ? Number(wallet.debit_amount) || 0 : 0;
       const walletUsage = debitAmount; // Total usage is total debits
+
+      // Get Razorpay revenue (sum of successful Razorpay transactions for this reseller)
+      let razorpayRevenue = 0;
+      try {
+        const razorpayRevenueResult = await client.client.request(`
+          query GetRazorpayRevenue($reseller_id: uuid!) {
+            mst_transaction_aggregate(
+              where: { 
+                reseller_id: { _eq: $reseller_id }
+                payment_mode: { _eq: "razorpay" }
+                status: { _in: ["success", "captured"] }
+              }
+            ) {
+              aggregate {
+                sum {
+                  amount
+                }
+              }
+            }
+          }
+        `, { reseller_id: resellerId });
+        razorpayRevenue = Number(razorpayRevenueResult.mst_transaction_aggregate?.aggregate?.sum?.amount || 0);
+      } catch (error) {
+        console.warn('Error fetching Razorpay revenue:', error.message);
+      }
       
       // Get wallet transactions separately if wallet exists
       let recentUsage = 0;
@@ -131,6 +156,7 @@ export class ResellerDashboardService {
         creditAmount,
         debitAmount,
         recentUsage,
+        razorpayRevenue,
       };
     } catch (error) {
       console.error('Error fetching reseller dashboard stats:', error);

@@ -58,6 +58,9 @@ export const createAdmin = asyncHandler(async (req, res) => {
     });
   }
 
+  // Get the current logged-in admin's ID (the one creating the new admin)
+  const creatorAdminId = req.user?.userId || null;
+  
   const result = await AdminService.createAdmin({
     first_name,
     last_name,
@@ -66,7 +69,7 @@ export const createAdmin = asyncHandler(async (req, res) => {
     password,
     status: status !== undefined ? status : true,
     role_id: role_id || null
-  });
+  }, creatorAdminId);
 
   res.status(201).json({
     success: true,

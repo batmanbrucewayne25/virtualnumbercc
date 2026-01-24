@@ -2,8 +2,10 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import ReactApexChart from "react-apexcharts";
 import { useState, useEffect } from "react";
 import { getDashboardChartData } from "@/utils/api";
+import { getAuthToken } from "@/utils/auth";
 
 const SalesStatisticOne = () => {
+  const [userRole, setUserRole] = useState(null);
   const [chartData, setChartData] = useState({
     dates: [],
     values: []
@@ -12,13 +14,31 @@ const SalesStatisticOne = () => {
   const [period, setPeriod] = useState('Monthly');
 
   useEffect(() => {
+    // Get user role from token
+    const token = getAuthToken();
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role);
+      } catch (err) {
+        console.error("Error decoding token:", err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     const fetchChartData = async () => {
+      if (!userRole) return;
+      
       setLoading(true);
       try {
         const result = await getDashboardChartData();
         if (result.success && result.data) {
-          // Use admin registrations for the chart
-          const data = result.data.adminRegistrations || { dates: [], values: [] };
+          // For Super Admin, use reseller registrations; for others, use admin registrations
+          const isSuperAdmin = userRole === 'admin' || userRole === 'super_admin';
+          const data = isSuperAdmin 
+            ? (result.data.resellerRegistrations || { dates: [], values: [] })
+            : (result.data.adminRegistrations || { dates: [], values: [] });
           setChartData(data);
         }
       } catch (err) {
@@ -29,7 +49,7 @@ const SalesStatisticOne = () => {
     };
 
     fetchChartData();
-  }, [period]);
+  }, [period, userRole]);
 
   const chartOptions = {
     chart: {
@@ -65,8 +85,12 @@ const SalesStatisticOne = () => {
     }
   };
 
+  const isSuperAdmin = userRole === 'admin' || userRole === 'super_admin';
+  const chartTitle = isSuperAdmin ? 'Reseller Registrations' : 'Admin Registrations';
+  const chartSeriesName = isSuperAdmin ? 'Resellers' : 'Admins';
+
   const chartSeries = [{
-    name: 'Admins',
+    name: chartSeriesName,
     data: chartData.values || []
   }];
 
@@ -75,12 +99,26 @@ const SalesStatisticOne = () => {
   const previousValue = chartData.values?.[chartData.values.length - 2] || 0;
   const changePercent = previousValue > 0 ? ((lastValue - previousValue) / previousValue * 100).toFixed(1) : 0;
 
+  // Format dates for display (show only date, not time)
+  const formattedDates = chartData.dates?.map(date => {
+    const d = new Date(date);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  }) || [];
+
+  const chartOptionsWithFormattedDates = {
+    ...chartOptions,
+    xaxis: {
+      ...chartOptions.xaxis,
+      categories: formattedDates,
+    },
+  };
+
   return (
     <div className='col-xxl-6 col-xl-12'>
       <div className='card h-100'>
         <div className='card-body'>
           <div className='d-flex flex-wrap align-items-center justify-content-between'>
-            <h6 className='text-lg mb-0'>Admin Registrations</h6>
+            <h6 className='text-lg mb-0'>{chartTitle}</h6>
             <select
               className='form-select bg-base form-select-sm w-auto'
               value={period}
@@ -107,7 +145,7 @@ const SalesStatisticOne = () => {
             </div>
           ) : (
             <ReactApexChart
-              options={chartOptions}
+              options={chartOptionsWithFormattedDates}
               series={chartSeries}
               type='area'
               height={264}

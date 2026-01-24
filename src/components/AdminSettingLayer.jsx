@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 const AdminSettingLayer = () => {
   const [formData, setFormData] = useState({
@@ -47,11 +48,61 @@ const AdminSettingLayer = () => {
   };
 
   return (
-    <div className='card h-100 p-0 radius-12'>
-      <div className='card-header border-bottom bg-base py-16 px-24'>
-        <h5 className='text-md text-primary-light mb-0'>Admin Settings</h5>
+    <div>
+      {/* SMTP Configuration Card */}
+      <div className='card h-100 p-0 radius-12 mb-24'>
+        <div className='card-header border-bottom bg-base py-16 px-24'>
+          <h5 className='text-md text-primary-light mb-0'>SMTP Configuration</h5>
+        </div>
+        <div className='card-body p-24'>
+          <p className='text-secondary-light mb-16'>
+            Configure SMTP settings for sending emails. This will be used for sending reseller onboarding emails and other notifications.
+          </p>
+          <Link to="/admin-smtp" className='btn btn-primary'>
+            <Icon icon='mdi:email-settings-outline' className='icon me-2' />
+            Configure SMTP
+          </Link>
+        </div>
       </div>
-      <div className='card-body p-24'>
+
+      {/* WhatsApp Configuration Card */}
+      <div className='card h-100 p-0 radius-12 mb-24'>
+        <div className='card-header border-bottom bg-base py-16 px-24'>
+          <h5 className='text-md text-primary-light mb-0'>WhatsApp Configuration</h5>
+        </div>
+        <div className='card-body p-24'>
+          <p className='text-secondary-light mb-16'>
+            Configure WhatsApp API settings for sending messages. This will be used for sending reseller onboarding messages and other notifications.
+          </p>
+          <Link to="/admin-whatsapp" className='btn btn-primary'>
+            <Icon icon='mdi:whatsapp' className='icon me-2' />
+            Configure WhatsApp
+          </Link>
+        </div>
+      </div>
+
+      {/* SMTP Template Card */}
+      <div className='card h-100 p-0 radius-12 mb-24'>
+        <div className='card-header border-bottom bg-base py-16 px-24'>
+          <h5 className='text-md text-primary-light mb-0'>SMTP Template</h5>
+        </div>
+        <div className='card-body p-24'>
+          <p className='text-secondary-light mb-16'>
+            Manage email templates for reseller onboarding, password changes, wallet recharge, and other notifications.
+          </p>
+          <Link to="/admin-smtp-template" className='btn btn-primary'>
+            <Icon icon='mdi:email-multiple-outline' className='icon me-2' />
+            Manage Templates
+          </Link>
+        </div>
+      </div>
+
+      {/* General Settings Card */}
+      <div className='card h-100 p-0 radius-12'>
+        <div className='card-header border-bottom bg-base py-16 px-24'>
+          <h5 className='text-md text-primary-light mb-0'>General Settings</h5>
+        </div>
+        <div className='card-body p-24'>
         {error && (
           <div className='alert alert-danger radius-8 mb-24' role='alert'>
             <Icon icon='material-symbols:error-outline' className='icon me-2' />
@@ -249,6 +300,7 @@ const AdminSettingLayer = () => {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,129 @@
 import { graphqlRequest } from "@/hasura";
 
 /**
+ * Get all approved customers (for Super Admin)
+ */
+export const getAllApprovedCustomers = async (
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+    searchTerm?: string;
+    expiringSoon?: boolean;
+  }
+) => {
+  const QUERY = `query GetAllApprovedCustomers {
+    mst_customer(
+      where: { status: { _eq: "approved" } }
+      order_by: { created_at: desc }
+    ) {
+      id
+      reseller_id
+      profile_name
+      email
+      phone
+      business_email
+      pan_full_name
+      aadhaar_number
+      business_name
+      status
+      kyc_status
+      created_at
+      mst_reseller {
+        id
+        business_name
+        first_name
+        last_name
+      }
+      mst_virtual_numbers {
+        id
+        virtual_number
+        call_forwarding_number
+        purchase_date
+        expiry_date
+        days_left
+        status
+        is_auto_renew
+        subscription_plan_id
+      }
+      mst_transactions(
+        where: { status: { _eq: "success" } }
+        order_by: { created_at: desc }
+        limit: 1
+      ) {
+        id
+        payment_mode
+        payment_method
+        amount
+        payment_date
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY, {});
+    
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch customers",
+        data: [],
+      };
+    }
+    
+    let customers = result?.data?.mst_customer || [];
+
+    // Client-side filtering
+    if (filters?.searchTerm) {
+      const searchLower = filters.searchTerm.toLowerCase();
+      customers = customers.filter((customer: any) => {
+        const name = (customer.profile_name || customer.business_name || customer.pan_full_name || "").toLowerCase();
+        const virtualNumber = customer.mst_virtual_numbers?.[0]?.virtual_number?.toLowerCase() || "";
+        const callForward = customer.mst_virtual_numbers?.[0]?.call_forwarding_number?.toLowerCase() || "";
+        const resellerName = (customer.mst_reseller?.business_name || 
+          `${customer.mst_reseller?.first_name || ""} ${customer.mst_reseller?.last_name || ""}`.trim() || "").toLowerCase();
+        return name.includes(searchLower) || virtualNumber.includes(searchLower) || callForward.includes(searchLower) || resellerName.includes(searchLower);
+      });
+    }
+
+    // Filter by date range (purchase date)
+    if (filters?.startDate || filters?.endDate) {
+      customers = customers.filter((customer: any) => {
+        const purchaseDate = customer.mst_virtual_numbers?.[0]?.purchase_date;
+        if (!purchaseDate) return false;
+        const purchase = new Date(purchaseDate);
+        if (filters?.startDate && purchase < new Date(filters.startDate)) return false;
+        if (filters?.endDate && purchase > new Date(filters.endDate)) return false;
+        return true;
+      });
+    }
+
+    // Filter expiring soon (within 30 days)
+    if (filters?.expiringSoon) {
+      const today = new Date();
+      const thirtyDaysLater = new Date(today);
+      thirtyDaysLater.setDate(today.getDate() + 30);
+      customers = customers.filter((customer: any) => {
+        const expiryDate = customer.mst_virtual_numbers?.[0]?.expiry_date;
+        if (!expiryDate) return false;
+        const expiry = new Date(expiryDate);
+        return expiry >= today && expiry <= thirtyDaysLater;
+      });
+    }
+    
+    return {
+      success: true,
+      data: customers,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch customers",
+      data: [],
+    };
+  }
+};
+
+/**
  * Get approved customers with virtual numbers for a reseller
  */
 export const getApprovedCustomersByReseller = async (

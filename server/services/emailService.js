@@ -1,4 +1,10 @@
 import nodemailer from 'nodemailer';
+import { getSmtpTemplateByType, replaceTemplateVariables } from '../src/services/smtpTemplate.service.js';
+import { getAdminSmtpConfig } from '../src/services/smtpConfig.service.js';
+import { getAdminOnboardingTemplate } from '../mailtemplate/adminOnboarding.js';
+import { getPasswordResetTemplate } from '../mailtemplate/passwordReset.js';
+import { getVirtualNumberAssignedTemplate } from '../mailtemplate/virtualNumberAssigned.js';
+import { getRazorpayLinkTemplate } from '../mailtemplate/razorpayLink.js';
 
 // SMTP configuration from environment variables
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -12,36 +18,45 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 /**
  * Create email transporter
+ * @param {object} smtpConfig - Optional SMTP config from database. If not provided, uses env variables
  */
-const createTransporter = () => {
+const createTransporter = (smtpConfig = null) => {
+  // Use database config if provided, otherwise use env variables
+  const host = smtpConfig?.host || SMTP_HOST;
+  const port = smtpConfig?.port || SMTP_PORT;
+  const username = smtpConfig?.username || SMTP_USER;
+  const password = smtpConfig?.password || SMTP_PASSWORD;
+  const fromEmail = smtpConfig?.from_email || SMTP_FROM_EMAIL || username;
+  const fromName = smtpConfig?.from_name || SMTP_FROM_NAME || 'Virtual Number';
+  
   // Check if SMTP is configured
-  if (!SMTP_USER || !SMTP_PASSWORD) {
+  if (!username || !password) {
     console.warn('SMTP credentials not configured. Email sending will be disabled.');
     return null;
   }
 
   // Gmail-specific configuration
-  const isGmail = SMTP_HOST.includes('gmail.com');
+  const isGmail = host.includes('gmail.com');
   
   // For Gmail, use service instead of host/port for better compatibility
   if (isGmail) {
     return nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASSWORD, // MUST be an App Password, not regular password
+        user: username,
+        pass: password, // MUST be an App Password, not regular password
       },
     });
   }
   
   // For other SMTP providers
   return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE, // true for 465, false for other ports
+    host: host,
+    port: port,
+    secure: port === 465, // true for 465, false for other ports
     auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASSWORD,
+      user: username,
+      pass: password,
     },
   });
 };
@@ -62,72 +77,16 @@ export const sendPasswordResetEmail = async (email, resetToken) => {
     }
 
     const resetLink = `${FRONTEND_URL}/reset-password?token=${resetToken}`;
+    
+    // Use default template (can be extended to check database in future)
+    const defaultTemplate = getPasswordResetTemplate(resetLink);
 
     const mailOptions = {
       from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
       to: email,
-      subject: 'Password Reset Request',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Password Reset</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: #2c3e50; margin-top: 0;">Password Reset Request</h2>
-          </div>
-          
-          <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6;">
-            <p>Hello,</p>
-            
-            <p>We received a request to reset your password for your Virtual Number account. Click the button below to reset your password:</p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetLink}" 
-                 style="display: inline-block; background-color: #007bff; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                Reset Password
-              </a>
-            </div>
-            
-            <p style="color: #6c757d; font-size: 14px;">Or copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 12px; color: #495057;">
-              ${resetLink}
-            </p>
-            
-            <p style="color: #dc3545; font-size: 13px; margin-top: 30px;">
-              <strong>Important:</strong> This link will expire in 1 hour. If you didn't request this password reset, please ignore this email.
-            </p>
-            
-            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
-            
-            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0;">
-              If you're having trouble clicking the button, copy and paste the URL above into your web browser.
-            </p>
-          </div>
-          
-          <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-            <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
-          </div>
-        </body>
-        </html>
-      `,
-      text: `
-        Password Reset Request
-        
-        Hello,
-        
-        We received a request to reset your password for your Virtual Number account.
-        
-        Click this link to reset your password:
-        ${resetLink}
-        
-        This link will expire in 1 hour. If you didn't request this password reset, please ignore this email.
-        
-        © ${new Date().getFullYear()} Virtual Number. All rights reserved.
-      `,
+      subject: defaultTemplate.subject,
+      html: defaultTemplate.html,
+      text: defaultTemplate.text,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -149,19 +108,88 @@ export const sendPasswordResetEmail = async (email, resetToken) => {
 
 /**
  * Send admin welcome email with credentials
+ * First checks for template in database, then falls back to default template
+ * Uses SMTP config from database if available, otherwise uses env variables
  */
-export const sendAdminWelcomeEmail = async (email, firstName, lastName, password, roleName = null) => {
+export const sendAdminWelcomeEmail = async (email, firstName, lastName, password, roleName = null, adminId = null) => {
   try {
-    // Check SMTP configuration first
-    if (!SMTP_USER || !SMTP_PASSWORD) {
-      console.error('[Email Service] SMTP credentials not configured.');
+    const loginUrl = `${FRONTEND_URL}/sign-in`;
+    
+    // Try to get SMTP config from database first
+    let smtpConfig = null;
+    let fromEmail = SMTP_FROM_EMAIL || SMTP_USER;
+    let fromName = SMTP_FROM_NAME || 'Virtual Number';
+    
+    if (adminId) {
+      try {
+        console.log('[Email Service] Fetching SMTP config for adminId:', adminId);
+        smtpConfig = await getAdminSmtpConfig(adminId);
+        if (smtpConfig) {
+          console.log('[Email Service] SMTP config found in database:', {
+            id: smtpConfig.id,
+            admin_id: smtpConfig.admin_id,
+            host: smtpConfig.host,
+            port: smtpConfig.port,
+            username: smtpConfig.username,
+            from_email: smtpConfig.from_email,
+            from_name: smtpConfig.from_name,
+            has_password: !!smtpConfig.password,
+            password_length: smtpConfig.password ? smtpConfig.password.length : 0
+          });
+          fromEmail = smtpConfig.from_email || smtpConfig.username;
+          fromName = smtpConfig.from_name || 'Virtual Number';
+        } else {
+          console.log('[Email Service] No SMTP config found in database for adminId:', adminId);
+        }
+      } catch (configError) {
+        console.error('[Email Service] Error fetching SMTP config from database:', configError);
+        console.warn('[Email Service] Using env variables as fallback');
+      }
+    } else {
+      console.log('[Email Service] No adminId provided, using env variables');
+    }
+    
+    // Check SMTP configuration
+    // If we have SMTP config from database but password is missing, it's likely a permissions issue
+    if (smtpConfig && (!smtpConfig.password || smtpConfig.password.trim() === '')) {
+      console.error('[Email Service] SMTP config found in database but password field is missing or empty.');
+      console.error('[Email Service] This might be a Hasura permissions issue or the password was not saved.');
+      console.error('[Email Service] Falling back to environment variables for SMTP credentials.');
+      // Fall back to env variables
+      smtpConfig = null;
+    }
+    
+    // Get final credentials (from database if available, otherwise from env)
+    const username = smtpConfig?.username || SMTP_USER;
+    const password_config = smtpConfig?.password || SMTP_PASSWORD;
+    
+    console.log('[Email Service] SMTP credentials check:', {
+      has_username: !!username,
+      has_password: !!password_config,
+      using_database_config: !!smtpConfig,
+      username_source: smtpConfig?.username ? 'database' : 'env',
+      password_source: smtpConfig?.password ? 'database' : 'env',
+      smtpConfig_keys: smtpConfig ? Object.keys(smtpConfig) : []
+    });
+    
+    if (!username || !password_config) {
+      console.error('[Email Service] SMTP credentials not configured.', {
+        username: username ? 'present' : 'missing',
+        password: password_config ? 'present' : 'missing',
+        smtpConfig_exists: !!smtpConfig,
+        adminId: adminId,
+        env_SMTP_USER: SMTP_USER ? 'present' : 'missing',
+        env_SMTP_PASSWORD: SMTP_PASSWORD ? 'present' : 'missing'
+      });
       return {
         success: false,
-        message: 'Email service not configured. Please contact administrator.'
+        message: 'Email service not configured. Please ensure SMTP credentials are set in admin settings or environment variables.'
       };
     }
 
-    const transporter = createTransporter();
+    // Only pass smtpConfig if it has all required fields (including password)
+    const transporterConfig = (smtpConfig && smtpConfig.password) ? smtpConfig : null;
+    const transporter = createTransporter(transporterConfig);
     
     if (!transporter) {
       console.error('[Email Service] Email transporter not available. SMTP not configured.');
@@ -178,8 +206,9 @@ export const sendAdminWelcomeEmail = async (email, firstName, lastName, password
     } catch (verifyError) {
       console.error('[Email Service] SMTP verification failed:', verifyError.message);
       
+      const host = smtpConfig?.host || SMTP_HOST;
       // Provide helpful error message for Gmail
-      if (SMTP_HOST.includes('gmail.com')) {
+      if (host.includes('gmail.com')) {
         return {
           success: false,
           message: `Gmail authentication failed. Please ensure:\n1. You have enabled 2-Step Verification on your Google account\n2. You are using an App Password (not your regular password)\n3. Generate App Password at: https://myaccount.google.com/apppasswords\n\nError: ${verifyError.message}`
@@ -191,81 +220,75 @@ export const sendAdminWelcomeEmail = async (email, firstName, lastName, password
         message: `SMTP authentication failed: ${verifyError.message}. Please check your SMTP credentials.`
       };
     }
-
-    const loginUrl = `${FRONTEND_URL}/sign-in`;
-    const roleInfo = roleName ? `<p><strong>Role:</strong> ${roleName}</p>` : '<p><strong>Role:</strong> No role assigned</p>';
+    
+    // Try to get template from database first
+    let template = null;
+    if (adminId) {
+      try {
+        template = await getSmtpTemplateByType('admin_onboarding', adminId);
+        if (template) {
+          console.log('[Email Service] Using database template for admin onboarding');
+        }
+      } catch (templateError) {
+        console.warn('[Email Service] Error fetching template from database, using default:', templateError.message);
+      }
+    }
+    
+    // Prepare variables for template replacement
+    // Support both snake_case and camelCase for flexibility
+    const templateVariables = {
+      // snake_case (for {{variable_name}} syntax)
+      first_name: firstName,
+      last_name: lastName,
+      full_name: `${firstName} ${lastName}`,
+      email: email,
+      password: password,
+      role_name: roleName || 'No role assigned',
+      role: roleName || 'No role assigned',
+      login_url: loginUrl,
+      frontend_url: FRONTEND_URL,
+      // camelCase (for ${variableName} syntax)
+      firstName: firstName,
+      lastName: lastName,
+      fullName: `${firstName} ${lastName}`,
+      roleName: roleName || 'No role assigned',
+      loginUrl: loginUrl,
+      frontendUrl: FRONTEND_URL,
+    };
+    
+    let subject, html, text;
+    
+    if (template && template.subject && template.body) {
+      // Use database template
+      console.log('[Email Service] Using database template');
+      console.log('[Email Service] Template body before replacement:', template.body.substring(0, 200));
+      console.log('[Email Service] Template variables:', Object.keys(templateVariables));
+      
+      subject = replaceTemplateVariables(template.subject, templateVariables);
+      html = replaceTemplateVariables(template.body, templateVariables);
+      
+      console.log('[Email Service] Template body after replacement:', html.substring(0, 200));
+      console.log('[Email Service] Checking if replacement worked:', {
+        has_original_syntax: html.includes('${firstName}'),
+        has_replaced_value: html.includes(firstName)
+      });
+      
+      text = html.replace(/<[^>]*>/g, ''); // Simple HTML to text conversion
+    } else {
+      // Use default template
+      const defaultTemplate = getAdminOnboardingTemplate(firstName, lastName, email, password, roleName, loginUrl);
+      subject = defaultTemplate.subject;
+      html = defaultTemplate.html;
+      text = defaultTemplate.text;
+      console.log('[Email Service] Using default template');
+    }
 
     const mailOptions = {
-      from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
+      from: `"${fromName}" <${fromEmail}>`,
       to: email,
-      subject: 'Welcome to Virtual Number - Your Admin Account Credentials',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Admin Account Created</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: #2c3e50; margin-top: 0;">Welcome to Virtual Number!</h2>
-          </div>
-          
-          <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6;">
-            <p>Hello ${firstName} ${lastName},</p>
-            
-            <p>Your admin account has been successfully created. Below are your login credentials:</p>
-            
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007bff;">
-              <p style="margin: 10px 0;"><strong>Email:</strong> ${email}</p>
-              <p style="margin: 10px 0;"><strong>Password:</strong> <code style="background-color: #e9ecef; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${password}</code></p>
-              ${roleInfo}
-            </div>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${loginUrl}" 
-                 style="display: inline-block; background-color: #007bff; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                Login to Your Account
-              </a>
-            </div>
-            
-            <p style="color: #dc3545; font-size: 13px; margin-top: 30px;">
-              <strong>Important Security Notice:</strong> Please change your password after your first login for security purposes. You can do this from Settings → Reset Password.
-            </p>
-            
-            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
-            
-            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0;">
-              If you have any questions or need assistance, please contact our support team.
-            </p>
-          </div>
-          
-          <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-            <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
-          </div>
-        </body>
-        </html>
-      `,
-      text: `
-        Welcome to Virtual Number!
-        
-        Hello ${firstName} ${lastName},
-        
-        Your admin account has been successfully created. Below are your login credentials:
-        
-        Email: ${email}
-        Password: ${password}
-        ${roleName ? `Role: ${roleName}` : 'Role: No role assigned'}
-        
-        Login URL: ${loginUrl}
-        
-        Important Security Notice: Please change your password after your first login for security purposes. You can do this from Settings → Reset Password.
-        
-        If you have any questions or need assistance, please contact our support team.
-        
-        © ${new Date().getFullYear()} Virtual Number. All rights reserved.
-      `,
+      subject: subject,
+      html: html,
+      text: text,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -290,7 +313,7 @@ export const sendAdminWelcomeEmail = async (email, firstName, lastName, password
  */
 export const sendVirtualNumberEmail = async (email, recipientName, virtualNumber, resellerName) => {
   try {
-    const transporter = createTransporter();
+    const transporter = createTransporter(); // Uses env variables
     
     if (!transporter) {
       console.error('Email transporter not available. SMTP not configured.');
@@ -300,64 +323,15 @@ export const sendVirtualNumberEmail = async (email, recipientName, virtualNumber
       };
     }
 
+    // Use default template (can be extended to check database in future)
+    const defaultTemplate = getVirtualNumberAssignedTemplate(recipientName, virtualNumber, resellerName);
+
     const mailOptions = {
       from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
       to: email,
-      subject: 'Virtual Number Assigned - Your Account is Active',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Virtual Number Assigned</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: #2c3e50; margin-top: 0;">Virtual Number Assigned</h2>
-          </div>
-          
-          <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6;">
-            <p>Hello ${recipientName},</p>
-            
-            <p>Congratulations! Your account has been approved and your virtual number has been successfully generated.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; text-align: center;">
-              <p style="margin: 10px 0; font-size: 24px; font-weight: bold; color: #28a745;">${virtualNumber}</p>
-            </div>
-            
-            <p>Your virtual number is now active and ready to use. You can start using it for your business communications.</p>
-            
-            <p><strong>Reseller:</strong> ${resellerName}</p>
-            
-            <p style="color: #6c757d; font-size: 13px; margin-top: 30px;">
-              If you have any questions or need assistance, please contact your reseller: ${resellerName}
-            </p>
-          </div>
-          
-          <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-            <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
-          </div>
-        </body>
-        </html>
-      `,
-      text: `
-        Virtual Number Assigned
-        
-        Hello ${recipientName},
-        
-        Congratulations! Your account has been approved and your virtual number has been successfully generated.
-        
-        Your Virtual Number: ${virtualNumber}
-        
-        Your virtual number is now active and ready to use. You can start using it for your business communications.
-        
-        Reseller: ${resellerName}
-        
-        If you have any questions or need assistance, please contact your reseller: ${resellerName}
-        
-        © ${new Date().getFullYear()} Virtual Number. All rights reserved.
-      `,
+      subject: defaultTemplate.subject,
+      html: defaultTemplate.html,
+      text: defaultTemplate.text,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -382,7 +356,7 @@ export const sendVirtualNumberEmail = async (email, recipientName, virtualNumber
  */
 export const sendRazorpayLinkEmail = async (email, recipientName, razorpayLink, planName, planAmount, resellerName) => {
   try {
-    const transporter = createTransporter();
+    const transporter = createTransporter(); // Uses env variables
     
     if (!transporter) {
       console.error('Email transporter not available. SMTP not configured.');
@@ -392,76 +366,15 @@ export const sendRazorpayLinkEmail = async (email, recipientName, razorpayLink, 
       };
     }
 
+    // Use default template (can be extended to check database in future)
+    const defaultTemplate = getRazorpayLinkTemplate(recipientName, razorpayLink, planName, planAmount, resellerName);
+
     const mailOptions = {
       from: `"${SMTP_FROM_NAME}" <${SMTP_FROM_EMAIL}>`,
       to: email,
-      subject: 'Complete Your Payment - Virtual Number Subscription',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Payment Link</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: #2c3e50; margin-top: 0;">Complete Your Payment</h2>
-          </div>
-          
-          <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6;">
-            <p>Hello ${recipientName},</p>
-            
-            <p>Your account has been approved! To activate your virtual number, please complete the payment using the link below.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <p style="margin: 10px 0;"><strong>Subscription Plan:</strong> ${planName}</p>
-              <p style="margin: 10px 0;"><strong>Amount:</strong> ₹${Number(planAmount).toFixed(2)}</p>
-            </div>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${razorpayLink}" 
-                 style="display: inline-block; background-color: #007bff; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                Pay Now with Razorpay
-              </a>
-            </div>
-            
-            <p style="color: #6c757d; font-size: 14px;">Or copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 12px; color: #495057;">
-              ${razorpayLink}
-            </p>
-            
-            <p><strong>Reseller:</strong> ${resellerName}</p>
-            
-            <p style="color: #dc3545; font-size: 13px; margin-top: 30px;">
-              <strong>Note:</strong> Your virtual number will be activated automatically after successful payment.
-            </p>
-          </div>
-          
-          <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-            <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
-          </div>
-        </body>
-        </html>
-      `,
-      text: `
-        Complete Your Payment
-        
-        Hello ${recipientName},
-        
-        Your account has been approved! To activate your virtual number, please complete the payment using the link below.
-        
-        Subscription Plan: ${planName}
-        Amount: ₹${Number(planAmount).toFixed(2)}
-        
-        Payment Link: ${razorpayLink}
-        
-        Reseller: ${resellerName}
-        
-        Note: Your virtual number will be activated automatically after successful payment.
-        
-        © ${new Date().getFullYear()} Virtual Number. All rights reserved.
-      `,
+      subject: defaultTemplate.subject,
+      html: defaultTemplate.html,
+      text: defaultTemplate.text,
     };
 
     const info = await transporter.sendMail(mailOptions);

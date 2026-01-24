@@ -27,3 +27,16 @@ export const getChartData = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get expiring numbers list for Super Admin
+ * @route   GET /api/dashboard/expiring-numbers
+ */
+export const getExpiringNumbers = asyncHandler(async (req, res) => {
+  const numbers = await DashboardService.getExpiringNumbers();
+
+  res.json({
+    success: true,
+    data: numbers
+  });
+});
+

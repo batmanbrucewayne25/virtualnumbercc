@@ -7,6 +7,7 @@ import TopCountries from "./child/TopCountries";
 import GeneratedContent from "./child/GeneratedContent";
 import UnitCountOne from "./child/UnitCountOne";
 import ResellerPaymentsLayer from "./ResellerPaymentsLayer";
+import ExpiringNumbersTable from "./ExpiringNumbersTable";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { useState, useEffect } from "react";
 
@@ -38,6 +39,11 @@ const DashBoardLayerOne = () => {
           <ResellerPaymentsLayer />
         </div>
       )}
+
+      {/* Expiring Numbers Table - For both Super Admin and Reseller */}
+      <div className="mt-24">
+        <ExpiringNumbersTable />
+      </div>
 
       <section className='row gy-4 mt-1'>
         {/* SalesStatisticOne */}

@@ -1,0 +1,530 @@
+openapi: 3.0.0
+info:
+  title: Virtual Numbers API
+  description: API for managing virtual numbers - activation, call forwarding, suspension, and reactivation
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@your-domain.com
+
+servers:
+  - url: https://your-domain.com
+    description: Production server
+  - url: http://localhost:3001
+    description: Development server
+
+tags:
+  - name: Virtual Numbers
+    description: Virtual number management operations
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: API key in format "Bearer YOUR_API_KEY"
+
+  schemas:
+    AvailableNumber:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        number:
+          type: string
+          example: "+919876543210"
+        region:
+          type: string
+          example: "India"
+        rate:
+          type: number
+          format: float
+          example: 500.00
+
+    ActivateRequest:
+      type: object
+      required:
+        - number
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+
+    ActivateResponse:
+      type: object
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+        status:
+          type: string
+          example: "ACTIVE"
+        activation_date:
+          type: string
+          format: date
+          example: "2024-12-22"
+        expiry_date:
+          type: string
+          format: date
+          example: "2026-01-22"
+        amount_deducted:
+          type: number
+          format: float
+          example: 500
+        wallet_balance:
+          type: number
+          format: float
+          example: 4500
+
+    CallForwardRequest:
+      type: object
+      required:
+        - number
+        - forward_type
+        - forward_value
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+        forward_type:
+          type: string
+          enum: [mobile, extension, uri]
+          example: "mobile"
+        forward_value:
+          type: string
+          example: "9876543210"
+
+    CallForwardResponse:
+      type: object
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+        forward_type:
+          type: string
+          example: "mobile"
+        forward_value:
+          type: string
+          example: "9876543210"
+
+    NumberDetails:
+      type: object
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+        status:
+          type: string
+          enum: [AVAILABLE, ACTIVE, SUSPENDED]
+          example: "ACTIVE"
+        forward_to:
+          type: string
+          nullable: true
+          example: "SIP/airtel/09876543210"
+        activation_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2024-12-22"
+        expiry_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-01-22"
+
+    SuspendRequest:
+      type: object
+      required:
+        - number
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+
+    SuspendResponse:
+      type: object
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+        status:
+          type: string
+          example: "SUSPENDED"
+        suspended_on:
+          type: string
+          format: date-time
+          example: "2024-12-22T14:30:00Z"
+
+    ReactivateResponse:
+      type: object
+      properties:
+        number:
+          type: string
+          example: "+919876543210"
+        status:
+          type: string
+          example: "ACTIVE"
+        reactivated_on:
+          type: string
+          format: date-time
+          example: "2024-12-22T15:00:00Z"
+        expiry_date:
+          type: string
+          format: date
+          example: "2026-01-22"
+        amount_deducted:
+          type: number
+          format: float
+          example: 500
+        wallet_balance:
+          type: number
+          format: float
+          example: 4000
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: "Error message here"
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: "Operation successful"
+        data:
+          type: object
+
+paths:
+  /virtualnumbers/available:
+    get:
+      tags:
+        - Virtual Numbers
+      summary: Get available virtual numbers
+      description: Fetch list of available virtual numbers for purchase
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Available numbers fetched successfully"
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableNumber'
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /virtualnumbers/activate:
+    post:
+      tags:
+        - Virtual Numbers
+      summary: Activate a virtual number
+      description: Activate a virtual number for 13 months. Amount will be deducted from wallet.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateRequest'
+      responses:
+        '200':
+          description: Number activated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Number activated successfully. Amount deducted: 500"
+                  data:
+                    $ref: '#/components/schemas/ActivateResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingParameter:
+                  value:
+                    status: 400
+                    message: "number is required"
+                insufficientBalance:
+                  value:
+                    status: 400
+                    message: "Insufficient balance. Required: 500, Available: 200"
+        '404':
+          description: Number not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 404
+                message: "Number not found or not available"
+
+  /virtualnumbers/call-forward:
+    post:
+      tags:
+        - Virtual Numbers
+      summary: Configure call forwarding
+      description: Set up call forwarding for an activated number
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallForwardRequest'
+      responses:
+        '200':
+          description: Call forwarding configured successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Call forwarding configured successfully"
+                  data:
+                    $ref: '#/components/schemas/CallForwardResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidForwardType:
+                  value:
+                    status: 400
+                    message: "Invalid forward_type. Must be: mobile, extension, or uri"
+                invalidMobile:
+                  value:
+                    status: 400
+                    message: "Invalid mobile number. Must be 10 digits."
+        '404':
+          description: Number not found or not activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Virtual Numbers
+      summary: Update call forwarding
+      description: Update existing call forwarding configuration
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallForwardRequest'
+      responses:
+        '200':
+          description: Call forwarding updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Call forwarding updated successfully"
+                  data:
+                    $ref: '#/components/schemas/CallForwardResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Number not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /virtualnumbers/details/{number}:
+    get:
+      tags:
+        - Virtual Numbers
+      summary: Get number details
+      description: Fetch details of a specific virtual number
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: number
+          in: path
+          required: true
+          description: The virtual number (URL encoded)
+          schema:
+            type: string
+            example: "+919876543210"
+      responses:
+        '200':
+          description: Number details fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Number details fetched successfully"
+                  data:
+                    $ref: '#/components/schemas/NumberDetails'
+        '404':
+          description: Number not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /virtualnumbers/suspend:
+    post:
+      tags:
+        - Virtual Numbers
+      summary: Suspend a number
+      description: Temporarily suspend an active virtual number
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendRequest'
+      responses:
+        '200':
+          description: Number suspended successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Number suspended successfully"
+                  data:
+                    $ref: '#/components/schemas/SuspendResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                message: "number is required"
+        '404':
+          description: Number not found or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /virtualnumbers/reactivate:
+    post:
+      tags:
+        - Virtual Numbers
+      summary: Reactivate a number
+      description: Reactivate a suspended virtual number. Amount will be deducted from wallet.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendRequest'
+      responses:
+        '200':
+          description: Number reactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Number reactivated successfully. Amount deducted: 500"
+                  data:
+                    $ref: '#/components/schemas/ReactivateResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                insufficientBalance:
+                  value:
+                    status: 400
+                    message: "Insufficient balance. Required: 500, Available: 200"
+                walletNotFound:
+                  value:
+                    status: 400
+                    message: "Wallet not found. Please contact support."
+        '404':
+          description: Number not found or not suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+

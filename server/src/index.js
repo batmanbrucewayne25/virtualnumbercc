@@ -11,6 +11,7 @@ import customerRoutes from "./routes/customer.routes.js";
 import resellerDashboardRoutes from "./routes/resellerDashboard.routes.js";
 import razorpayRoutes from "./routes/razorpay.routes.js";
 import kycRoutes from "./routes/kyc.routes.js";
+import virtualNumbersRoutes from "./routes/virtualNumbers.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 
 const app = express();
@@ -45,6 +46,9 @@ app.use("/api/customer", customerRoutes);
 app.use("/api/reseller-dashboard", resellerDashboardRoutes);
 app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/kyc", kycRoutes);
+
+// External API Routes (Virtual Numbers API)
+app.use("/virtualnumbers", virtualNumbersRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

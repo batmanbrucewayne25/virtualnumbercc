@@ -405,6 +405,19 @@ const MasterLayout = ({ children }) => {
                   </li>
                 </PermissionGuard>
 
+                {/* Users List - Admin Only (Super Admin can view all resellers' users) */}
+                <li>
+                  <NavLink
+                    to='/users-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='flowbite:users-group-outline' className='menu-icon' />
+                    <span>Users</span>
+                  </NavLink>
+                </li>
+
                 {/* Wallet Ledger - Admin Only */}
                 <PermissionGuard module="Wallet" action="view">
                   <li>
@@ -473,6 +486,39 @@ const MasterLayout = ({ children }) => {
                         >
                           <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
                           Admin Setting
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to='/admin-smtp'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-warning-main w-auto' />{" "}
+                          SMTP Configuration
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to='/admin-whatsapp'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-success-main w-auto' />{" "}
+                          WhatsApp Configuration
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to='/admin-smtp-template'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-info-main w-auto' />{" "}
+                          SMTP Template
                         </NavLink>
                       </li>
                       <li>

@@ -1,8 +1,23 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getApprovedCustomersByReseller } from "@/hasura/mutations/user";
-import { getUserData } from "@/utils/auth";
+import { getApprovedCustomersByReseller, getAllApprovedCustomers } from "@/hasura/mutations/user";
+import { getMstResellers } from "@/hasura/mutations/reseller";
+import { getUserData, getAuthToken } from "@/utils/auth";
+
+// Simple JWT decode function (or use jwt-decode library if available)
+const decodeJWT = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+};
 
 const UsersListLayer = () => {
   const [customers, setCustomers] = useState([]);
@@ -12,22 +27,45 @@ const UsersListLayer = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [expiringSoon, setExpiringSoon] = useState(false);
+  const [userRole, setUserRole] = useState(null);
+  const [resellers, setResellers] = useState([]);
+  const [selectedResellerId, setSelectedResellerId] = useState("all");
 
   useEffect(() => {
+    // Get user role from JWT token
+    const token = getAuthToken();
+    if (token) {
+      try {
+        const decoded = decodeJWT(token);
+        if (decoded) {
+          setUserRole(decoded.role);
+          // If admin, fetch resellers for filter
+          if (decoded.role === 'admin' || decoded.role === 'super_admin') {
+            fetchResellers();
+          }
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+      }
+    }
     fetchCustomers();
-  }, [startDate, endDate, expiringSoon]);
+  }, [startDate, endDate, expiringSoon, userRole, selectedResellerId]);
+
+  const fetchResellers = async () => {
+    try {
+      const result = await getMstResellers();
+      if (result.success) {
+        setResellers(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching resellers:", err);
+    }
+  };
 
   const fetchCustomers = async () => {
     setLoading(true);
     setError("");
     try {
-      const userData = getUserData();
-      if (!userData || !userData.id) {
-        setError("Unable to determine reseller ID. Please log in again.");
-        setLoading(false);
-        return;
-      }
-
       const filters = {
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -35,7 +73,22 @@ const UsersListLayer = () => {
         expiringSoon: expiringSoon || undefined,
       };
 
-      const result = await getApprovedCustomersByReseller(userData.id, filters);
+      let result;
+      
+      // If user is admin/super_admin, fetch all customers
+      if (userRole === 'admin' || userRole === 'super_admin') {
+        result = await getAllApprovedCustomers(filters);
+      } else {
+        // For resellers, fetch only their customers
+        const userData = getUserData();
+        if (!userData || !userData.id) {
+          setError("Unable to determine reseller ID. Please log in again.");
+          setLoading(false);
+          return;
+        }
+        result = await getApprovedCustomersByReseller(userData.id, filters);
+      }
+
       if (result.success) {
         setCustomers(result.data || []);
       } else {
@@ -58,6 +111,7 @@ const UsersListLayer = () => {
     setStartDate("");
     setEndDate("");
     setExpiringSoon(false);
+    setSelectedResellerId("all");
   };
 
   const formatDate = (dateString) => {
@@ -118,19 +172,30 @@ const UsersListLayer = () => {
     return calculateDaysLeft(expiryDate);
   };
 
-  // Filter customers based on search term
+  // Filter customers based on search term and reseller filter
   const filteredCustomers = customers.filter((customer) => {
+    // Filter by reseller (for admins)
+    if ((userRole === 'admin' || userRole === 'super_admin') && selectedResellerId !== "all") {
+      if (customer.reseller_id !== selectedResellerId) {
+        return false;
+      }
+    }
+    
+    // Filter by search term
     if (!searchTerm) return true;
     
     const searchLower = searchTerm.toLowerCase();
     const name = getCustomerName(customer).toLowerCase();
     const virtualNumber = getVirtualNumber(customer).toLowerCase();
     const callForward = getCallForwardNumber(customer).toLowerCase();
+    const resellerName = (customer.mst_reseller?.business_name || 
+      `${customer.mst_reseller?.first_name || ""} ${customer.mst_reseller?.last_name || ""}`.trim() || "").toLowerCase();
 
     return (
       name.includes(searchLower) ||
       virtualNumber.includes(searchLower) ||
-      callForward.includes(searchLower)
+      callForward.includes(searchLower) ||
+      resellerName.includes(searchLower)
     );
   });
 
@@ -143,7 +208,25 @@ const UsersListLayer = () => {
       <div className='card-body p-24'>
         {/* Filters */}
         <div className='row g-3 mb-24'>
-          <div className='col-md-3'>
+          {(userRole === 'admin' || userRole === 'super_admin') && (
+            <div className='col-md-2'>
+              <label className='form-label text-sm fw-semibold mb-8'>Reseller</label>
+              <select
+                className='form-select form-select-sm'
+                value={selectedResellerId}
+                onChange={(e) => setSelectedResellerId(e.target.value)}
+              >
+                <option value="all">All Resellers</option>
+                {resellers.map((reseller) => (
+                  <option key={reseller.id} value={reseller.id}>
+                    {reseller.business_name || `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() || reseller.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className={userRole === 'admin' || userRole === 'super_admin' ? 'col-md-2' : 'col-md-3'}>
             <label className='form-label text-sm fw-semibold mb-8'>Search</label>
             <div className='d-flex gap-2'>
               <input
@@ -196,7 +279,7 @@ const UsersListLayer = () => {
             </div>
           </div>
 
-          <div className='col-md-3 d-flex align-items-end'>
+          <div className='col-md-2 d-flex align-items-end'>
             <button
               type='button'
               className='btn btn-secondary btn-sm'
@@ -234,6 +317,9 @@ const UsersListLayer = () => {
                 <thead>
                   <tr>
                     <th scope='col'>S.L</th>
+                    {(userRole === 'admin' || userRole === 'super_admin') && (
+                      <th scope='col'>Reseller</th>
+                    )}
                     <th scope='col'>Customer Name</th>
                     <th scope='col'>Virtual Number</th>
                     <th scope='col'>Call Forward Number</th>
@@ -250,6 +336,15 @@ const UsersListLayer = () => {
                   {filteredCustomers.map((customer, index) => (
                     <tr key={customer.id}>
                       <td>{index + 1}</td>
+                      {(userRole === 'admin' || userRole === 'super_admin') && (
+                        <td>
+                          <span className='text-sm fw-medium'>
+                            {customer.mst_reseller?.business_name || 
+                             `${customer.mst_reseller?.first_name || ""} ${customer.mst_reseller?.last_name || ""}`.trim() || 
+                             "N/A"}
+                          </span>
+                        </td>
+                      )}
                       <td>
                         <span className='text-sm fw-medium'>
                           {getCustomerName(customer)}
