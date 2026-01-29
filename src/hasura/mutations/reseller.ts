@@ -224,6 +224,61 @@ export const deleteMstReseller = async (id: string) => {
 };
 
 /**
+ * Update reseller status only
+ */
+export const updateMstResellerStatus = async (id: string, status: boolean) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || typeof id !== 'string' || !uuidRegex.test(id)) {
+    return {
+      success: false,
+      message: "Invalid reseller ID format",
+    };
+  }
+
+  const MUTATION = `mutation UpdateMstResellerStatus(
+    $id: uuid!
+    $status: Boolean!
+  ) {
+    update_mst_reseller_by_pk(
+      pk_columns: { id: $id }
+      _set: {
+        status: $status
+      }
+    ) {
+      id
+      status
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, { id, status });
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update reseller status",
+      };
+    }
+    if (result?.data?.update_mst_reseller_by_pk) {
+      return {
+        success: true,
+        data: result.data.update_mst_reseller_by_pk,
+        message: "Reseller status updated successfully",
+      };
+    }
+    return {
+      success: false,
+      message: "Failed to update reseller status",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message || "Failed to update reseller status",
+    };
+  }
+};
+
+/**
  * Update reseller
  */
 export const updateMstReseller = async (id: string, data: {
@@ -648,6 +703,89 @@ export const approveMstReseller = async (
         // Log warning but don't fail the approval
         console.warn("Failed to update number limits:", numberLimitsResult.message);
       }
+    }
+
+    // Send email and WhatsApp notifications via API
+    try {
+      // Fetch reseller details for notifications
+      const resellerDetails = await getMstResellerById(id);
+      if (resellerDetails.success && resellerDetails.data) {
+        const reseller = resellerDetails.data;
+        const resellerName = reseller.business_name || `${reseller.first_name} ${reseller.last_name}`.trim() || reseller.email;
+        
+        // Call notification API endpoint
+        try {
+          // Get API base URL - try multiple methods
+          let API_BASE_URL = 'http://localhost:3001/api';
+          
+          if (typeof window !== 'undefined') {
+            // Try to get from Vite env (injected at build time)
+            try {
+              // @ts-ignore - Vite injects this at build time
+              const viteEnv = (window as any).__VITE_API_BASE_URL__;
+              if (viteEnv) {
+                API_BASE_URL = viteEnv;
+              } else {
+                // Fallback: construct from current origin
+                const origin = window.location.origin;
+                // If origin is localhost:5173 (Vite dev), use localhost:3001
+                if (origin.includes('localhost:5173') || origin.includes('127.0.0.1:5173')) {
+                  API_BASE_URL = 'http://localhost:3001/api';
+                } else {
+                  API_BASE_URL = `${origin}/api`;
+                }
+              }
+            } catch (e) {
+              // Use default
+            }
+          }
+          
+          console.log('[Reseller Approval] Calling notification API:', `${API_BASE_URL}/notifications/reseller-approval`);
+          console.log('[Reseller Approval] Reseller data:', { email: reseller.email, phone: reseller.phone, name: resellerName });
+          
+          const response = await fetch(`${API_BASE_URL}/notifications/reseller-approval`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${typeof window !== 'undefined' ? (localStorage.getItem('authToken') || '') : ''}`,
+            },
+            body: JSON.stringify({
+              email: reseller.email,
+              phone: reseller.phone,
+              resellerName: resellerName,
+              walletBalance: data.wallet_balance || null,
+              validityDate: data.validity_date || null,
+            }),
+          });
+
+          console.log('[Reseller Approval] API Response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error("[Reseller Approval] Notification API error:", response.status, errorText);
+            return;
+          }
+
+          const notificationResult = await response.json();
+          console.log('[Reseller Approval] Notification result:', notificationResult);
+          
+          if (!notificationResult.success) {
+            console.warn("[Reseller Approval] Failed to send approval notifications:", notificationResult.message);
+            console.warn("[Reseller Approval] Notification results:", notificationResult.results);
+          } else {
+            console.log("[Reseller Approval] Approval notifications sent successfully:", notificationResult.results);
+          }
+        } catch (apiError: any) {
+          console.error("[Reseller Approval] Error calling notification API:", apiError);
+          console.error("[Reseller Approval] Error details:", apiError.message, apiError.stack);
+        }
+      } else {
+        console.warn("[Reseller Approval] Could not fetch reseller details for notifications");
+      }
+    } catch (notificationError: any) {
+      // Don't fail the approval if notifications fail
+      console.error("[Reseller Approval] Error sending approval notifications:", notificationError);
+      console.error("[Reseller Approval] Error details:", notificationError.message, notificationError.stack);
     }
 
     return {

@@ -81,8 +81,8 @@ const AdminSettingLayer = () => {
         </div>
       </div>
 
-      {/* SMTP Template Card */}
-      <div className='card h-100 p-0 radius-12 mb-24'>
+      {/* SMTP Template Card - Commented out for now */}
+      {/* <div className='card h-100 p-0 radius-12 mb-24'>
         <div className='card-header border-bottom bg-base py-16 px-24'>
           <h5 className='text-md text-primary-light mb-0'>SMTP Template</h5>
         </div>
@@ -95,7 +95,7 @@ const AdminSettingLayer = () => {
             Manage Templates
           </Link>
         </div>
-      </div>
+      </div> */}
 
       {/* General Settings Card */}
       <div className='card h-100 p-0 radius-12'>

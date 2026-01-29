@@ -13,13 +13,19 @@ import Step7 from "./steps/Step7";
 const SignUpLayer = () => {
   const [step, setStep] = useState<number>(1);
   const [email, setEmail] = useState<string>("");
+  const [phone, setPhone] = useState<string>("");
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
     const emailFromStorage = localStorage.getItem("signupEmail");
+    const phoneFromStorage = localStorage.getItem("signupPhone");
     if (emailFromStorage) {
+      setEmail(emailFromStorage);
+      if (phoneFromStorage) {
+        setPhone(phoneFromStorage);
+      }
       fetchUserData(emailFromStorage);
     }
   }, []);
@@ -54,7 +60,9 @@ const SignUpLayer = () => {
 
   const handleStep1Success = (data: any) => {
     setEmail(data.email);
+    setPhone(data.phone);
     localStorage.setItem("signupEmail", data.email);
+    localStorage.setItem("signupPhone", data.phone);
     handleStepChange(2);
   };
 
@@ -108,6 +116,7 @@ const SignUpLayer = () => {
           {step === 3 && (
             <Step3
               email={email}
+              phone={phone}
               onBack={() => handleStepChange(2)}
               onVerify={() => handleStepChange(4)}
             />

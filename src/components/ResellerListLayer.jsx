@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getMstResellers, deleteMstReseller, approveMstReseller, rejectMstReseller, suspendMstReseller, reactivateMstReseller } from "@/hasura/mutations/reseller";
+import { getMstResellers, deleteMstReseller, approveMstReseller, rejectMstReseller, suspendMstReseller, reactivateMstReseller, updateMstResellerStatus } from "@/hasura/mutations/reseller";
 import { getUserData } from "@/utils/auth";
 import ApproveResellerModal from "./ApproveResellerModal";
 import RejectResellerModal from "./RejectResellerModal";
@@ -98,16 +98,13 @@ const ResellerListLayer = () => {
       const result = await approveMstReseller(selectedReseller.id, userData.id, approvalData);
       
       if (result.success) {
-        setSuccess("Reseller approved successfully! Email notification sent.");
+        setSuccess("Reseller approved successfully! Email and WhatsApp notifications sent.");
         setTimeout(() => {
           setSuccess("");
           setApproveModalOpen(false);
           setSelectedReseller(null);
           fetchResellers();
         }, 2000);
-        
-        // TODO: Send approval email notification
-        // await sendApprovalEmail(selectedReseller.email, approvalData);
       } else {
         setError(result.message || "Failed to approve reseller");
       }
@@ -225,6 +222,45 @@ const ResellerListLayer = () => {
     } catch (err) {
       console.error("Error reactivating reseller:", err);
       setError(err.message || "An error occurred while reactivating reseller");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (reseller) => {
+    // Don't allow toggling if suspended
+    if (reseller.suspended_at) {
+      setError("Cannot change status of a suspended reseller. Please reactivate first.");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
+
+    const newStatus = !reseller.status;
+    const action = newStatus ? "activate" : "deactivate";
+    
+    if (!window.confirm(`Are you sure you want to ${action} reseller "${reseller.first_name} ${reseller.last_name}"?`)) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const result = await updateMstResellerStatus(reseller.id, newStatus);
+      
+      if (result.success) {
+        setSuccess(`Reseller ${action}d successfully!`);
+        setTimeout(() => {
+          setSuccess("");
+          fetchResellers();
+        }, 2000);
+      } else {
+        setError(result.message || `Failed to ${action} reseller`);
+      }
+    } catch (err) {
+      console.error(`Error ${action}ing reseller:`, err);
+      setError(err.message || `An error occurred while ${action}ing reseller`);
     } finally {
       setActionLoading(false);
     }
@@ -446,17 +482,47 @@ const ResellerListLayer = () => {
                         )}
                       </td>
                       <td className='text-center'>
-                        <span
-                          className={`${
-                            reseller.suspended_at
-                              ? "bg-warning-focus text-warning-600 border border-warning-main"
-                              : reseller.status
-                              ? "bg-success-focus text-success-600 border border-success-main"
-                              : "bg-danger-focus text-danger-600 border border-danger-main"
-                          } px-24 py-4 radius-4 fw-medium text-sm`}
-                        >
-                          {reseller.suspended_at ? "SUSPEND" : reseller.status ? "Active" : "Inactive"}
-                        </span>
+                        {reseller.suspended_at ? (
+                          <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm">
+                            SUSPEND
+                          </span>
+                        ) : (
+                          <PermissionGuard 
+                            module="Reseller" 
+                            action="update"
+                            fallback={
+                              <span
+                                className={`${
+                                  reseller.status
+                                    ? "bg-success-focus text-success-600 border border-success-main"
+                                    : "bg-danger-focus text-danger-600 border border-danger-main"
+                                } px-24 py-4 radius-4 fw-medium text-sm`}
+                              >
+                                {reseller.status ? "Active" : "Inactive"}
+                              </span>
+                            }
+                          >
+                            <div className="form-check form-switch d-inline-flex align-items-center justify-content-center">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                role="switch"
+                                id={`status-toggle-${reseller.id}`}
+                                checked={reseller.status || false}
+                                onChange={() => handleToggleStatus(reseller)}
+                                disabled={actionLoading || reseller.suspended_at}
+                                style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer', width: '3rem', height: '1.5rem' }}
+                              />
+                              <label
+                                className="form-check-label ms-2 text-sm fw-medium"
+                                htmlFor={`status-toggle-${reseller.id}`}
+                                style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer' }}
+                              >
+                                {reseller.status ? "Active" : "Inactive"}
+                              </label>
+                            </div>
+                          </PermissionGuard>
+                        )}
                       </td>
                       <td className='text-center'>
                         <div className='d-flex align-items-center gap-10 justify-content-center flex-wrap'>

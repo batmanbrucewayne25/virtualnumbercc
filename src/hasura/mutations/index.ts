@@ -118,12 +118,22 @@ export const insertMstReseller = async ({ first_name, last_name, email, phone, p
 
 export const updateOtpVerificationStep = async ({ email }: any) => {
   const UPDATE_OTP = `mutation UpdateOtpVerificationStep($email: String!) {
-  update_mst_reseller(where: { email: { _eq: $email } }, _set: { is_email_verified: true, is_phone_verified: true, current_step: 3 }) {
+  update_mst_reseller(where: { email: { _eq: $email } }, _set: { is_email_verified: true, current_step: 2 }) {
     affected_rows
   }
 }`;
 
   return graphqlRequest(UPDATE_OTP, { email });
+};
+
+export const updatePhoneOtpVerificationStep = async ({ email }: any) => {
+  const UPDATE_PHONE_OTP = `mutation UpdatePhoneOtpVerificationStep($email: String!) {
+  update_mst_reseller(where: { email: { _eq: $email } }, _set: { is_phone_verified: true, current_step: 3 }) {
+    affected_rows
+  }
+}`;
+
+  return graphqlRequest(UPDATE_PHONE_OTP, { email });
 };
 
 export const updatePanStep = async ({ email, pan_number, pan_dob, pan_full_name }: any) => {

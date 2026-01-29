@@ -56,3 +56,52 @@ export const getAdminSmtpConfig = async (adminId) => {
   }
 };
 
+/**
+ * Get first active admin's SMTP config (for system-wide email sending)
+ * @returns {Promise<object|null>} SMTP config object or null if not found
+ */
+export const getFirstAdminSmtpConfig = async () => {
+  try {
+    const client = getHasuraClient();
+    
+    const query = `
+      query GetFirstAdminSmtpConfig {
+        mst_smtp_config(
+          where: { 
+            admin_id: { _is_null: false },
+            is_active: { _eq: true }
+          }
+          limit: 1
+          order_by: { created_at: desc }
+        ) {
+          id
+          admin_id
+          host
+          port
+          username
+          password
+          from_email
+          from_name
+          is_active
+        }
+      }
+    `;
+    
+    const data = await client.client.request(query);
+    
+    if (data.mst_smtp_config && data.mst_smtp_config.length > 0) {
+      const config = data.mst_smtp_config[0];
+      // Check if password is missing (might be due to Hasura permissions)
+      if (!config.password) {
+        console.warn('[SMTP Config Service] Password field is missing or null in database response. This might be a Hasura permissions issue.');
+      }
+      return config;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching first admin SMTP config from database:', error);
+    return null;
+  }
+};
+

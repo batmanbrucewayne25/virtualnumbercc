@@ -510,7 +510,8 @@ const MasterLayout = ({ children }) => {
                           WhatsApp Configuration
                         </NavLink>
                       </li>
-                      <li>
+                      {/* SMTP Template - Commented out for now */}
+                      {/* <li>
                         <NavLink
                           to='/admin-smtp-template'
                           className={(navData) =>
@@ -520,7 +521,7 @@ const MasterLayout = ({ children }) => {
                           <i className='ri-circle-fill circle-icon text-info-main w-auto' />{" "}
                           SMTP Template
                         </NavLink>
-                      </li>
+                      </li> */}
                       <li>
                         <NavLink
                           to='/change-password'
@@ -642,7 +643,8 @@ const MasterLayout = ({ children }) => {
                       SMTP Integration
                     </NavLink>
                   </li>
-                  <li>
+                  {/* SMTP template - Commented out for now */}
+                  {/* <li>
                     <NavLink
                       to='/smtptemplate'
                       className={(navData) =>
@@ -652,7 +654,7 @@ const MasterLayout = ({ children }) => {
                       <i className='ri-circle-fill circle-icon text-warning-main w-auto' />{" "}
                       SMTP template
                     </NavLink>
-                  </li>
+                  </li> */}
                   <li>
                     <NavLink
                       to='/whatsapp'

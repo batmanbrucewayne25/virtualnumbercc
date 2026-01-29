@@ -54,7 +54,7 @@ const Step1 = ({ onSuccess }: Step1Props) => {
         password_hash: password,
       });
 
-      onSuccess({ email });
+      onSuccess({ email, phone });
     } catch (err) {
       console.error(err);
       setError("Failed to create account. Try again.");

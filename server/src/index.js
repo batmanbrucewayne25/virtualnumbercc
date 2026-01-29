@@ -12,6 +12,8 @@ import resellerDashboardRoutes from "./routes/resellerDashboard.routes.js";
 import razorpayRoutes from "./routes/razorpay.routes.js";
 import kycRoutes from "./routes/kyc.routes.js";
 import virtualNumbersRoutes from "./routes/virtualNumbers.routes.js";
+import otpRoutes from "./routes/otp.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 
 const app = express();
@@ -46,6 +48,8 @@ app.use("/api/customer", customerRoutes);
 app.use("/api/reseller-dashboard", resellerDashboardRoutes);
 app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/kyc", kycRoutes);
+app.use("/api/otp", otpRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // External API Routes (Virtual Numbers API)
 app.use("/virtualnumbers", virtualNumbersRoutes);

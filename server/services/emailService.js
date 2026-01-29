@@ -395,6 +395,158 @@ export const sendRazorpayLinkEmail = async (email, recipientName, razorpayLink, 
 };
 
 /**
+ * Send reseller approval email
+ */
+export const sendResellerApprovalEmail = async (email, resellerName, walletBalance = null, validityDate = null) => {
+  try {
+    // Try to get SMTP config from database first
+    let smtpConfig = null;
+    let fromEmail = SMTP_FROM_EMAIL || SMTP_USER;
+    let fromName = SMTP_FROM_NAME || 'Virtual Number';
+    
+    try {
+      const { getFirstAdminSmtpConfig } = await import('../src/services/smtpConfig.service.js');
+      smtpConfig = await getFirstAdminSmtpConfig();
+      if (smtpConfig) {
+        fromEmail = smtpConfig.from_email || smtpConfig.username || fromEmail;
+        fromName = smtpConfig.from_name || fromName;
+      }
+    } catch (err) {
+      console.warn('Could not fetch SMTP config from database, using env variables:', err);
+    }
+
+    const transporter = createTransporter(smtpConfig);
+    
+    if (!transporter) {
+      console.error('Email transporter not available. SMTP not configured.');
+      return {
+        success: false,
+        message: 'Email service not configured. Please contact administrator.'
+      };
+    }
+
+    const loginUrl = `${FRONTEND_URL}/sign-in`;
+    
+    // Build email content
+    const subject = '🎉 Your Reseller Account Has Been Approved!';
+    
+    let walletInfo = '';
+    if (walletBalance && walletBalance > 0) {
+      walletInfo = `<p><strong>Initial Wallet Balance:</strong> ₹${walletBalance.toLocaleString('en-IN')}</p>`;
+    }
+    
+    let validityInfo = '';
+    if (validityDate) {
+      const expiryDate = new Date(validityDate).toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      validityInfo = `<p><strong>Account Validity:</strong> Valid until ${expiryDate}</p>`;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Reseller Account Approved</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Account Approved! 🎉</h1>
+        </div>
+        
+        <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e0e0e0; border-top: none;">
+          <p style="font-size: 16px; margin-bottom: 20px;">Dear <strong>${resellerName}</strong>,</p>
+          
+          <p style="font-size: 16px; margin-bottom: 20px;">
+            We are pleased to inform you that your reseller account has been <strong style="color: #28a745;">successfully approved</strong>!
+          </p>
+          
+          <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;">
+            <h2 style="color: #28a745; margin-top: 0; font-size: 20px;">What's Next?</h2>
+            <ul style="padding-left: 20px; line-height: 1.8;">
+              <li>You can now log in to your reseller dashboard</li>
+              <li>Start managing your customers and virtual numbers</li>
+              <li>Access all reseller features and tools</li>
+            </ul>
+          </div>
+          
+          ${walletInfo}
+          ${validityInfo}
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+              Login to Dashboard
+            </a>
+          </div>
+          
+          <p style="font-size: 14px; color: #666; margin-top: 30px;">
+            If you have any questions or need assistance, please don't hesitate to contact our support team.
+          </p>
+          
+          <p style="font-size: 14px; color: #666; margin-top: 20px;">
+            Best regards,<br>
+            <strong>Virtual Number Team</strong>
+          </p>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; padding: 20px; color: #999; font-size: 12px;">
+          <p>This is an automated email. Please do not reply to this message.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `
+Dear ${resellerName},
+
+We are pleased to inform you that your reseller account has been successfully approved!
+
+What's Next?
+- You can now log in to your reseller dashboard
+- Start managing your customers and virtual numbers
+- Access all reseller features and tools
+
+${walletBalance && walletBalance > 0 ? `Initial Wallet Balance: ₹${walletBalance.toLocaleString('en-IN')}\n` : ''}
+${validityDate ? `Account Validity: Valid until ${new Date(validityDate).toLocaleDateString('en-IN')}\n` : ''}
+
+Login to your dashboard: ${loginUrl}
+
+If you have any questions or need assistance, please don't hesitate to contact our support team.
+
+Best regards,
+Virtual Number Team
+    `;
+
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: email,
+      subject: subject,
+      html: html,
+      text: text,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log('Reseller approval email sent:', info.messageId);
+    
+    return {
+      success: true,
+      messageId: info.messageId
+    };
+  } catch (error) {
+    console.error('Error sending reseller approval email:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to send email'
+    };
+  }
+};
+
+/**
  * Verify SMTP configuration
  */
 export const verifySMTPConfig = async () => {
