@@ -136,14 +136,19 @@ export const updatePanStep = async ({ email, pan_number, pan_dob, pan_full_name 
   return graphqlRequest(UPDATE_PAN, { email, pan_number, pan_dob, pan_full_name });
 };
 
-export const updateAadhaarStep = async ({ email, aadhaar_number, dob, gender }: any) => {
-  const UPDATE_AADHAAR = `mutation UpdateAadhaarStep($email: String!, $aadhaar_number: String, $dob: String, $gender: String) {
-  update_mst_reseller(where: { email: { _eq: $email } }, _set: { aadhaar_number: $aadhaar_number, dob: $dob, gender: $gender, is_aadhaar_verified: true, current_step: 5 }) {
+export const updateAadhaarStep = async ({ email, aadhaar_number, dob, gender, aadhar_photo }: any) => {
+  const UPDATE_AADHAAR = `mutation UpdateAadhaarStep($email: String!, $aadhaar_number: String, $dob: String, $gender: String, $aadhar_photo: String) {
+  update_mst_reseller(where: { email: { _eq: $email } }, _set: { aadhaar_number: $aadhaar_number, dob: $dob, gender: $gender, aadhar_photo: $aadhar_photo, is_aadhaar_verified: true, current_step: 5 }) {
     affected_rows
   }
 }`;
 
-  return graphqlRequest(UPDATE_AADHAAR, { email, aadhaar_number, dob, gender });
+  const variables: any = { email, aadhaar_number, dob, gender };
+  if (aadhar_photo) {
+    variables.aadhar_photo = aadhar_photo;
+  }
+
+  return graphqlRequest(UPDATE_AADHAAR, variables);
 };
 
 export const updateGstStep = async ({ email, gstin, gst_pan_number, business_name, legal_name, gstin_status, constitution_of_business, nature_bus_activities }: any) => {

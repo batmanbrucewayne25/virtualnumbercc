@@ -23,6 +23,7 @@ const InvoiceListLayer = () => {
     amount: "",
     description: "",
     reference: "",
+    validity_date: "",
   });
 
   useEffect(() => {
@@ -104,7 +105,8 @@ const InvoiceListLayer = () => {
         formData.reseller_id,
         amount,
         formData.description || "Wallet credit",
-        formData.reference || null
+        formData.reference || null,
+        formData.validity_date || null
       );
 
       if (result.success) {
@@ -114,6 +116,7 @@ const InvoiceListLayer = () => {
           amount: "",
           description: "",
           reference: "",
+          validity_date: "",
         });
         setTimeout(() => {
           setSuccess("");
@@ -470,6 +473,7 @@ const InvoiceListLayer = () => {
                       amount: "",
                       description: "",
                       reference: "",
+                      validity_date: "",
                     });
                     setError("");
                     setSuccess("");
@@ -579,6 +583,28 @@ const InvoiceListLayer = () => {
                       onChange={handleChange}
                       disabled={actionLoading}
                     />
+                  </div>
+
+                  <div className="mb-20">
+                    <label
+                      htmlFor='validity_date'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Validity Date (Optional)
+                    </label>
+                    <input
+                      type='date'
+                      className='form-control radius-8'
+                      id='validity_date'
+                      name='validity_date'
+                      value={formData.validity_date}
+                      onChange={handleChange}
+                      disabled={actionLoading}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                    <small className='text-xs text-secondary-light mt-4 d-block'>
+                      Set the validity end date for the reseller. If not set, validity will be calculated based on default (365 days).
+                    </small>
                   </div>
                 </div>
                 <div className="modal-footer border-top">

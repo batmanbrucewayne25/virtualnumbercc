@@ -655,7 +655,8 @@ export const creditWallet = async (
   resellerId: string,
   amount: number,
   description?: string,
-  reference?: string
+  reference?: string,
+  validity_date?: string | null
 ) => {
   try {
     // Get or create wallet
@@ -720,18 +721,69 @@ export const creditWallet = async (
 
     // Update reseller validity on wallet recharge
     try {
-      const { updateValidityOnRecharge } = await import('./resellerValidity');
-      const validityResult = await updateValidityOnRecharge(
-        resellerId,
-        walletId,
-        amount,
-        'WALLET_RECHARGE_RESET',
-        365 // Default validity days
-      );
+      if (validity_date) {
+        // Custom validity date provided
+        const { upsertResellerValidity, createResellerValidityHistory, getResellerValidity } = await import('./resellerValidity');
+        
+        // Get current validity for history
+        const currentValidityResult = await getResellerValidity(resellerId);
+        const currentValidity = currentValidityResult.success ? currentValidityResult.data : null;
 
-      if (!validityResult.success) {
-        // Log warning but don't fail the wallet credit operation
-        console.warn('Failed to update reseller validity:', validityResult.message);
+        // Calculate validity dates
+        const now = new Date();
+        const validityStartDate = now.toISOString();
+        const validityEndDate = new Date(validity_date);
+        validityEndDate.setHours(23, 59, 59, 999); // Set to end of day
+        const validityDays = Math.ceil((validityEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (validityDays > 0) {
+          // Upsert validity
+          const validityResult = await upsertResellerValidity({
+            reseller_id: resellerId,
+            validity_start_date: validityStartDate,
+            validity_end_date: validityEndDate.toISOString(),
+            validity_days: validityDays,
+            last_wallet_id: walletId,
+            last_recharge_amount: amount,
+            status: 'ACTIVE',
+          });
+
+          if (!validityResult.success) {
+            console.warn('Failed to update reseller validity:', validityResult.message);
+          } else {
+            // Create history record
+            const historyResult = await createResellerValidityHistory({
+              reseller_id: resellerId,
+              wallet_id: walletId,
+              recharge_amount: amount,
+              previous_validity_start: currentValidity?.validity_start_date || null,
+              previous_validity_end: currentValidity?.validity_end_date || null,
+              new_validity_start: validityStartDate,
+              new_validity_end: validityEndDate.toISOString(),
+              validity_days: validityDays,
+              action: 'WALLET_RECHARGE',
+            });
+
+            if (!historyResult.success) {
+              console.warn('Failed to create validity history:', historyResult.message);
+            }
+          }
+        }
+      } else {
+        // Use default validity update (365 days)
+        const { updateValidityOnRecharge } = await import('./resellerValidity');
+        const validityResult = await updateValidityOnRecharge(
+          resellerId,
+          walletId,
+          amount,
+          'WALLET_RECHARGE_RESET',
+          365 // Default validity days
+        );
+
+        if (!validityResult.success) {
+          // Log warning but don't fail the wallet credit operation
+          console.warn('Failed to update reseller validity:', validityResult.message);
+        }
       }
     } catch (validityError) {
       // Log error but don't fail the wallet credit operation

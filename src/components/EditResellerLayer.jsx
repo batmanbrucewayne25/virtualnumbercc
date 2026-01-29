@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
+import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 
 const EditResellerLayer = () => {
   const { id } = useParams();
@@ -27,11 +28,10 @@ const EditResellerLayer = () => {
     pan_dob: "",
     aadhaar_number: "",
     business_address: "",
-    constitution_of_business: "",
-    nature_bus_activities: "",
     legal_name: "",
     gst_pan_number: "",
     gstin_status: "",
+    validity_date: "",
   });
 
   useEffect(() => {
@@ -65,6 +65,20 @@ const EditResellerLayer = () => {
             ? result.data.address.join('\n')
             : (result.data.address || "");
 
+          // Fetch validity data
+          let validityDate = "";
+          try {
+            const validityResult = await getResellerValidity(resellerId);
+            if (validityResult.success && validityResult.data && validityResult.data.validity_end_date) {
+              // Convert validity_end_date to YYYY-MM-DD format for date input
+              const endDate = new Date(validityResult.data.validity_end_date);
+              validityDate = endDate.toISOString().split('T')[0];
+            }
+          } catch (validityErr) {
+            console.warn("Error fetching validity:", validityErr);
+            // Continue without validity date if fetch fails
+          }
+
           setFormData({
             first_name: result.data.first_name || "",
             last_name: result.data.last_name || "",
@@ -81,11 +95,10 @@ const EditResellerLayer = () => {
             pan_dob: result.data.pan_dob || "",
             aadhaar_number: result.data.aadhaar_number || "",
             business_address: result.data.business_address || "",
-            constitution_of_business: result.data.constitution_of_business || "",
-            nature_bus_activities: result.data.nature_bus_activities || "",
             legal_name: result.data.legal_name || "",
             gst_pan_number: result.data.gst_pan_number || "",
             gstin_status: result.data.gstin_status || "",
+            validity_date: validityDate,
           });
         } else {
           setError(result.message || "Reseller not found");
@@ -111,7 +124,7 @@ const EditResellerLayer = () => {
   };
 
   const validateForm = () => {
-    if (!formData.first_name || !formData.last_name || !formData.email) {
+    if (!formData.first_name || !formData.last_name || !formData.email || !formData.phone || !formData.business_name || !formData.business_email || !formData.business_address) {
       setError("Please fill all required fields.");
       return false;
     }
@@ -119,6 +132,11 @@ const EditResellerLayer = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
       setError("Please enter a valid email address.");
+      return false;
+    }
+
+    if (formData.business_email && !emailRegex.test(formData.business_email)) {
+      setError("Please enter a valid business email address.");
       return false;
     }
 
@@ -155,9 +173,9 @@ const EditResellerLayer = () => {
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
-        phone: formData.phone || null,
-        business_name: formData.business_name || null,
-        business_email: formData.business_email || null,
+        phone: formData.phone,
+        business_name: formData.business_name,
+        business_email: formData.business_email,
         gstin: formData.gstin || null,
         status: formData.status,
         address: formData.address || null, // Will be converted to array in mutation
@@ -166,12 +184,11 @@ const EditResellerLayer = () => {
         pan_number: formData.pan_number || null,
         pan_dob: formData.pan_dob || null,
         aadhaar_number: formData.aadhaar_number || null,
-        business_address: formData.business_address || null,
-        constitution_of_business: formData.constitution_of_business || null,
-        nature_bus_activities: formData.nature_bus_activities || null,
+        business_address: formData.business_address,
         legal_name: formData.legal_name || null,
         gst_pan_number: formData.gst_pan_number || null,
         gstin_status: formData.gstin_status || null,
+        validity_date: formData.validity_date || null,
       });
 
       if (result.success) {
@@ -302,7 +319,7 @@ const EditResellerLayer = () => {
                           htmlFor='phone'
                           className='form-label fw-semibold text-primary-light text-sm mb-8'
                         >
-                          Phone Number
+                          Phone Number <span className='text-danger-600'>*</span>
                         </label>
                         <input
                           type='tel'
@@ -312,6 +329,7 @@ const EditResellerLayer = () => {
                           placeholder='Enter phone number'
                           value={formData.phone}
                           onChange={handleChange}
+                          required
                         />
                       </div>
                     </div>
@@ -449,7 +467,7 @@ const EditResellerLayer = () => {
                       htmlFor='business_name'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
                     >
-                      Business Name
+                      Business Name <span className='text-danger-600'>*</span>
                     </label>
                     <input
                       type='text'
@@ -459,6 +477,7 @@ const EditResellerLayer = () => {
                       placeholder='Enter business name'
                       value={formData.business_name}
                       onChange={handleChange}
+                      required
                     />
                   </div>
 
@@ -487,7 +506,7 @@ const EditResellerLayer = () => {
                           htmlFor='business_email'
                           className='form-label fw-semibold text-primary-light text-sm mb-8'
                         >
-                          Business Email
+                          Business Email <span className='text-danger-600'>*</span>
                         </label>
                         <input
                           type='email'
@@ -497,6 +516,7 @@ const EditResellerLayer = () => {
                           placeholder='Enter business email'
                           value={formData.business_email}
                           onChange={handleChange}
+                          required
                         />
                       </div>
                     </div>
@@ -567,7 +587,7 @@ const EditResellerLayer = () => {
                       htmlFor='business_address'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
                     >
-                      Business Address
+                      Business Address <span className='text-danger-600'>*</span>
                     </label>
                     <textarea
                       className='form-control radius-8'
@@ -577,48 +597,8 @@ const EditResellerLayer = () => {
                       placeholder='Enter business address'
                       value={formData.business_address}
                       onChange={handleChange}
+                      required
                     />
-                  </div>
-
-                  <div className='row'>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='constitution_of_business'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Constitution of Business
-                        </label>
-                        <input
-                          type='text'
-                          className='form-control radius-8'
-                          id='constitution_of_business'
-                          name='constitution_of_business'
-                          placeholder='Enter constitution'
-                          value={formData.constitution_of_business}
-                          onChange={handleChange}
-                        />
-                      </div>
-                    </div>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='nature_bus_activities'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Nature of Business Activities
-                        </label>
-                        <input
-                          type='text'
-                          className='form-control radius-8'
-                          id='nature_bus_activities'
-                          name='nature_bus_activities'
-                          placeholder='Enter nature of activities'
-                          value={formData.nature_bus_activities}
-                          onChange={handleChange}
-                        />
-                      </div>
-                    </div>
                   </div>
 
                   <div className='mb-24'>
@@ -635,6 +615,28 @@ const EditResellerLayer = () => {
                         Active Status
                       </label>
                     </div>
+                  </div>
+
+                  <h6 className='text-sm text-primary-light mb-16 mt-24'>Validity Information</h6>
+                  <div className='mb-20'>
+                    <label
+                      htmlFor='validity_date'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Expiry Date (Validity End Date)
+                    </label>
+                    <input
+                      type='date'
+                      className='form-control radius-8'
+                      id='validity_date'
+                      name='validity_date'
+                      value={formData.validity_date}
+                      onChange={handleChange}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                    <small className='text-xs text-secondary-light mt-4 d-block'>
+                      Update the reseller's validity expiry date. This will update the validity record and create a history entry.
+                    </small>
                   </div>
 
                   <div className='d-flex align-items-center justify-content-center gap-3'>

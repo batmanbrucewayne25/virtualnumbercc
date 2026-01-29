@@ -1,6 +1,7 @@
 import { graphqlRequest } from "@/hasura";
 import { createMstWallet, creditWallet } from "./wallet";
 import { upsertNumberLimits } from "./numberLimits";
+import { upsertResellerValidity, createResellerValidityHistory, getResellerValidity } from "./resellerValidity";
 
 /**
  * Get all resellers (excluding soft-deleted records)
@@ -107,18 +108,29 @@ export const getMstResellerById = async (id: string) => {
       gender
       pan_number
       pan_dob
+      pan_full_name
       aadhaar_number
+      aadhar_photo
       business_address
       constitution_of_business
       nature_bus_activities
       legal_name
       gst_pan_number
-      gstin_status
       referral_link
       approval_date
       approved_by
       rejection_reason
       grace_period_days
+      current_step
+      is_aadhaar_verified
+      is_pan_verified
+      is_gst_verified
+      is_email_verified
+      is_phone_verified
+      profile_image
+      suspended_reason
+      suspended_at
+      suspended_by
       mst_wallet {
         id
         reseller_id
@@ -235,6 +247,7 @@ export const updateMstReseller = async (id: string, data: {
   legal_name?: string;
   gst_pan_number?: string;
   gstin_status?: string;
+  validity_date?: string | null;
   [key: string]: any;
 }) => {
   // Validate UUID format
@@ -308,9 +321,17 @@ export const updateMstReseller = async (id: string, data: {
   }`;
 
   try {
+    // Extract validity_date before processing other fields
+    const validityDate = data.validity_date;
+    
     // Remove undefined values before sending and handle address array
     const cleanedData: any = {};
     Object.keys(data).forEach(key => {
+      // Skip validity_date as it's not a field in mst_reseller table
+      if (key === 'validity_date') {
+        return;
+      }
+      
       if (data[key] !== undefined) {
         // Handle address field - convert string to array if needed
         if (key === 'address' && typeof data[key] === 'string') {
@@ -334,6 +355,87 @@ export const updateMstReseller = async (id: string, data: {
       };
     }
     if (result?.data?.update_mst_reseller_by_pk) {
+      // Handle validity date update if provided
+      if (validityDate) {
+        try {
+          const { getResellerValidity, upsertResellerValidity, createResellerValidityHistory } = await import('./resellerValidity');
+          const { getMstWalletByResellerId } = await import('./wallet');
+
+          // Get current validity for history
+          const currentValidityResult = await getResellerValidity(id);
+          const currentValidity = currentValidityResult.success ? currentValidityResult.data : null;
+
+          // Get wallet ID (needed for validity update)
+          let walletId: string | null = null;
+          const walletResult = await getMstWalletByResellerId(id);
+          if (walletResult.success && walletResult.data) {
+            walletId = walletResult.data.id;
+          } else {
+            // If no wallet exists, create one with 0 balance
+            const { createMstWallet } = await import('./wallet');
+            const createWalletResult = await createMstWallet({
+              reseller_id: id,
+              balance: 0,
+              credit_amount: 0,
+            });
+            if (createWalletResult.success && createWalletResult.data) {
+              walletId = createWalletResult.data.id;
+            }
+          }
+
+          if (walletId) {
+            // Calculate validity dates
+            const now = new Date();
+            // If there's a current validity, use its start date, otherwise use now
+            const validityStartDate = currentValidity?.validity_start_date 
+              ? new Date(currentValidity.validity_start_date).toISOString()
+              : now.toISOString();
+            const validityEndDate = new Date(validityDate);
+            validityEndDate.setHours(23, 59, 59, 999); // Set to end of day
+            const validityDays = Math.ceil((validityEndDate.getTime() - new Date(validityStartDate).getTime()) / (1000 * 60 * 60 * 24));
+
+            if (validityDays > 0) {
+              // Upsert validity
+              const validityResult = await upsertResellerValidity({
+                reseller_id: id,
+                validity_start_date: validityStartDate,
+                validity_end_date: validityEndDate.toISOString(),
+                validity_days: validityDays,
+                last_wallet_id: walletId,
+                last_recharge_amount: currentValidity?.last_recharge_amount || 0,
+                status: 'ACTIVE',
+              });
+
+              if (!validityResult.success) {
+                console.warn('Failed to update reseller validity:', validityResult.message);
+              } else {
+                // Create history record
+                const historyResult = await createResellerValidityHistory({
+                  reseller_id: id,
+                  wallet_id: walletId,
+                  recharge_amount: currentValidity?.last_recharge_amount || 0,
+                  previous_validity_start: currentValidity?.validity_start_date || null,
+                  previous_validity_end: currentValidity?.validity_end_date || null,
+                  new_validity_start: validityStartDate,
+                  new_validity_end: validityEndDate.toISOString(),
+                  validity_days: validityDays,
+                  action: 'ADMIN_UPDATE',
+                });
+
+                if (!historyResult.success) {
+                  console.warn('Failed to create validity history:', historyResult.message);
+                }
+              }
+            }
+          } else {
+            console.warn('Cannot update validity: Wallet could not be created or retrieved');
+          }
+        } catch (validityError) {
+          console.error('Error updating reseller validity:', validityError);
+          // Don't fail the reseller update if validity update fails
+        }
+      }
+
       return {
         success: true,
         data: result.data.update_mst_reseller_by_pk,
@@ -363,6 +465,7 @@ export const approveMstReseller = async (
     grace_period_days?: number;
     virtual_numbers_count?: number;
     price_per_number?: number;
+    validity_date?: string | null;
   }
 ) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -434,7 +537,7 @@ export const approveMstReseller = async (
     }
 
     // Create wallet and credit initial balance if provided
-    // Note: creditWallet function automatically updates reseller validity
+    let walletId: string | null = null;
     if (data.wallet_balance !== undefined && data.wallet_balance > 0) {
       const walletResult = await creditWallet(
         id,
@@ -446,8 +549,92 @@ export const approveMstReseller = async (
       if (!walletResult.success) {
         // Log warning but don't fail the approval
         console.warn("Failed to create wallet:", walletResult.message);
+      } else {
+        // Get wallet ID from the result
+        walletId = walletResult.data?.wallet?.id || null;
       }
-      // Validity is automatically updated by creditWallet function
+    }
+
+    // Handle validity date if provided
+    if (data.validity_date) {
+      try {
+        // Get or create wallet if it doesn't exist (needed for validity)
+        if (!walletId) {
+          // Get existing wallet or create one with 0 balance
+          const { getMstWalletByResellerId } = await import('./wallet');
+          const walletCheck = await getMstWalletByResellerId(id);
+          
+          if (walletCheck.success && walletCheck.data) {
+            walletId = walletCheck.data.id;
+          } else {
+            // Create wallet with 0 balance
+            const { createMstWallet } = await import('./wallet');
+            const createWalletResult = await createMstWallet({
+              reseller_id: id,
+              balance: 0,
+              credit_amount: 0,
+            });
+            if (createWalletResult.success && createWalletResult.data) {
+              walletId = createWalletResult.data.id;
+            }
+          }
+        }
+
+        if (walletId) {
+          // Get current validity for history
+          const currentValidityResult = await getResellerValidity(id);
+          const currentValidity = currentValidityResult.success ? currentValidityResult.data : null;
+
+          // Calculate validity dates
+          const now = new Date();
+          const validityStartDate = now.toISOString();
+          const validityEndDate = new Date(data.validity_date);
+          validityEndDate.setHours(23, 59, 59, 999); // Set to end of day
+          const validityDays = Math.ceil((validityEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (validityDays > 0) {
+            // Upsert validity
+            const validityResult = await upsertResellerValidity({
+              reseller_id: id,
+              validity_start_date: validityStartDate,
+              validity_end_date: validityEndDate.toISOString(),
+              validity_days: validityDays,
+              last_wallet_id: walletId,
+              last_recharge_amount: data.wallet_balance || 0,
+              status: 'ACTIVE',
+            });
+
+            if (!validityResult.success) {
+              console.warn("Failed to update reseller validity:", validityResult.message);
+            } else {
+              // Create history record
+              const historyResult = await createResellerValidityHistory({
+                reseller_id: id,
+                wallet_id: walletId,
+                recharge_amount: data.wallet_balance || 0,
+                previous_validity_start: currentValidity?.validity_start_date || null,
+                previous_validity_end: currentValidity?.validity_end_date || null,
+                new_validity_start: validityStartDate,
+                new_validity_end: validityEndDate.toISOString(),
+                validity_days: validityDays,
+                action: 'RESELLER_APPROVAL',
+              });
+
+              if (!historyResult.success) {
+                console.warn("Failed to create validity history:", historyResult.message);
+              }
+            }
+          }
+        } else {
+          console.warn("Cannot set validity: Wallet could not be created or retrieved");
+        }
+      } catch (validityError) {
+        console.error("Error setting reseller validity:", validityError);
+        // Don't fail the approval if validity update fails
+      }
+    } else if (data.wallet_balance !== undefined && data.wallet_balance > 0) {
+      // If validity_date is not set but wallet_balance is provided, 
+      // creditWallet function will automatically update reseller validity
     }
 
     // Update number limits if virtual_numbers_count is provided

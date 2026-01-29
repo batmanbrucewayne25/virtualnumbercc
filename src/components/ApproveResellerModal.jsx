@@ -5,8 +5,9 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
   const [formData, setFormData] = useState({
     wallet_balance: "",
     grace_period_days: "",
-    virtual_numbers_count: "",
+    virtual_numbers_count: "3",
     price_per_number: "",
+    validity_date: "",
   });
   const [error, setError] = useState("");
 
@@ -24,15 +25,15 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
     setError("");
 
     // Validation
-    if (!formData.wallet_balance || !formData.grace_period_days) {
-      setError("Please fill all required fields (Wallet Balance and Grace Period Days)");
+    if (!formData.wallet_balance || !formData.grace_period_days || !formData.virtual_numbers_count || !formData.price_per_number) {
+      setError("Please fill all required fields");
       return;
     }
 
     const walletBalance = parseFloat(formData.wallet_balance);
     const gracePeriodDays = parseInt(formData.grace_period_days);
-    const virtualNumbersCount = formData.virtual_numbers_count ? parseInt(formData.virtual_numbers_count) : null;
-    const pricePerNumber = formData.price_per_number ? parseFloat(formData.price_per_number) : null;
+    const virtualNumbersCount = parseInt(formData.virtual_numbers_count);
+    const pricePerNumber = parseFloat(formData.price_per_number);
 
     if (isNaN(walletBalance) || walletBalance < 0) {
       setError("Wallet balance must be a valid positive number");
@@ -44,12 +45,12 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
       return;
     }
 
-    if (virtualNumbersCount !== null && (isNaN(virtualNumbersCount) || virtualNumbersCount < 0)) {
+    if (isNaN(virtualNumbersCount) || virtualNumbersCount < 0) {
       setError("Virtual numbers count must be a valid positive number");
       return;
     }
 
-    if (pricePerNumber !== null && (isNaN(pricePerNumber) || pricePerNumber < 0)) {
+    if (isNaN(pricePerNumber) || pricePerNumber < 0) {
       setError("Price per number must be a valid positive number");
       return;
     }
@@ -59,6 +60,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
       grace_period_days: gracePeriodDays,
       virtual_numbers_count: virtualNumbersCount,
       price_per_number: pricePerNumber,
+      validity_date: formData.validity_date || null,
     });
   };
 
@@ -141,7 +143,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
                   htmlFor='virtual_numbers_count'
                   className='form-label fw-semibold text-primary-light text-sm mb-8'
                 >
-                  Number of Virtual Numbers
+                  Number of Virtual Numbers allowed for the customers <span className='text-danger-600'>*</span>
                 </label>
                 <input
                   type='number'
@@ -149,9 +151,10 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
                   className='form-control radius-8'
                   id='virtual_numbers_count'
                   name='virtual_numbers_count'
-                  placeholder='Enter number of virtual numbers (optional)'
+                  placeholder='Enter number of virtual numbers'
                   value={formData.virtual_numbers_count}
                   onChange={handleChange}
+                  required
                   disabled={loading}
                 />
               </div>
@@ -161,7 +164,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
                   htmlFor='price_per_number'
                   className='form-label fw-semibold text-primary-light text-sm mb-8'
                 >
-                  Price Per Number (₹)
+                  Price Per Number (₹) <span className='text-danger-600'>*</span>
                 </label>
                 <input
                   type='number'
@@ -170,11 +173,34 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
                   className='form-control radius-8'
                   id='price_per_number'
                   name='price_per_number'
-                  placeholder='Enter price per number (optional)'
+                  placeholder='Enter price per number'
                   value={formData.price_per_number}
                   onChange={handleChange}
+                  required
                   disabled={loading}
                 />
+              </div>
+
+              <div className="mb-20">
+                <label
+                  htmlFor='validity_date'
+                  className='form-label fw-semibold text-primary-light text-sm mb-8'
+                >
+                  Validity Date (Optional)
+                </label>
+                <input
+                  type='date'
+                  className='form-control radius-8'
+                  id='validity_date'
+                  name='validity_date'
+                  value={formData.validity_date}
+                  onChange={handleChange}
+                  disabled={loading}
+                  min={new Date().toISOString().split('T')[0]}
+                />
+                <small className='text-xs text-secondary-light mt-4 d-block'>
+                  Set the validity end date for the reseller. If not set, validity will be calculated based on wallet recharge.
+                </small>
               </div>
             </div>
             <div className="modal-footer border-top">

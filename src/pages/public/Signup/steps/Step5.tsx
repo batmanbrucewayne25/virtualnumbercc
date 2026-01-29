@@ -129,6 +129,7 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
             aadhaar_number: aadhaarNumber,
             dob: data.dob,
             gender: data.gender,
+            aadhar_photo: data.profile_image || null,
           });
 
           onSubmit();

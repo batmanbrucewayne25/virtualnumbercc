@@ -21,6 +21,7 @@ const WalletLayer = () => {
   const [debitAmount, setDebitAmount] = useState("");
   const [transactionDescription, setTransactionDescription] = useState("");
   const [transactionReference, setTransactionReference] = useState("");
+  const [validityDate, setValidityDate] = useState("");
 
   useEffect(() => {
     checkUserRole();
@@ -120,13 +121,15 @@ const WalletLayer = () => {
         selectedResellerId,
         amount,
         transactionDescription || "Wallet credit",
-        transactionReference || null
+        transactionReference || null,
+        validityDate || null
       );
 
       if (result.success) {
         setCreditAmount("");
         setTransactionDescription("");
         setTransactionReference("");
+        setValidityDate("");
         setCreditModalOpen(false);
         fetchWalletData();
       } else {
@@ -460,6 +463,7 @@ const WalletLayer = () => {
                     setCreditAmount("");
                     setTransactionDescription("");
                     setTransactionReference("");
+                    setValidityDate("");
                     setError("");
                   }}
                   disabled={actionLoading}
@@ -509,6 +513,22 @@ const WalletLayer = () => {
                     disabled={actionLoading}
                   />
                 </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Validity Date (Optional)
+                  </label>
+                  <input
+                    type='date'
+                    className='form-control radius-8'
+                    value={validityDate}
+                    onChange={(e) => setValidityDate(e.target.value)}
+                    disabled={actionLoading}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                  <small className='text-xs text-secondary-light mt-4 d-block'>
+                    Set the validity end date for the reseller. If not set, validity will be calculated based on default (365 days).
+                  </small>
+                </div>
               </div>
               <div className="modal-footer border-top">
                 <button
@@ -519,6 +539,7 @@ const WalletLayer = () => {
                     setCreditAmount("");
                     setTransactionDescription("");
                     setTransactionReference("");
+                    setValidityDate("");
                     setError("");
                   }}
                   disabled={actionLoading}

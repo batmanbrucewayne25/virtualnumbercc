@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { getApprovedCustomersByReseller, getCustomerWithTransactions, suspendCustomer } from "@/hasura/mutations/user";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 
 const ViewResellerDashboardLayer = () => {
   const { id } = useParams();
@@ -17,6 +18,7 @@ const ViewResellerDashboardLayer = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [validity, setValidity] = useState(null);
 
   useEffect(() => {
     // Get current user role
@@ -47,6 +49,16 @@ const ViewResellerDashboardLayer = () => {
       const result = await getMstResellerById(id);
       if (result.success && result.data) {
         setReseller(result.data);
+        
+        // Fetch validity data
+        try {
+          const validityResult = await getResellerValidity(id);
+          if (validityResult.success && validityResult.data) {
+            setValidity(validityResult.data);
+          }
+        } catch (validityErr) {
+          console.warn("Error fetching validity:", validityErr);
+        }
       } else {
         setError(result.message || "Reseller not found");
       }
@@ -121,6 +133,18 @@ const ViewResellerDashboardLayer = () => {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
+    });
+  };
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    return date.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -230,16 +254,93 @@ const ViewResellerDashboardLayer = () => {
                       <div className='mb-16'>
                         <label className='form-label text-xs text-secondary-light mb-4'>PAN Number</label>
                         <p className='text-md fw-medium text-primary-light mb-0'>
-                          {reseller?.pan_number ? `****${reseller.pan_number.slice(-4)}` : "-"}
+                          {reseller?.pan_number || "-"}
+                        </p>
+                      </div>
+
+                      <div className='mb-16'>
+                        <label className='form-label text-xs text-secondary-light mb-4'>PAN Full Name</label>
+                        <p className='text-md fw-medium text-primary-light mb-0'>
+                          {reseller?.pan_full_name || "-"}
+                        </p>
+                      </div>
+
+                      <div className='mb-16'>
+                        <label className='form-label text-xs text-secondary-light mb-4'>PAN DOB</label>
+                        <p className='text-md fw-medium text-primary-light mb-0'>
+                          {reseller?.pan_dob || "-"}
                         </p>
                       </div>
 
                       <div className='mb-16'>
                         <label className='form-label text-xs text-secondary-light mb-4'>Aadhaar Number</label>
                         <p className='text-md fw-medium text-primary-light mb-0'>
-                          {reseller?.aadhaar_number ? `****${reseller.aadhaar_number.slice(-4)}` : "-"}
+                          {reseller?.aadhaar_number || "-"}
                         </p>
                       </div>
+
+                      {(reseller?.aadhar_photo || reseller?.aadhaar_photo) && (
+                        <div className='mb-16'>
+                          <label className='form-label text-xs text-secondary-light mb-4'>Aadhaar Photo</label>
+                          <div>
+                            {(() => {
+                              const photo = (reseller?.aadhar_photo || reseller?.aadhaar_photo || '').trim();
+                              if (!photo) return <p className='text-sm text-secondary-light'>No photo available</p>;
+                              
+                              const imageSrc = photo.startsWith('data:') 
+                                ? photo 
+                                : (photo.startsWith('http://') || photo.startsWith('https://'))
+                                  ? photo
+                                  : `data:image/jpeg;base64,${photo}`;
+                              
+                              return (
+                                <img 
+                                  src={imageSrc}
+                                  alt="Aadhaar Card" 
+                                  className="rounded border"
+                                  style={{ maxWidth: '100%', maxHeight: '300px', objectFit: 'contain', cursor: 'pointer', display: 'block' }}
+                                  onError={(e) => {
+                                    console.error('Error loading Aadhaar photo:', e, 'Photo length:', photo.length, 'Starts with:', photo.substring(0, 20));
+                                    e.target.style.display = 'none';
+                                  }}
+                                  onLoad={() => {
+                                    console.log('Aadhaar photo loaded successfully');
+                                  }}
+                                  onClick={() => {
+                                    const newWindow = window.open();
+                                    if (newWindow) {
+                                      newWindow.document.write(`<img src="${imageSrc}" style="max-width: 100%; height: auto;" />`);
+                                    }
+                                  }}
+                                  title="Click to view full size"
+                                />
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+
+                      {reseller?.profile_image && (
+                        <div className='mb-16'>
+                          <label className='form-label text-xs text-secondary-light mb-4'>Profile Image</label>
+                          <div>
+                            <img 
+                              src={reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') ? reseller.profile_image : `data:image/jpeg;base64,${reseller.profile_image}`} 
+                              alt="Profile" 
+                              className="rounded"
+                              style={{ maxWidth: '150px', maxHeight: '150px', objectFit: 'cover', cursor: 'pointer' }}
+                              onClick={() => {
+                                const img = reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') ? reseller.profile_image : `data:image/jpeg;base64,${reseller.profile_image}`;
+                                const newWindow = window.open();
+                                if (newWindow) {
+                                  newWindow.document.write(`<img src="${img}" style="max-width: 100%; height: auto;" />`);
+                                }
+                              }}
+                              title="Click to view full size"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -273,6 +374,34 @@ const ViewResellerDashboardLayer = () => {
                   </div>
 
                   <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>GST PAN Number</label>
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller?.gst_pan_number || "-"}
+                    </p>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>GSTIN Status</label>
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller?.gstin_status || "-"}
+                    </p>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Business Address</label>
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller?.business_address || "-"}
+                    </p>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Legal Name</label>
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller?.legal_name || "-"}
+                    </p>
+                  </div>
+
+                  <div className='mb-16'>
                     <label className='form-label text-xs text-secondary-light mb-4'>Wallet Balance</label>
                     <p className='text-md fw-medium text-success-600 mb-0'>
                       {formatCurrency(reseller?.mst_wallet?.balance ?? 0)}
@@ -293,7 +422,225 @@ const ViewResellerDashboardLayer = () => {
                       </span>
                     </div>
                   </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Signup Completed</label>
+                    <div>
+                      <span
+                        className={`${
+                          reseller?.signup_completed
+                            ? "bg-success-focus text-success-600 border border-success-main"
+                            : "bg-warning-focus text-warning-600 border border-warning-main"
+                        } px-24 py-4 radius-4 fw-medium text-sm`}
+                      >
+                        {reseller?.signup_completed ? "Yes" : "No"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className='row'>
+            <div className='col-md-6'>
+              <div className='card border mb-20'>
+                <div className='card-body p-24'>
+                  <h6 className='text-sm text-primary-light mb-20'>KYC & Verification Status</h6>
+                  
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Aadhaar Verified</label>
+                    <div>
+                      <span
+                        className={`${
+                          reseller?.is_aadhaar_verified
+                            ? "bg-success-focus text-success-600 border border-success-main"
+                            : "bg-danger-focus text-danger-600 border border-danger-main"
+                        } px-24 py-4 radius-4 fw-medium text-sm`}
+                      >
+                        {reseller?.is_aadhaar_verified ? "Verified" : "Not Verified"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>PAN Verified</label>
+                    <div>
+                      <span
+                        className={`${
+                          reseller?.is_pan_verified
+                            ? "bg-success-focus text-success-600 border border-success-main"
+                            : "bg-danger-focus text-danger-600 border border-danger-main"
+                        } px-24 py-4 radius-4 fw-medium text-sm`}
+                      >
+                        {reseller?.is_pan_verified ? "Verified" : "Not Verified"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>GST Verified</label>
+                    <div>
+                      <span
+                        className={`${
+                          reseller?.is_gst_verified
+                            ? "bg-success-focus text-success-600 border border-success-main"
+                            : "bg-danger-focus text-danger-600 border border-danger-main"
+                        } px-24 py-4 radius-4 fw-medium text-sm`}
+                      >
+                        {reseller?.is_gst_verified ? "Verified" : "Not Verified"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Email Verified</label>
+                    <div>
+                      <span
+                        className={`${
+                          reseller?.is_email_verified
+                            ? "bg-success-focus text-success-600 border border-success-main"
+                            : "bg-danger-focus text-danger-600 border border-danger-main"
+                        } px-24 py-4 radius-4 fw-medium text-sm`}
+                      >
+                        {reseller?.is_email_verified ? "Verified" : "Not Verified"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Phone Verified</label>
+                    <div>
+                      <span
+                        className={`${
+                          reseller?.is_phone_verified
+                            ? "bg-success-focus text-success-600 border border-success-main"
+                            : "bg-danger-focus text-danger-600 border border-danger-main"
+                        } px-24 py-4 radius-4 fw-medium text-sm`}
+                      >
+                        {reseller?.is_phone_verified ? "Verified" : "Not Verified"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {reseller?.approval_date && (
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Approval Date</label>
+                      <p className='text-md fw-medium text-primary-light mb-0'>
+                        {formatDateTime(reseller.approval_date)}
+                      </p>
+                    </div>
+                  )}
+
+                  {reseller?.grace_period_days !== null && reseller?.grace_period_days !== undefined && (
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Grace Period (Days)</label>
+                      <p className='text-md fw-medium text-primary-light mb-0'>
+                        {reseller.grace_period_days}
+                      </p>
+                    </div>
+                  )}
+
+                  {reseller?.current_step !== null && reseller?.current_step !== undefined && (
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Current Step</label>
+                      <p className='text-md fw-medium text-primary-light mb-0'>
+                        {reseller.current_step}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className='col-md-6'>
+            <div className='card border mb-20'>
+              <div className='card-body p-24'>
+                <h6 className='text-sm text-primary-light mb-20'>Validity Information</h6>
+                
+                {validity ? (
+                  <>
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Validity Status</label>
+                      <div>
+                        <span
+                          className={`${
+                            validity.status === 'ACTIVE'
+                              ? "bg-success-focus text-success-600 border border-success-main"
+                              : validity.status === 'EXPIRED'
+                              ? "bg-danger-focus text-danger-600 border border-danger-main"
+                              : "bg-warning-focus text-warning-600 border border-warning-main"
+                          } px-24 py-4 radius-4 fw-medium text-sm`}
+                        >
+                          {validity.status || "N/A"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Validity Start Date</label>
+                      <p className='text-md fw-medium text-primary-light mb-0'>
+                        {validity.validity_start_date ? formatDate(validity.validity_start_date) : "-"}
+                      </p>
+                    </div>
+
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Expiry Date (Validity End Date)</label>
+                      <p className={`text-md fw-medium mb-0 ${
+                        validity.validity_end_date && new Date(validity.validity_end_date) < new Date()
+                          ? "text-danger-600"
+                          : "text-primary-light"
+                      }`}>
+                        {validity.validity_end_date ? formatDate(validity.validity_end_date) : "-"}
+                      </p>
+                    </div>
+
+                    {validity.validity_end_date && (
+                      <div className='mb-16'>
+                        <label className='form-label text-xs text-secondary-light mb-4'>Days Remaining</label>
+                        <p className={`text-md fw-medium mb-0 ${
+                          (() => {
+                            const expiry = new Date(validity.validity_end_date);
+                            const today = new Date();
+                            const diffTime = expiry - today;
+                            const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            if (daysLeft < 0) return "text-danger-600";
+                            if (daysLeft <= 30) return "text-warning-600";
+                            return "text-success-600";
+                          })()
+                        }`}>
+                          {(() => {
+                            const expiry = new Date(validity.validity_end_date);
+                            const today = new Date();
+                            const diffTime = expiry - today;
+                            const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            if (daysLeft < 0) return `Expired ${Math.abs(daysLeft)} days ago`;
+                            return `${daysLeft} days`;
+                          })()}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Validity Days</label>
+                      <p className='text-md fw-medium text-primary-light mb-0'>
+                        {validity.validity_days || "-"}
+                      </p>
+                    </div>
+
+                    <div className='mb-16'>
+                      <label className='form-label text-xs text-secondary-light mb-4'>Last Recharge Amount</label>
+                      <p className='text-md fw-medium text-primary-light mb-0'>
+                        {validity.last_recharge_amount ? formatCurrency(validity.last_recharge_amount) : "-"}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className='mb-16'>
+                    <p className='text-sm text-secondary-light mb-0'>No validity information available</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -446,7 +793,7 @@ const ViewResellerDashboardLayer = () => {
                             <div className='mb-16'>
                               <label className='form-label text-xs text-secondary-light mb-4'>PAN Number</label>
                               <p className='text-md fw-medium text-primary-light mb-0'>
-                                {selectedCustomer.pan_number ? `****${selectedCustomer.pan_number.slice(-4)}` : "-"}
+                                {selectedCustomer.pan_number || "-"}
                               </p>
                             </div>
 
@@ -467,7 +814,7 @@ const ViewResellerDashboardLayer = () => {
                             <div className='mb-16'>
                               <label className='form-label text-xs text-secondary-light mb-4'>Aadhaar Number</label>
                               <p className='text-md fw-medium text-primary-light mb-0'>
-                                {selectedCustomer.aadhaar_number ? `****${selectedCustomer.aadhaar_number.slice(-4)}` : "-"}
+                                {selectedCustomer.aadhaar_number || "-"}
                               </p>
                             </div>
 
