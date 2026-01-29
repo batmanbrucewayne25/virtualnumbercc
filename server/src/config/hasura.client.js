@@ -39,6 +39,8 @@ class HasuraClient {
           approval_date
           approved_by
           rejection_reason
+          suspended_at
+          suspended_reason
           created_at
           updated_at
         }

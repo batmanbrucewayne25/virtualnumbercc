@@ -1,18 +1,174 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState } from "react";
-import PasswordField from "./Form/PasswordField";
+import { useState, useEffect } from "react";
+import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
+import { getUserData, getAuthToken } from "@/utils/auth";
 
 const ViewProfileLayer = () => {
-  const [imagePreview, setImagePreview] = useState(
-    "assets/images/user-grid/user-grid-img13.png"
-  );
- 
-  const [newPassword, setNewPassword] = useState("");
-const [confirmNewPassword, setConfirmNewPassword] = useState("");
-const [currentPassword, setCurrentPassword] = useState("");
-const [passwordError, setPasswordError] = useState("");
-
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [imagePreview, setImagePreview] = useState("assets/images/user-grid/user-grid-img13.png");
+  const [resellerId, setResellerId] = useState(null);
   
+  const [formData, setFormData] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    business_name: "",
+    business_email: "",
+    gstin: "",
+    address: "",
+    dob: "",
+    gender: "",
+    pan_number: "",
+    pan_dob: "",
+    aadhaar_number: "",
+    business_address: "",
+    constitution_of_business: "",
+    nature_bus_activities: "",
+    legal_name: "",
+    gst_pan_number: "",
+    gstin_status: "",
+  });
+
+  useEffect(() => {
+    // Get logged-in reseller ID
+    const userData = getUserData();
+    const token = getAuthToken();
+    
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.role === 'reseller' && userData?.id) {
+          setResellerId(userData.id);
+          fetchResellerData(userData.id);
+        } else {
+          setError("Only resellers can view their profile");
+          setFetching(false);
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+        setError("Failed to authenticate user");
+        setFetching(false);
+      }
+    } else {
+      setError("Please login to view your profile");
+      setFetching(false);
+    }
+  }, []);
+
+  const fetchResellerData = async (id) => {
+    setFetching(true);
+    setError("");
+    try {
+      const result = await getMstResellerById(id);
+      if (result.success && result.data) {
+        // Handle address as array - convert to string for form input
+        const addressValue = Array.isArray(result.data.address) 
+          ? result.data.address.join('\n')
+          : (result.data.address || "");
+
+        setFormData({
+          first_name: result.data.first_name || "",
+          last_name: result.data.last_name || "",
+          email: result.data.email || "",
+          phone: result.data.phone || "",
+          business_name: result.data.business_name || "",
+          business_email: result.data.business_email || "",
+          gstin: result.data.gstin || "",
+          address: addressValue,
+          dob: result.data.dob || "",
+          gender: result.data.gender || "",
+          pan_number: result.data.pan_number || "",
+          pan_dob: result.data.pan_dob || "",
+          aadhaar_number: result.data.aadhaar_number || "",
+          business_address: result.data.business_address || "",
+          constitution_of_business: result.data.constitution_of_business || "",
+          nature_bus_activities: result.data.nature_bus_activities || "",
+          legal_name: result.data.legal_name || "",
+          gst_pan_number: result.data.gst_pan_number || "",
+          gstin_status: result.data.gstin_status || "",
+        });
+
+        // Set profile image if available
+        if (result.data.profile_image) {
+          setImagePreview(result.data.profile_image);
+        }
+      } else {
+        setError(result.message || "Failed to fetch profile data");
+      }
+    } catch (err) {
+      console.error("Error fetching reseller:", err);
+      setError("An error occurred while loading profile");
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      if (!resellerId) {
+        setError("Reseller ID is missing");
+        setLoading(false);
+        return;
+      }
+
+      // Convert address string to array
+      const addressArray = formData.address 
+        ? formData.address.split('\n').filter(line => line.trim() !== '')
+        : [];
+
+      const updateData = {
+        ...formData,
+        address: addressArray.length > 0 ? addressArray : null,
+      };
+
+      const result = await updateMstReseller(resellerId, updateData);
+      
+      if (result.success) {
+        setSuccess("Profile updated successfully!");
+        setIsEditMode(false);
+        // Refresh data
+        await fetchResellerData(resellerId);
+        setTimeout(() => {
+          setSuccess("");
+        }, 3000);
+      } else {
+        setError(result.message || "Failed to update profile");
+      }
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      setError(err.message || "An error occurred while updating profile");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setIsEditMode(false);
+    setError("");
+    // Reload original data
+    if (resellerId) {
+      fetchResellerData(resellerId);
+    }
+  };
+
   const readURL = (input) => {
     if (input.target.files && input.target.files[0]) {
       const reader = new FileReader();
@@ -23,12 +179,30 @@ const [passwordError, setPasswordError] = useState("");
     }
   };
 
-  const getPasswordStrength = (password) => {
-  if (password.length < 6) return { label: "Weak", color: "danger" };
-  if (/[A-Z]/.test(password) && /\d/.test(password) && /[@$!%*?&]/.test(password))
-    return { label: "Strong", color: "success" };
-  return { label: "Medium", color: "warning" };
-};
+  if (fetching) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+        <div className="text-center">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="text-muted mt-3">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !resellerId) {
+    return (
+      <div className="alert alert-danger" role="alert">
+        {error}
+      </div>
+    );
+  }
+
+  const fullName = `${formData.first_name || ''} ${formData.last_name || ''}`.trim() || 'N/A';
+  const displayEmail = formData.email || 'N/A';
+  const displayPhone = formData.phone || 'N/A';
 
   return (
     <div className='row gy-4'>
@@ -36,19 +210,22 @@ const [passwordError, setPasswordError] = useState("");
         <div className='user-grid-card position-relative border radius-16 overflow-hidden bg-base h-100'>
           <img
             src='assets/images/user-grid/user-grid-bg1.png'
-            alt='WowDash React Vite'
+            alt='Profile Background'
             className='w-100 object-fit-cover'
           />
-          <div className='pb-24 ms-16 mb-24 me-16  mt--100'>
+          <div className='pb-24 ms-16 mb-24 me-16 mt--100'>
             <div className='text-center border border-top-0 border-start-0 border-end-0'>
               <img
-                src='assets/images/user-grid/user-grid-img14.png'
-                alt='WowDash React Vite'
+                src={imagePreview}
+                alt='Profile'
                 className='border br-white border-width-2-px w-200-px h-200-px rounded-circle object-fit-cover'
+                onError={(e) => {
+                  e.target.src = 'assets/images/user-grid/user-grid-img14.png';
+                }}
               />
-              <h6 className='mb-0 mt-16'>Jacob Jones</h6>
+              <h6 className='mb-0 mt-16'>{fullName}</h6>
               <span className='text-secondary-light mb-16'>
-                ifrandom@gmail.com
+                {displayEmail}
               </span>
             </div>
             <div className='mt-24'>
@@ -59,64 +236,75 @@ const [passwordError, setPasswordError] = useState("");
                     Full Name
                   </span>
                   <span className='w-70 text-secondary-light fw-medium'>
-                    : Will Jonto
+                    : {fullName}
                   </span>
                 </li>
                 <li className='d-flex align-items-center gap-1 mb-12'>
                   <span className='w-30 text-md fw-semibold text-primary-light'>
-                    {" "}
                     Email
                   </span>
                   <span className='w-70 text-secondary-light fw-medium'>
-                    : willjontoax@gmail.com
+                    : {displayEmail}
                   </span>
                 </li>
                 <li className='d-flex align-items-center gap-1 mb-12'>
                   <span className='w-30 text-md fw-semibold text-primary-light'>
-                    {" "}
                     Phone Number
                   </span>
                   <span className='w-70 text-secondary-light fw-medium'>
-                    : (1) 2536 2561 2365
+                    : {displayPhone}
                   </span>
                 </li>
-                <li className='d-flex align-items-center gap-1 mb-12'>
-                  <span className='w-30 text-md fw-semibold text-primary-light'>
-                    {" "}
-                    Department
-                  </span>
-                  <span className='w-70 text-secondary-light fw-medium'>
-                    : Design
-                  </span>
-                </li>
-                <li className='d-flex align-items-center gap-1 mb-12'>
-                  <span className='w-30 text-md fw-semibold text-primary-light'>
-                    {" "}
-                    Designation
-                  </span>
-                  <span className='w-70 text-secondary-light fw-medium'>
-                    : UI UX Designer
-                  </span>
-                </li>
-                <li className='d-flex align-items-center gap-1 mb-12'>
-                  <span className='w-30 text-md fw-semibold text-primary-light'>
-                    {" "}
-                    Languages
-                  </span>
-                  <span className='w-70 text-secondary-light fw-medium'>
-                    : English
-                  </span>
-                </li>
-                <li className='d-flex align-items-center gap-1'>
-                  <span className='w-30 text-md fw-semibold text-primary-light'>
-                    {" "}
-                    Bio
-                  </span>
-                  <span className='w-70 text-secondary-light fw-medium'>
-                    : Lorem Ipsum&nbsp;is simply dummy text of the printing and
-                    typesetting industry.
-                  </span>
-                </li>
+                {formData.business_name && (
+                  <li className='d-flex align-items-center gap-1 mb-12'>
+                    <span className='w-30 text-md fw-semibold text-primary-light'>
+                      Business Name
+                    </span>
+                    <span className='w-70 text-secondary-light fw-medium'>
+                      : {formData.business_name}
+                    </span>
+                  </li>
+                )}
+                {formData.gstin && (
+                  <li className='d-flex align-items-center gap-1 mb-12'>
+                    <span className='w-30 text-md fw-semibold text-primary-light'>
+                      GSTIN
+                    </span>
+                    <span className='w-70 text-secondary-light fw-medium'>
+                      : {formData.gstin}
+                    </span>
+                  </li>
+                )}
+                {formData.dob && (
+                  <li className='d-flex align-items-center gap-1 mb-12'>
+                    <span className='w-30 text-md fw-semibold text-primary-light'>
+                      Date of Birth
+                    </span>
+                    <span className='w-70 text-secondary-light fw-medium'>
+                      : {formData.dob}
+                    </span>
+                  </li>
+                )}
+                {formData.gender && (
+                  <li className='d-flex align-items-center gap-1 mb-12'>
+                    <span className='w-30 text-md fw-semibold text-primary-light'>
+                      Gender
+                    </span>
+                    <span className='w-70 text-secondary-light fw-medium'>
+                      : {formData.gender}
+                    </span>
+                  </li>
+                )}
+                {formData.address && (
+                  <li className='d-flex align-items-center gap-1'>
+                    <span className='w-30 text-md fw-semibold text-primary-light'>
+                      Address
+                    </span>
+                    <span className='w-70 text-secondary-light fw-medium'>
+                      : {Array.isArray(formData.address) ? formData.address.join(', ') : formData.address}
+                    </span>
+                  </li>
+                )}
               </ul>
             </div>
           </div>
@@ -125,68 +313,49 @@ const [passwordError, setPasswordError] = useState("");
       <div className='col-lg-8'>
         <div className='card h-100'>
           <div className='card-body p-24'>
-            <ul
-              className='nav border-gradient-tab nav-pills mb-20 d-inline-flex'
-              id='pills-tab'
-              role='tablist'
-            >
-              <li className='nav-item' role='presentation'>
+            <div className='d-flex justify-content-between align-items-center mb-20'>
+              <h5 className='mb-0'>Profile Information</h5>
+              {!isEditMode && (
                 <button
-                  className='nav-link d-flex align-items-center px-24 active'
-                  id='pills-edit-profile-tab'
-                  data-bs-toggle='pill'
-                  data-bs-target='#pills-edit-profile'
                   type='button'
-                  role='tab'
-                  aria-controls='pills-edit-profile'
-                  aria-selected='true'
+                  onClick={() => setIsEditMode(true)}
+                  className='btn btn-primary d-flex align-items-center gap-2'
                 >
+                  <Icon icon='solar:pen-outline' className='icon' />
                   Edit Profile
                 </button>
-              </li>
-              <li className='nav-item' role='presentation'>
+              )}
+            </div>
+
+            {success && (
+              <div className='alert alert-success alert-dismissible fade show' role='alert'>
+                {success}
                 <button
-                  className='nav-link d-flex align-items-center px-24'
-                  id='pills-change-passwork-tab'
-                  data-bs-toggle='pill'
-                  data-bs-target='#pills-change-passwork'
                   type='button'
-                  role='tab'
-                  aria-controls='pills-change-passwork'
-                  aria-selected='false'
-                  tabIndex={-1}
-                >
-                  Change Password
-                </button>
-              </li>
-              <li className='nav-item' role='presentation'>
+                  className='btn-close'
+                  onClick={() => setSuccess("")}
+                  aria-label='Close'
+                ></button>
+              </div>
+            )}
+
+            {error && (
+              <div className='alert alert-danger alert-dismissible fade show' role='alert'>
+                {error}
                 <button
-                  className='nav-link d-flex align-items-center px-24'
-                  id='pills-notification-tab'
-                  data-bs-toggle='pill'
-                  data-bs-target='#pills-notification'
                   type='button'
-                  role='tab'
-                  aria-controls='pills-notification'
-                  aria-selected='false'
-                  tabIndex={-1}
-                >
-                  Notification Settings
-                </button>
-              </li>
-            </ul>
-            <div className='tab-content' id='pills-tabContent'>
-              <div
-                className='tab-pane fade show active'
-                id='pills-edit-profile'
-                role='tabpanel'
-                aria-labelledby='pills-edit-profile-tab'
-                tabIndex={0}
-              >
+                  className='btn-close'
+                  onClick={() => setError("")}
+                  aria-label='Close'
+                ></button>
+              </div>
+            )}
+
+            {isEditMode ? (
+              <form onSubmit={handleSubmit}>
                 <h6 className='text-md text-primary-light mb-16'>
                   Profile Image
                 </h6>
-                {/* Upload Image Start */}
                 <div className='mb-24 mt-16'>
                   <div className='avatar-upload'>
                     <div className='avatar-edit position-absolute bottom-0 end-0 me-24 mt-16 z-1 cursor-pointer'>
@@ -219,369 +388,341 @@ const [passwordError, setPasswordError] = useState("");
                     </div>
                   </div>
                 </div>
-                {/* Upload Image End */}
-                <form action='#'>
-                  <div className='row'>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='name'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Full Name
-                          <span className='text-danger-600'>*</span>
-                        </label>
-                        <input
-                          type='text'
-                          className='form-control radius-8'
-                          id='name'
-                          placeholder='Enter Full Name'
-                        />
-                      </div>
-                    </div>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='email'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Email <span className='text-danger-600'>*</span>
-                        </label>
-                        <input
-                          type='email'
-                          className='form-control radius-8'
-                          id='email'
-                          placeholder='Enter email address'
-                        />
-                      </div>
-                    </div>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='number'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Phone
-                        </label>
-                        <input
-                          type='email'
-                          className='form-control radius-8'
-                          id='number'
-                          placeholder='Enter phone number'
-                        />
-                      </div>
-                    </div>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='depart'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Department
-                          <span className='text-danger-600'>*</span>{" "}
-                        </label>
-                        <select
-                          className='form-control radius-8 form-select'
-                          id='depart'
-                          defaultValue='Select Event Title'
-                        >
-                          <option value='Select Event Title' disabled>
-                            Select Event Title
-                          </option>
-                          <option value='Enter Event Title'>
-                            Enter Event Title
-                          </option>
-                          <option value='Enter Event Title One'>
-                            Enter Event Title One
-                          </option>
-                          <option value='Enter Event Title Two'>
-                            Enter Event Title Two
-                          </option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='desig'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Designation
-                          <span className='text-danger-600'>*</span>{" "}
-                        </label>
-                        <select
-                          className='form-control radius-8 form-select'
-                          id='desig'
-                          defaultValue='Select Designation Title'
-                        >
-                          <option value='Select Designation Title' disabled>
-                            Select Designation Title
-                          </option>
-                          <option value='Enter Designation Title'>
-                            Enter Designation Title
-                          </option>
-                          <option value='Enter Designation Title One'>
-                            Enter Designation Title One
-                          </option>
-                          <option value='Enter Designation Title Two'>
-                            Enter Designation Title Two
-                          </option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='Language'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Language
-                          <span className='text-danger-600'>*</span>{" "}
-                        </label>
-                        <select
-                          className='form-control radius-8 form-select'
-                          id='Language'
-                          defaultValue='Select Language'
-                        >
-                          <option value='Select Language' disabled>
-                            Select Language
-                          </option>
-                          <option value='English'>English</option>
-                          <option value='Bangla'>Bangla</option>
-                          <option value='Hindi'>Hindi</option>
-                          <option value='Arabic'>Arabic</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className='col-sm-12'>
-                      <div className='mb-20'>
-                        <label
-                          htmlFor='desc'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          Description
-                        </label>
-                        <textarea
-                          name='#0'
-                          className='form-control radius-8'
-                          id='desc'
-                          placeholder='Write description...'
-                          defaultValue={""}
-                        />
-                      </div>
+
+                <div className='row'>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='first_name'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        First Name
+                        <span className='text-danger-600'>*</span>
+                      </label>
+                      <input
+                        type='text'
+                        className='form-control radius-8'
+                        id='first_name'
+                        name='first_name'
+                        placeholder='Enter First Name'
+                        value={formData.first_name}
+                        onChange={handleChange}
+                        required
+                      />
                     </div>
                   </div>
-                  <div className='d-flex align-items-center justify-content-center gap-3'>
-                    <button
-                      type='button'
-                      className='border border-danger-600 bg-hover-danger-200 text-danger-600 text-md px-56 py-11 radius-8'
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type='button'
-                      className='btn btn-primary border border-primary-600 text-md px-56 py-12 radius-8'
-                    >
-                      Save
-                    </button>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='last_name'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Last Name
+                        <span className='text-danger-600'>*</span>
+                      </label>
+                      <input
+                        type='text'
+                        className='form-control radius-8'
+                        id='last_name'
+                        name='last_name'
+                        placeholder='Enter Last Name'
+                        value={formData.last_name}
+                        onChange={handleChange}
+                        required
+                      />
+                    </div>
                   </div>
-                </form>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='email'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Email <span className='text-danger-600'>*</span>
+                      </label>
+                      <input
+                        type='email'
+                        className='form-control radius-8'
+                        id='email'
+                        name='email'
+                        placeholder='Enter email address'
+                        value={formData.email}
+                        onChange={handleChange}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='phone'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Phone
+                      </label>
+                      <input
+                        type='tel'
+                        className='form-control radius-8'
+                        id='phone'
+                        name='phone'
+                        placeholder='Enter phone number'
+                        value={formData.phone}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </div>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='business_name'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Business Name
+                      </label>
+                      <input
+                        type='text'
+                        className='form-control radius-8'
+                        id='business_name'
+                        name='business_name'
+                        placeholder='Enter Business Name'
+                        value={formData.business_name}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </div>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='business_email'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Business Email
+                      </label>
+                      <input
+                        type='email'
+                        className='form-control radius-8'
+                        id='business_email'
+                        name='business_email'
+                        placeholder='Enter Business Email'
+                        value={formData.business_email}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </div>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='gstin'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        GSTIN
+                      </label>
+                      <input
+                        type='text'
+                        className='form-control radius-8'
+                        id='gstin'
+                        name='gstin'
+                        placeholder='Enter GSTIN'
+                        value={formData.gstin}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </div>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='dob'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Date of Birth
+                      </label>
+                      <input
+                        type='date'
+                        className='form-control radius-8'
+                        id='dob'
+                        name='dob'
+                        value={formData.dob}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </div>
+                  <div className='col-sm-6'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='gender'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Gender
+                      </label>
+                      <select
+                        className='form-control radius-8 form-select'
+                        id='gender'
+                        name='gender'
+                        value={formData.gender}
+                        onChange={handleChange}
+                      >
+                        <option value=''>Select Gender</option>
+                        <option value='Male'>Male</option>
+                        <option value='Female'>Female</option>
+                        <option value='Other'>Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className='col-sm-12'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='address'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Address
+                      </label>
+                      <textarea
+                        className='form-control radius-8'
+                        id='address'
+                        name='address'
+                        rows='3'
+                        placeholder='Enter address (one line per address or comma-separated)'
+                        value={formData.address}
+                        onChange={handleChange}
+                      />
+                      <small className="text-muted mt-2 d-block">
+                        Enter multiple addresses on separate lines or separated by commas
+                      </small>
+                    </div>
+                  </div>
+                  <div className='col-sm-12'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='business_address'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Business Address
+                      </label>
+                      <textarea
+                        className='form-control radius-8'
+                        id='business_address'
+                        name='business_address'
+                        rows='3'
+                        placeholder='Enter business address'
+                        value={formData.business_address}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className='d-flex align-items-center justify-content-center gap-3'>
+                  <button
+                    type='button'
+                    onClick={handleCancel}
+                    className='border border-danger-600 bg-hover-danger-200 text-danger-600 text-md px-56 py-11 radius-8'
+                    disabled={loading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type='submit'
+                    className='btn btn-primary border border-primary-600 text-md px-56 py-12 radius-8'
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <div className='row'>
+                  <div className='col-sm-6 mb-20'>
+                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                      First Name
+                    </label>
+                    <p className='text-secondary-light mb-0'>{formData.first_name || 'N/A'}</p>
+                  </div>
+                  <div className='col-sm-6 mb-20'>
+                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                      Last Name
+                    </label>
+                    <p className='text-secondary-light mb-0'>{formData.last_name || 'N/A'}</p>
+                  </div>
+                  <div className='col-sm-6 mb-20'>
+                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                      Email
+                    </label>
+                    <p className='text-secondary-light mb-0'>{formData.email || 'N/A'}</p>
+                  </div>
+                  <div className='col-sm-6 mb-20'>
+                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                      Phone
+                    </label>
+                    <p className='text-secondary-light mb-0'>{formData.phone || 'N/A'}</p>
+                  </div>
+                  {formData.business_name && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Business Name
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.business_name}</p>
+                    </div>
+                  )}
+                  {formData.business_email && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Business Email
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.business_email}</p>
+                    </div>
+                  )}
+                  {formData.gstin && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        GSTIN
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.gstin}</p>
+                    </div>
+                  )}
+                  {formData.dob && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Date of Birth
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.dob}</p>
+                    </div>
+                  )}
+                  {formData.gender && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Gender
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.gender}</p>
+                    </div>
+                  )}
+                  {formData.address && (
+                    <div className='col-sm-12 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Address
+                      </label>
+                      <p className='text-secondary-light mb-0'>
+                        {Array.isArray(formData.address) ? formData.address.join(', ') : formData.address}
+                      </p>
+                    </div>
+                  )}
+                  {formData.business_address && (
+                    <div className='col-sm-12 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Business Address
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.business_address}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div
-        className='tab-pane fade'
-        id='pills-change-passwork'
-        role='tabpanel'
-        aria-labelledby='pills-change-passwork-tab'
-        tabIndex='0'
-      >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setPasswordError("");
-
-            if (!currentPassword || !newPassword || !confirmNewPassword) {
-              setPasswordError("All fields are required");
-              return;
-            }
-
-            if (newPassword !== confirmNewPassword) {
-              setPasswordError(
-                "New password and Confirm password do not match"
-              );
-              return;
-            }
-
-            console.log("Reset Password Payload:", {
-              currentPassword,
-              newPassword,
-            });
-
-            // 🔐 Backend API call here
-          }}
-        >
-          <div className='mb-20'>
-            <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-              Current Password <span className='text-danger-600'>*</span>
-            </label>
-            <PasswordField
-              placeholder='Enter current password'
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
-          </div>
-
-          <div className='mb-20'>
-            <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-              New Password <span className='text-danger-600'>*</span>
-            </label>
-            <PasswordField
-              placeholder='Enter new password'
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
-            {newPassword && (
-              <small className={`text-${getPasswordStrength(newPassword).color}`}>
-                Strength: {getPasswordStrength(newPassword).label}
-              </small>
             )}
-          </div>
-
-          <div className='mb-20'>
-            <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-              Confirm Password <span className='text-danger-600'>*</span>
-            </label>
-            <PasswordField
-              placeholder='Confirm new password'
-              value={confirmNewPassword}
-              onChange={(e) => setConfirmNewPassword(e.target.value)}
-            />
-          </div>
-
-          {passwordError && (
-            <p className='text-danger-600 text-sm mb-16'>{passwordError}</p>
-          )}
-
-          <div className='d-flex align-items-center gap-3'>
-            <button
-              type='reset'
-              className='border border-danger-600 bg-hover-danger-200 text-danger-600 px-40 py-11 radius-8'
-              onClick={() => {
-                setCurrentPassword("");
-                setNewPassword("");
-                setConfirmNewPassword("");
-                setPasswordError("");
-              }}
-            >
-              Reset
-            </button>
-
-            <button
-              type='submit'
-              className='btn btn-primary border border-primary-600 px-40 py-11 radius-8'
-            >
-              Update Password
-            </button>
-          </div>
-        </form>
-      </div>
-
-              <div
-                className='tab-pane fade'
-                id='pills-notification'
-                role='tabpanel'
-                aria-labelledby='pills-notification-tab'
-                tabIndex={0}
-              >
-                <div className='form-switch switch-primary py-12 px-16 border radius-8 position-relative mb-16'>
-                  <label
-                    htmlFor='companzNew'
-                    className='position-absolute w-100 h-100 start-0 top-0'
-                  />
-                  <div className='d-flex align-items-center gap-3 justify-content-between'>
-                    <span className='form-check-label line-height-1 fw-medium text-secondary-light'>
-                      Company News
-                    </span>
-                    <input
-                      className='form-check-input'
-                      type='checkbox'
-                      role='switch'
-                      id='companzNew'
-                    />
-                  </div>
-                </div>
-                <div className='form-switch switch-primary py-12 px-16 border radius-8 position-relative mb-16'>
-                  <label
-                    htmlFor='pushNotifcation'
-                    className='position-absolute w-100 h-100 start-0 top-0'
-                  />
-                  <div className='d-flex align-items-center gap-3 justify-content-between'>
-                    <span className='form-check-label line-height-1 fw-medium text-secondary-light'>
-                      Push Notification
-                    </span>
-                    <input
-                      className='form-check-input'
-                      type='checkbox'
-                      role='switch'
-                      id='pushNotifcation'
-                      defaultChecked=''
-                    />
-                  </div>
-                </div>
-                <div className='form-switch switch-primary py-12 px-16 border radius-8 position-relative mb-16'>
-                  <label
-                    htmlFor='weeklyLetters'
-                    className='position-absolute w-100 h-100 start-0 top-0'
-                  />
-                  <div className='d-flex align-items-center gap-3 justify-content-between'>
-                    <span className='form-check-label line-height-1 fw-medium text-secondary-light'>
-                      Weekly News Letters
-                    </span>
-                    <input
-                      className='form-check-input'
-                      type='checkbox'
-                      role='switch'
-                      id='weeklyLetters'
-                      defaultChecked=''
-                    />
-                  </div>
-                </div>
-                <div className='form-switch switch-primary py-12 px-16 border radius-8 position-relative mb-16'>
-                  <label
-                    htmlFor='meetUp'
-                    className='position-absolute w-100 h-100 start-0 top-0'
-                  />
-                  <div className='d-flex align-items-center gap-3 justify-content-between'>
-                    <span className='form-check-label line-height-1 fw-medium text-secondary-light'>
-                      Meetups Near you
-                    </span>
-                    <input
-                      className='form-check-input'
-                      type='checkbox'
-                      role='switch'
-                      id='meetUp'
-                    />
-                  </div>
-                </div>
-                <div className='form-switch switch-primary py-12 px-16 border radius-8 position-relative mb-16'>
-                  <label
-                    htmlFor='orderNotification'
-                    className='position-absolute w-100 h-100 start-0 top-0'
-                  />
-                  <div className='d-flex align-items-center gap-3 justify-content-between'>
-                    <span className='form-check-label line-height-1 fw-medium text-secondary-light'>
-                      Orders Notifications
-                    </span>
-                    <input
-                      className='form-check-input'
-                      type='checkbox'
-                      role='switch'
-                      id='orderNotification'
-                      defaultChecked=''
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

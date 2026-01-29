@@ -15,55 +15,169 @@ export class AuthService {
    */
   static async login(email, password) {
     try {
+      console.log('🔐 Login attempt for email:', email);
       let user = null;
       let userType = 'reseller';
 
       // First check mst_super_admin (for admin login)
+      console.log('📋 Checking for admin user...');
       const adminUser = await this.getAdminByEmail(email);
       if (adminUser) {
+        console.log('✅ Admin user found:', adminUser.email);
         user = adminUser;
         userType = 'admin';
       } else {
+        console.log('❌ Admin user not found, checking reseller...');
         // If not admin, check mst_reseller (for regular user login)
         user = await hasuraClient.getUserByEmail(email);
+        
+        if (user) {
+          console.log('✅ Reseller user found:', user.email);
+          console.log('📊 Reseller status:', {
+            approval_date: user.approval_date,
+            suspended_at: user.suspended_at,
+            rejection_reason: user.rejection_reason,
+            status: user.status
+          });
+        } else {
+          console.log('❌ Reseller user not found');
+        }
         
         // Check if reseller is approved before allowing login
         if (user && !user.approval_date) {
           // If reseller is not approved, check if they have been rejected
           if (user.rejection_reason) {
+            console.log('🚫 Reseller account rejected:', user.rejection_reason);
             throw new Error('Your account has been rejected. Please contact support for more information.');
           }
           // Reseller is pending approval
+          console.log('⏳ Reseller account pending approval');
           throw new Error('Your account is pending approval. Please wait for administrator approval.');
+        }
+
+        // Check if reseller is suspended (check suspended_at field)
+        if (user && user.suspended_at) {
+          console.log('🚫 Reseller account suspended:', user.suspended_reason);
+          throw new Error('Your account has been suspended. Please contact admin for more information.');
+        }
+
+        // Check reseller validity expiry (only for resellers, not admins)
+        if (user && user.approval_date) {
+          console.log('🔍 Checking reseller validity...');
+          const validityCheck = await this.checkResellerValidity(user.id);
+          console.log('📅 Validity check result:', validityCheck);
+          if (!validityCheck.isValid) {
+            throw new Error(validityCheck.message || 'Your account has expired. Please contact admin.');
+          }
         }
       }
 
       if (!user) {
+        console.log('❌ No user found with email:', email);
         throw new Error('Invalid email or password');
       }
 
       // Verify password
+      console.log('🔑 Verifying password...');
+      console.log('📝 Password hash exists:', !!user.password_hash);
+      console.log('📝 Password hash type:', user.password_hash ? (user.password_hash.startsWith('$2') ? 'bcrypt' : 'plain text') : 'none');
+      
       const isPasswordValid = await this.verifyPassword(
         password,
         user.password_hash
       );
 
+      console.log('🔑 Password verification result:', isPasswordValid);
+
       if (!isPasswordValid) {
+        console.log('❌ Password verification failed');
         throw new Error('Invalid email or password');
       }
 
       // Generate JWT token with user type
+      console.log('🎫 Generating JWT token for user type:', userType);
       const token = this.generateToken(user, userType);
 
       // Remove password_hash from user object
       const { password_hash, ...userWithoutPassword } = user;
 
+      console.log('✅ Login successful for:', email, 'User type:', userType);
       return {
         token,
         user: userWithoutPassword
       };
     } catch (error) {
+      console.error('❌ Login error:', error.message);
+      console.error('📚 Error stack:', error.stack);
       throw new Error(error.message || 'Login failed');
+    }
+  }
+
+  /**
+   * Check reseller validity expiry
+   * @param {string} resellerId 
+   * @returns {Promise<{isValid: boolean, message?: string}>}
+   */
+  static async checkResellerValidity(resellerId) {
+    try {
+      const client = getHasuraClient();
+      
+      const query = `
+        query GetResellerValidity($reseller_id: uuid!) {
+          mst_reseller_validity(
+            where: { 
+              reseller_id: { _eq: $reseller_id }
+            }
+            limit: 1
+          ) {
+            id
+            validity_end_date
+            status
+          }
+        }
+      `;
+
+      const result = await client.client.request(query, { reseller_id: resellerId });
+      const validity = result.mst_reseller_validity?.[0];
+
+      // If no validity record exists, allow login (for backward compatibility)
+      // Existing resellers without validity records can still login
+      if (!validity) {
+        return {
+          isValid: true,
+          message: 'No validity record found'
+        };
+      }
+
+      // Check status - if EXPIRED or SUSPENDED, block login
+      if (validity.status === 'EXPIRED' || validity.status === 'SUSPENDED') {
+        return {
+          isValid: false,
+          message: 'Your account has expired. Please contact admin.'
+        };
+      }
+
+      // Check if validity has expired by date (even if status is still ACTIVE)
+      const validityEndDate = new Date(validity.validity_end_date);
+      const now = new Date();
+
+      if (validityEndDate < now) {
+        return {
+          isValid: false,
+          message: 'Your account has expired. Please contact admin.'
+        };
+      }
+
+      return {
+        isValid: true
+      };
+    } catch (error) {
+      console.error('Error checking reseller validity:', error);
+      // On error, allow login (fail open) - you may want to change this to fail closed
+      return {
+        isValid: true,
+        message: 'Error checking validity, allowing login'
+      };
     }
   }
 

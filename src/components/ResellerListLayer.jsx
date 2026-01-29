@@ -1,10 +1,11 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getMstResellers, deleteMstReseller, approveMstReseller, rejectMstReseller } from "@/hasura/mutations/reseller";
+import { getMstResellers, deleteMstReseller, approveMstReseller, rejectMstReseller, suspendMstReseller, reactivateMstReseller } from "@/hasura/mutations/reseller";
 import { getUserData } from "@/utils/auth";
 import ApproveResellerModal from "./ApproveResellerModal";
 import RejectResellerModal from "./RejectResellerModal";
+import SuspendResellerModal from "./SuspendResellerModal";
 import PermissionGuard from "@/components/PermissionGuard";
 
 const ResellerListLayer = () => {
@@ -16,6 +17,7 @@ const ResellerListLayer = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [suspendModalOpen, setSuspendModalOpen] = useState(false);
   const [selectedReseller, setSelectedReseller] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -71,6 +73,11 @@ const ResellerListLayer = () => {
   const handleRejectClick = (reseller) => {
     setSelectedReseller(reseller);
     setRejectModalOpen(true);
+  };
+
+  const handleSuspendClick = (reseller) => {
+    setSelectedReseller(reseller);
+    setSuspendModalOpen(true);
   };
 
   const handleApprove = async (approvalData) => {
@@ -151,6 +158,78 @@ const ResellerListLayer = () => {
     }
   };
 
+  const handleSuspend = async (suspendedReason) => {
+    if (!selectedReseller) return;
+
+    setActionLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const userData = getUserData();
+      if (!userData || !userData.id) {
+        setError("Unable to determine admin ID. Please log in again.");
+        setActionLoading(false);
+        return;
+      }
+
+      const result = await suspendMstReseller(selectedReseller.id, userData.id, suspendedReason);
+      
+      if (result.success) {
+        setSuccess("Reseller suspended successfully!");
+        setTimeout(() => {
+          setSuccess("");
+          setSuspendModalOpen(false);
+          setSelectedReseller(null);
+          fetchResellers();
+        }, 2000);
+      } else {
+        setError(result.message || "Failed to suspend reseller");
+      }
+    } catch (err) {
+      console.error("Error suspending reseller:", err);
+      setError(err.message || "An error occurred while suspending reseller");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReactivate = async (reseller) => {
+    if (!window.confirm(`Are you sure you want to reactivate reseller "${reseller.first_name} ${reseller.last_name}"?`)) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const userData = getUserData();
+      if (!userData || !userData.id) {
+        setError("Unable to determine admin ID. Please log in again.");
+        setActionLoading(false);
+        return;
+      }
+
+      const result = await reactivateMstReseller(reseller.id, userData.id);
+      
+      if (result.success) {
+        setSuccess("Reseller reactivated successfully!");
+        setTimeout(() => {
+          setSuccess("");
+          fetchResellers();
+        }, 2000);
+      } else {
+        setError(result.message || "Failed to reactivate reseller");
+      }
+    } catch (err) {
+      console.error("Error reactivating reseller:", err);
+      setError(err.message || "An error occurred while reactivating reseller");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const isPendingReseller = (reseller) => {
     // A reseller is pending if they have completed signup but haven't been approved yet
     return reseller.signup_completed && !reseller.approval_date;
@@ -168,8 +247,9 @@ const ResellerListLayer = () => {
 
     const matchesStatus =
       statusFilter === "all" ||
-      (statusFilter === "active" && reseller.status) ||
-      (statusFilter === "inactive" && !reseller.status);
+      (statusFilter === "active" && reseller.status && !reseller.suspended_at) ||
+      (statusFilter === "inactive" && !reseller.status && !reseller.suspended_at) ||
+      (statusFilter === "suspended" && reseller.suspended_at);
 
     return matchesSearch && matchesStatus;
   });
@@ -212,6 +292,7 @@ const ResellerListLayer = () => {
             <option value='all'>All Status</option>
             <option value='active'>Active</option>
             <option value='inactive'>Inactive</option>
+            <option value='suspended'>Suspended</option>
           </select>
         </div>
         <PermissionGuard module="Reseller" action="create">
@@ -264,8 +345,6 @@ const ResellerListLayer = () => {
                     <th scope='col'>Name</th>
                     <th scope='col'>Email</th>
                     <th scope='col'>Phone</th>
-                    <th scope='col'>Business Name</th>
-                    <th scope='col'>GSTIN</th>
                     <th scope='col'>Wallet Balance</th>
                     <th scope='col' className='text-center'>
                       Approval Status
@@ -314,22 +393,16 @@ const ResellerListLayer = () => {
                         </span>
                       </td>
                       <td>
-                        <span className='text-md mb-0 fw-normal text-secondary-light'>
-                          {reseller.business_name || "-"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className='text-md mb-0 fw-normal text-secondary-light'>
-                          {reseller.gstin || "-"}
-                        </span>
-                      </td>
-                      <td>
                         <span className='text-md mb-0 fw-medium text-success-600'>
                           {formatCurrency(reseller.mst_wallet?.balance ?? 0)}
                         </span>
                       </td>
                       <td className='text-center'>
-                        {reseller.approval_date ? (
+                        {reseller.suspended_at ? (
+                          <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm" title={reseller.suspended_reason || 'SUSPEND'}>
+                            SUSPEND
+                          </span>
+                        ) : reseller.approval_date ? (
                           <span className="bg-success-focus text-success-600 border border-success-main px-24 py-4 radius-4 fw-medium text-sm">
                             Approved
                           </span>
@@ -375,12 +448,14 @@ const ResellerListLayer = () => {
                       <td className='text-center'>
                         <span
                           className={`${
-                            reseller.status
+                            reseller.suspended_at
+                              ? "bg-warning-focus text-warning-600 border border-warning-main"
+                              : reseller.status
                               ? "bg-success-focus text-success-600 border border-success-main"
                               : "bg-danger-focus text-danger-600 border border-danger-main"
                           } px-24 py-4 radius-4 fw-medium text-sm`}
                         >
-                          {reseller.status ? "Active" : "Inactive"}
+                          {reseller.suspended_at ? "SUSPEND" : reseller.status ? "Active" : "Inactive"}
                         </span>
                       </td>
                       <td className='text-center'>
@@ -397,6 +472,37 @@ const ResellerListLayer = () => {
                               />
                             </Link>
                           </PermissionGuard>
+                          {reseller.approval_date && !reseller.suspended_at && (
+                            <PermissionGuard module="Reseller" action="update">
+                              <button
+                                type='button'
+                                onClick={() => handleSuspendClick(reseller)}
+                                className='bg-warning-focus bg-hover-warning-200 text-warning-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                                title='Suspend'
+                              >
+                                <Icon
+                                  icon='material-symbols:block'
+                                  className='icon text-xl'
+                                />
+                              </button>
+                            </PermissionGuard>
+                          )}
+                          {reseller.suspended_at && (
+                            <PermissionGuard module="Reseller" action="update">
+                              <button
+                                type='button'
+                                onClick={() => handleReactivate(reseller)}
+                                className='bg-success-focus bg-hover-success-200 text-success-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                                title='Reactivate'
+                                disabled={actionLoading}
+                              >
+                                <Icon
+                                  icon='material-symbols:check-circle'
+                                  className='icon text-xl'
+                                />
+                              </button>
+                            </PermissionGuard>
+                          )}
                           <PermissionGuard module="Reseller" action="update">
                             <Link
                               to={`/edit-reseller/${reseller.id}`}
@@ -461,6 +567,16 @@ const ResellerListLayer = () => {
         }}
         reseller={selectedReseller}
         onReject={handleReject}
+        loading={actionLoading}
+      />
+      <SuspendResellerModal
+        isOpen={suspendModalOpen}
+        onClose={() => {
+          setSuspendModalOpen(false);
+          setSelectedReseller(null);
+        }}
+        reseller={selectedReseller}
+        onSuspend={handleSuspend}
         loading={actionLoading}
       />
     </div>

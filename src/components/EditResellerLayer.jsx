@@ -24,11 +24,14 @@ const EditResellerLayer = () => {
     dob: "",
     gender: "",
     pan_number: "",
+    pan_dob: "",
     aadhaar_number: "",
     business_address: "",
     constitution_of_business: "",
     nature_bus_activities: "",
     legal_name: "",
+    gst_pan_number: "",
+    gstin_status: "",
   });
 
   useEffect(() => {
@@ -57,6 +60,11 @@ const EditResellerLayer = () => {
         const result = await getMstResellerById(resellerId);
         console.log("GraphQL result:", result);
         if (result.success && result.data) {
+          // Handle address as array - convert to string for form input
+          const addressValue = Array.isArray(result.data.address) 
+            ? result.data.address.join('\n')
+            : (result.data.address || "");
+
           setFormData({
             first_name: result.data.first_name || "",
             last_name: result.data.last_name || "",
@@ -66,15 +74,18 @@ const EditResellerLayer = () => {
             business_email: result.data.business_email || "",
             gstin: result.data.gstin || "",
             status: result.data.status !== undefined ? result.data.status : true,
-            address: result.data.address || "",
+            address: addressValue,
             dob: result.data.dob || "",
             gender: result.data.gender || "",
             pan_number: result.data.pan_number || "",
+            pan_dob: result.data.pan_dob || "",
             aadhaar_number: result.data.aadhaar_number || "",
             business_address: result.data.business_address || "",
             constitution_of_business: result.data.constitution_of_business || "",
             nature_bus_activities: result.data.nature_bus_activities || "",
             legal_name: result.data.legal_name || "",
+            gst_pan_number: result.data.gst_pan_number || "",
+            gstin_status: result.data.gstin_status || "",
           });
         } else {
           setError(result.message || "Reseller not found");
@@ -149,15 +160,18 @@ const EditResellerLayer = () => {
         business_email: formData.business_email || null,
         gstin: formData.gstin || null,
         status: formData.status,
-        address: formData.address || null,
+        address: formData.address || null, // Will be converted to array in mutation
         dob: formData.dob || null,
         gender: formData.gender || null,
         pan_number: formData.pan_number || null,
+        pan_dob: formData.pan_dob || null,
         aadhaar_number: formData.aadhaar_number || null,
         business_address: formData.business_address || null,
         constitution_of_business: formData.constitution_of_business || null,
         nature_bus_activities: formData.nature_bus_activities || null,
         legal_name: formData.legal_name || null,
+        gst_pan_number: formData.gst_pan_number || null,
+        gstin_status: formData.gstin_status || null,
       });
 
       if (result.success) {
@@ -358,10 +372,13 @@ const EditResellerLayer = () => {
                       id='address'
                       name='address'
                       rows='3'
-                      placeholder='Enter address'
+                      placeholder='Enter address (one line per address or comma-separated)'
                       value={formData.address}
                       onChange={handleChange}
                     />
+                    <small className="text-muted mt-2 d-block">
+                      Enter multiple addresses on separate lines or separated by commas
+                    </small>
                   </div>
 
                   <div className='row'>
@@ -384,6 +401,27 @@ const EditResellerLayer = () => {
                         />
                       </div>
                     </div>
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label
+                          htmlFor='pan_dob'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          PAN Date of Birth
+                        </label>
+                        <input
+                          type='date'
+                          className='form-control radius-8'
+                          id='pan_dob'
+                          name='pan_dob'
+                          value={formData.pan_dob}
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className='row'>
                     <div className='col-sm-6'>
                       <div className='mb-20'>
                         <label
@@ -477,6 +515,47 @@ const EditResellerLayer = () => {
                           name='gstin'
                           placeholder='Enter GSTIN'
                           value={formData.gstin}
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className='row'>
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label
+                          htmlFor='gst_pan_number'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          GST PAN Number
+                        </label>
+                        <input
+                          type='text'
+                          className='form-control radius-8'
+                          id='gst_pan_number'
+                          name='gst_pan_number'
+                          placeholder='Enter GST PAN number'
+                          value={formData.gst_pan_number}
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </div>
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label
+                          htmlFor='gstin_status'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          GSTIN Status
+                        </label>
+                        <input
+                          type='text'
+                          className='form-control radius-8'
+                          id='gstin_status'
+                          name='gstin_status'
+                          placeholder='Enter GSTIN status'
+                          value={formData.gstin_status}
                           onChange={handleChange}
                         />
                       </div>

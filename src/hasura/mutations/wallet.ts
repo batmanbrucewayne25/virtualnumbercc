@@ -718,6 +718,26 @@ export const creditWallet = async (
       };
     }
 
+    // Update reseller validity on wallet recharge
+    try {
+      const { updateValidityOnRecharge } = await import('./resellerValidity');
+      const validityResult = await updateValidityOnRecharge(
+        resellerId,
+        walletId,
+        amount,
+        'WALLET_RECHARGE_RESET',
+        365 // Default validity days
+      );
+
+      if (!validityResult.success) {
+        // Log warning but don't fail the wallet credit operation
+        console.warn('Failed to update reseller validity:', validityResult.message);
+      }
+    } catch (validityError) {
+      // Log error but don't fail the wallet credit operation
+      console.error('Error updating reseller validity:', validityError);
+    }
+
     return {
       success: true,
       data: {

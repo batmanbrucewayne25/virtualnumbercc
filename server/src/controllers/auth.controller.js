@@ -8,7 +8,12 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
+  console.log('📥 Login request received');
+  console.log('📧 Email provided:', email ? 'Yes' : 'No');
+  console.log('🔑 Password provided:', password ? 'Yes' : 'No');
+
   if (!email || !password) {
+    console.log('❌ Missing email or password');
     return res.status(400).json({
       success: false,
       message: 'Please provide both email and password'
@@ -17,6 +22,7 @@ export const login = asyncHandler(async (req, res) => {
 
   const result = await AuthService.login(email, password);
 
+  console.log('✅ Login controller - success');
   res.json({
     success: true,
     data: result
