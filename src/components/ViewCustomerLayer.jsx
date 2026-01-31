@@ -53,7 +53,9 @@ const ViewCustomerLayer = () => {
 
     try {
       // Call backend API to approve customer
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'}/customer/approve`, {
+      const { getApiBaseUrl } = await import('@/utils/apiUrl');
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/customer/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

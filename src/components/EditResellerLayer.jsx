@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
+import { getMstResellerDomainByResellerId, upsertMstResellerDomain } from "@/hasura/mutations/resellerDomain";
 
 const EditResellerLayer = () => {
   const { id } = useParams();
@@ -32,7 +33,10 @@ const EditResellerLayer = () => {
     gst_pan_number: "",
     gstin_status: "",
     validity_date: "",
+    custom_domain: "",
   });
+
+  const [domainData, setDomainData] = useState(null);
 
   useEffect(() => {
     const currentId = id;
@@ -77,6 +81,21 @@ const EditResellerLayer = () => {
           } catch (validityErr) {
             console.warn("Error fetching validity:", validityErr);
             // Continue without validity date if fetch fails
+          }
+
+          // Fetch domain data
+          try {
+            const domainResult = await getMstResellerDomainByResellerId(resellerId);
+            if (domainResult.success && domainResult.data) {
+              setDomainData(domainResult.data);
+              setFormData((prev) => ({
+                ...prev,
+                custom_domain: domainResult.data.domain || "",
+              }));
+            }
+          } catch (domainErr) {
+            console.warn("Error fetching domain:", domainErr);
+            // Continue without domain if fetch fails
           }
 
           setFormData({
@@ -169,6 +188,7 @@ const EditResellerLayer = () => {
 
     setLoading(true);
     try {
+      // Update reseller data
       const result = await updateMstReseller(resellerId, {
         first_name: formData.first_name,
         last_name: formData.last_name,
@@ -191,14 +211,63 @@ const EditResellerLayer = () => {
         validity_date: formData.validity_date || null,
       });
 
-      if (result.success) {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate("/reseller-list");
-        }, 2000);
-      } else {
+      if (!result.success) {
         setError(result.message || "Failed to update reseller. Please try again.");
+        setLoading(false);
+        return;
       }
+
+      // Handle domain update
+      const newDomain = (formData.custom_domain || "").trim();
+      const currentDomain = domainData?.domain || "";
+      
+      // Process domain if it's provided and different from current
+      if (newDomain !== "" && newDomain !== currentDomain) {
+        console.log("=== EDIT RESELLER: SAVING DOMAIN ===");
+        console.log("Current domain:", currentDomain);
+        console.log("New domain:", newDomain);
+        console.log("Reseller ID:", resellerId);
+        console.log("Has existing domain:", !!domainData);
+        console.log("Existing domain data:", domainData);
+        
+        const domainResult = await upsertMstResellerDomain(resellerId, newDomain);
+        
+        console.log("=== DOMAIN SAVE RESULT ===");
+        console.log("Success:", domainResult.success);
+        console.log("Message:", domainResult.message);
+        console.log("Data:", domainResult.data);
+        console.log("Errors:", domainResult.errors);
+        
+        if (!domainResult.success) {
+          console.error("Domain save failed:", domainResult);
+          setError(`Failed to save domain: ${domainResult.message || "Unknown error"}`);
+          setLoading(false);
+          return;
+        }
+        
+        // Check if approval is needed
+        if (domainResult.data && !domainResult.data.approved) {
+          // Domain change requires approval
+          setSuccess(true);
+          setError("");
+          setTimeout(() => {
+            alert("Domain change submitted successfully. It will be active after admin approval.");
+            navigate("/reseller-list");
+          }, 1000);
+          return;
+        }
+        
+        // Domain was saved successfully (either auto-approved or same domain)
+        console.log("Domain saved successfully:", domainResult.data);
+      } else if (newDomain === "" && currentDomain !== "") {
+        // Domain field was cleared - keep existing record
+        console.log("Domain field cleared, keeping existing domain record");
+      }
+
+      setSuccess(true);
+      setTimeout(() => {
+        navigate("/reseller-list");
+      }, 2000);
     } catch (err) {
       console.error("Error updating reseller:", err);
       setError(err.message || "An error occurred. Please try again.");
@@ -637,6 +706,38 @@ const EditResellerLayer = () => {
                     <small className='text-xs text-secondary-light mt-4 d-block'>
                       Update the reseller's validity expiry date. This will update the validity record and create a history entry.
                     </small>
+                  </div>
+
+                  <h6 className='text-sm text-primary-light mb-16 mt-24'>Custom Domain</h6>
+                  <div className='mb-20'>
+                    <label
+                      htmlFor='custom_domain'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Custom Domain
+                    </label>
+                    <input
+                      type='text'
+                      className='form-control radius-8'
+                      id='custom_domain'
+                      name='custom_domain'
+                      placeholder='example.com'
+                      value={formData.custom_domain}
+                      onChange={handleChange}
+                      disabled={loading}
+                    />
+                    <small className="text-muted mt-2 d-block">
+                      Enter your custom domain (e.g., www.reseller.com). Domain changes require admin approval before becoming active.
+                    </small>
+                    {domainData && (
+                      <div className="mt-2">
+                        {domainData.approved ? (
+                          <span className="badge bg-success">Domain Approved</span>
+                        ) : (
+                          <span className="badge bg-warning">Pending Approval</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className='d-flex align-items-center justify-content-center gap-3'>

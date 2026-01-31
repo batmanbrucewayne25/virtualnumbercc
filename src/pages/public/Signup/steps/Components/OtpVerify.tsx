@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 
 type OtpVerifyProps = {
     title: string;
@@ -8,8 +9,6 @@ type OtpVerifyProps = {
     onBack: () => void;
     onVerify: () => Promise<void>;
 };
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 const OtpVerify = ({ title, label, email, phone, onBack, onVerify }: OtpVerifyProps) => {
     const [otp, setOtp] = useState("");
@@ -39,9 +38,10 @@ const OtpVerify = ({ title, label, email, phone, onBack, onVerify }: OtpVerifyPr
         setSuccess("");
 
         try {
+            const API_BASE_URL = getApiBaseUrl();
             const endpoint = label.toLowerCase() === 'email' 
-                ? `${API_BASE_URL}/api/otp/send-email`
-                : `${API_BASE_URL}/api/otp/send-phone`;
+                ? `${API_BASE_URL}/otp/send-email`
+                : `${API_BASE_URL}/otp/send-phone`;
             
             const payload = label.toLowerCase() === 'email' 
                 ? { email }
@@ -88,9 +88,10 @@ const OtpVerify = ({ title, label, email, phone, onBack, onVerify }: OtpVerifyPr
 
         setLoading(true);
         try {
+            const API_BASE_URL = getApiBaseUrl();
             const endpoint = label.toLowerCase() === 'email'
-                ? `${API_BASE_URL}/api/otp/verify-email`
-                : `${API_BASE_URL}/api/otp/verify-phone`;
+                ? `${API_BASE_URL}/otp/verify-email`
+                : `${API_BASE_URL}/otp/verify-phone`;
             
             const payload = label.toLowerCase() === 'email'
                 ? { email, otp }

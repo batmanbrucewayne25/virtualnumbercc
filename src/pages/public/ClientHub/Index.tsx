@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
 import Step3 from "./steps/Step3";
@@ -14,10 +15,12 @@ import Step10 from "./steps/Step10";
 import Step11 from "./steps/Step11";
 
 const ClientHubLayer = () => {
-  const { resellerId } = useParams<{ resellerId: string }>();
+  const { resellerId: resellerIdFromUrl } = useParams<{ resellerId?: string }>();
+  const [resellerId, setResellerId] = useState<string | null>(null);
   const [step, setStep] = useState<number>(1);
   const [resellerData, setResellerData] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
   const [formData, setFormData] = useState<any>({
     email: "",
     phone: "",
@@ -29,26 +32,79 @@ const ClientHubLayer = () => {
   });
 
   useEffect(() => {
-    // Fetch reseller data to get reseller name for success message
-    const fetchResellerData = async () => {
-      if (resellerId) {
-        setLoading(true);
-        try {
-          const result = await getMstResellerById(resellerId);
+    // Determine resellerId from URL param or domain
+    const determineResellerId = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        let finalResellerId: string | null = null;
+
+        // First, check if resellerId is in URL (backward compatibility)
+        if (resellerIdFromUrl) {
+          finalResellerId = resellerIdFromUrl;
+        } else {
+          // Try to get resellerId from domain
+          const domain = window.location.hostname;
+          
+          // Skip domain lookup for localhost/development
+          if (domain === 'localhost' || domain === '127.0.0.1' || domain.includes('localhost')) {
+            setError("Reseller ID or domain is required");
+            setLoading(false);
+            return;
+          }
+
+          try {
+            // Call API to get resellerId by domain
+            const API_BASE_URL = getApiBaseUrl();
+            
+            const response = await fetch(`${API_BASE_URL}/reseller/by-domain?domain=${encodeURIComponent(domain)}`);
+            
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success && result.data) {
+                finalResellerId = result.data.resellerId;
+              } else {
+                setError(result.message || "Domain not found or not approved");
+                setLoading(false);
+                return;
+              }
+            } else {
+              const errorData = await response.json();
+              setError(errorData.message || "Failed to resolve domain");
+              setLoading(false);
+              return;
+            }
+          } catch (apiError) {
+            console.error("Error fetching reseller by domain:", apiError);
+            setError("Failed to resolve domain. Please contact support.");
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Fetch reseller data
+        if (finalResellerId) {
+          setResellerId(finalResellerId);
+          const result = await getMstResellerById(finalResellerId);
           if (result.success && result.data) {
             setResellerData(result.data);
           } else {
-            console.error("Failed to fetch reseller:", result.message);
+            setError(result.message || "Reseller not found");
           }
-        } catch (err) {
-          console.error("Failed to fetch reseller data:", err);
-        } finally {
-          setLoading(false);
+        } else {
+          setError("Reseller ID or domain is required");
         }
+      } catch (err: any) {
+        console.error("Failed to fetch reseller data:", err);
+        setError(err.message || "An error occurred while loading reseller information");
+      } finally {
+        setLoading(false);
       }
     };
-    fetchResellerData();
-  }, [resellerId]);
+
+    determineResellerId();
+  }, [resellerIdFromUrl]);
 
   const handleStepChange = (newStep: number) => {
     setStep(newStep);
@@ -125,12 +181,30 @@ const ClientHubLayer = () => {
     handleStepChange(11);
   };
 
-  if (loading && !resellerData) {
+  if (loading) {
     return (
       <section className="auth bg-base d-flex flex-wrap">
         <div className="auth-right py-32 px-24 d-flex flex-column justify-content-center w-100">
           <div className="max-w-464-px mx-auto w-100 text-center">
             <p>Loading...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error || !resellerId) {
+    return (
+      <section className="auth bg-base d-flex flex-wrap">
+        <div className="auth-right py-32 px-24 d-flex flex-column justify-content-center w-100">
+          <div className="max-w-464-px mx-auto w-100 text-center">
+            <div className="alert alert-danger">
+              <h5>Access Error</h5>
+              <p>{error || "Reseller information not found"}</p>
+              <p className="text-sm text-muted mt-2">
+                Please ensure you're accessing this page through the correct domain or contact support.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -160,9 +234,9 @@ const ClientHubLayer = () => {
           </p>
 
           {/* STEP 1: Login or Sign Up */}
-          {step === 1 && (
+          {step === 1 && resellerId && (
             <Step1
-              resellerId={resellerId || ""}
+              resellerId={resellerId}
               onSignUp={() => handleStepChange(2)}
               onLogin={() => {
                 // TODO: Handle login flow
@@ -244,10 +318,10 @@ const ClientHubLayer = () => {
           )}
 
           {/* STEP 10: Preview Screen */}
-          {step === 10 && (
+          {step === 10 && resellerId && (
             <Step10
               formData={formData}
-              resellerId={resellerId || ""}
+              resellerId={resellerId}
               onBack={() => handleStepChange(9)}
               onSubmit={handleStep10Success}
             />

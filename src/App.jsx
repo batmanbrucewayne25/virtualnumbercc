@@ -24,6 +24,7 @@ import AdminSettingPage from "./pages/AdminSettingPage";
 import AdminSMTPPage from "./pages/AdminSMTPPage";
 import AdminWhatsAppPage from "./pages/AdminWhatsAppPage";
 import AdminSmtpTemplatePage from "./pages/AdminSmtpTemplatePage";
+import DomainApprovalPage from "./pages/DomainApprovalPage";
 // import CalendarMainPage from "./pages/CalendarMainPage";
 // import CarouselPage from "./pages/CarouselPage";
 // import ChatMessagePage from "./pages/ChatMessagePage";
@@ -89,6 +90,10 @@ import { PermissionProvider } from "@/contexts/PermissionContext";
 
 
 function App() {
+  // Check build type from environment variable
+  const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
+  const isClientHubBuild = buildType === 'clienthub';
+
   return (
     <PermissionProvider>
       <BrowserRouter>
@@ -99,15 +104,20 @@ function App() {
         <Route exact path='/sign-up' element={<SignUpPage />} />
         <Route exact path='/forgot-password' element={<ForgotPasswordPage />} />
         <Route exact path='/reset-password' element={<ResetPasswordPage />} />
-        <Route exact path='/clienthub/:resellerId' element={<ClientHubPage />} />
+        <Route exact path='/clienthub/:resellerId?' element={<ClientHubPage />} />
         <Route exact path='/access-denied' element={<AccessDeniedPage />} />
         <Route exact path='/coming-soon' element={<ComingSoonPage />} />
         <Route exact path='/maintenance' element={<MaintenancePage />} />
         <Route exact path='/blank-page' element={<BlankPagePage />} />
 
-        {/* Protected routes - require static admin login */}
-        <Route element={<ProtectedRoutes />}>
-          <Route exact path='/' element={<HomePageOne />} />
+        {/* Root path - different based on build type */}
+        {isClientHubBuild ? (
+          // ClientHub build: root path shows ClientHub page
+          <Route exact path='/' element={<ClientHubPage />} />
+        ) : (
+          // Admin build: root path requires authentication
+          <Route element={<ProtectedRoutes />}>
+            <Route exact path='/' element={<HomePageOne />} />
           <Route exact path='/index-2' element={<HomePageTwo />} />
           <Route exact path='/index-3' element={<HomePageThree />} />
           <Route exact path='/index-4' element={<HomePageFour />} />
@@ -143,6 +153,7 @@ function App() {
           <Route exact path='/admin-smtp' element={<AdminSMTPPage />} />
           <Route exact path='/admin-whatsapp' element={<AdminWhatsAppPage />} />
           <Route exact path='/admin-smtp-template' element={<AdminSmtpTemplatePage />} />
+          <Route exact path='/domain-approvals' element={<DomainApprovalPage />} />
           {/* <Route exact path='/avatar' element={<AvatarPage />} /> */}
           {/* <Route exact path='/badges' element={<BadgesPage />} /> */}
           {/* <Route exact path='/button' element={<ButtonPage />} /> */}
@@ -221,7 +232,8 @@ function App() {
           <Route exact path='/change-password' element={<ChangePasswordPage />} />
           {/* <Route exact path='/widgets' element={<WidgetsPage />} /> */}
           {/* <Route exact path='/wizard' element={<WizardPage />} /> */}
-        </Route>
+          </Route>
+        )}
 
         {/* Catch-all */}
         <Route exact path='*' element={<ErrorPage />} />

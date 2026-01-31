@@ -2,6 +2,8 @@ import { graphqlRequest } from "@/hasura";
 import { createMstWallet, creditWallet } from "./wallet";
 import { upsertNumberLimits } from "./numberLimits";
 import { upsertResellerValidity, createResellerValidityHistory, getResellerValidity } from "./resellerValidity";
+// @ts-ignore - JS file
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
 /**
  * Get all resellers (excluding soft-deleted records)
@@ -715,30 +717,8 @@ export const approveMstReseller = async (
         
         // Call notification API endpoint
         try {
-          // Get API base URL - try multiple methods
-          let API_BASE_URL = 'http://localhost:3001/api';
-          
-          if (typeof window !== 'undefined') {
-            // Try to get from Vite env (injected at build time)
-            try {
-              // @ts-ignore - Vite injects this at build time
-              const viteEnv = (window as any).__VITE_API_BASE_URL__;
-              if (viteEnv) {
-                API_BASE_URL = viteEnv;
-              } else {
-                // Fallback: construct from current origin
-                const origin = window.location.origin;
-                // If origin is localhost:5173 (Vite dev), use localhost:3001
-                if (origin.includes('localhost:5173') || origin.includes('127.0.0.1:5173')) {
-                  API_BASE_URL = 'http://localhost:3001/api';
-                } else {
-                  API_BASE_URL = `${origin}/api`;
-                }
-              }
-            } catch (e) {
-              // Use default
-            }
-          }
+          // Get API base URL using utility function
+          const API_BASE_URL = getApiBaseUrl();
           
           console.log('[Reseller Approval] Calling notification API:', `${API_BASE_URL}/notifications/reseller-approval`);
           console.log('[Reseller Approval] Reseller data:', { email: reseller.email, phone: reseller.phone, name: resellerName });

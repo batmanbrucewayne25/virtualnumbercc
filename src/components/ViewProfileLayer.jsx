@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { getMstResellerDomainByResellerId, upsertMstResellerDomain } from "@/hasura/mutations/resellerDomain";
 
 const ViewProfileLayer = () => {
   const [isEditMode, setIsEditMode] = useState(false);
@@ -32,7 +33,10 @@ const ViewProfileLayer = () => {
     legal_name: "",
     gst_pan_number: "",
     gstin_status: "",
+    custom_domain: "",
   });
+
+  const [domainData, setDomainData] = useState(null);
 
   useEffect(() => {
     // Get logged-in reseller ID
@@ -91,11 +95,26 @@ const ViewProfileLayer = () => {
           legal_name: result.data.legal_name || "",
           gst_pan_number: result.data.gst_pan_number || "",
           gstin_status: result.data.gstin_status || "",
+          custom_domain: "",
         });
 
         // Set profile image if available
         if (result.data.profile_image) {
           setImagePreview(result.data.profile_image);
+        }
+
+        // Fetch domain data
+        try {
+          const domainResult = await getMstResellerDomainByResellerId(id);
+          if (domainResult.success && domainResult.data) {
+            setDomainData(domainResult.data);
+            setFormData((prev) => ({
+              ...prev,
+              custom_domain: domainResult.data.domain || "",
+            }));
+          }
+        } catch (domainErr) {
+          console.warn("Error fetching domain:", domainErr);
         }
       } else {
         setError(result.message || "Failed to fetch profile data");
@@ -134,24 +153,75 @@ const ViewProfileLayer = () => {
         ? formData.address.split('\n').filter(line => line.trim() !== '')
         : [];
 
+      // Exclude custom_domain from updateData as it's handled separately
+      const { custom_domain, ...resellerData } = formData;
+      
       const updateData = {
-        ...formData,
+        ...resellerData,
         address: addressArray.length > 0 ? addressArray : null,
       };
 
       const result = await updateMstReseller(resellerId, updateData);
       
-      if (result.success) {
-        setSuccess("Profile updated successfully!");
-        setIsEditMode(false);
-        // Refresh data
-        await fetchResellerData(resellerId);
-        setTimeout(() => {
-          setSuccess("");
-        }, 3000);
-      } else {
+      if (!result.success) {
         setError(result.message || "Failed to update profile");
+        setLoading(false);
+        return;
       }
+
+      // Handle domain update
+      const newDomain = (custom_domain || "").trim();
+      const currentDomain = domainData?.domain || "";
+      
+      console.log("=== VIEW PROFILE: DOMAIN UPDATE CHECK ===");
+      console.log("New domain:", newDomain);
+      console.log("Current domain:", currentDomain);
+      console.log("Reseller ID:", resellerId);
+      console.log("Has existing domain data:", !!domainData);
+      console.log("Domain data:", domainData);
+      console.log("Will process domain:", newDomain !== "" && newDomain !== currentDomain);
+      
+      // Process domain if it's provided and different from current
+      if (newDomain !== "" && newDomain !== currentDomain) {
+        console.log("=== VIEW PROFILE: SAVING DOMAIN ===");
+        console.log("Saving domain:", { currentDomain, newDomain, resellerId, hasExisting: !!domainData });
+        
+        const domainResult = await upsertMstResellerDomain(resellerId, newDomain);
+        
+        console.log("=== VIEW PROFILE: DOMAIN SAVE RESULT ===");
+        console.log("Success:", domainResult.success);
+        console.log("Message:", domainResult.message);
+        console.log("Data:", domainResult.data);
+        console.log("Errors:", domainResult.errors);
+        console.log("Full result:", domainResult);
+        
+        if (!domainResult.success) {
+          console.error("Domain save failed:", domainResult);
+          setError(`Failed to save domain: ${domainResult.message || "Unknown error"}`);
+          setLoading(false);
+          return;
+        }
+        
+        // Check if approval is needed
+        if (domainResult.data && !domainResult.data.approved) {
+          setSuccess("Profile updated! Domain change submitted for approval.");
+        } else {
+          setSuccess("Profile updated successfully! Domain saved and approved.");
+        }
+      } else if (newDomain === "" && currentDomain !== "") {
+        console.log("Domain field was cleared, keeping existing domain record");
+        setSuccess("Profile updated successfully!");
+      } else {
+        console.log("Domain unchanged or empty");
+        setSuccess("Profile updated successfully!");
+      }
+
+      setIsEditMode(false);
+      // Refresh data
+      await fetchResellerData(resellerId);
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
     } catch (err) {
       console.error("Error updating profile:", err);
       setError(err.message || "An error occurred while updating profile");
@@ -607,6 +677,39 @@ const ViewProfileLayer = () => {
                         value={formData.business_address}
                         onChange={handleChange}
                       />
+                    </div>
+                  </div>
+
+                  <div className='col-sm-12'>
+                    <div className='mb-20'>
+                      <label
+                        htmlFor='custom_domain'
+                        className='form-label fw-semibold text-primary-light text-sm mb-8'
+                      >
+                        Custom Domain
+                      </label>
+                      <input
+                        type='text'
+                        className='form-control radius-8'
+                        id='custom_domain'
+                        name='custom_domain'
+                        placeholder='example.com'
+                        value={formData.custom_domain}
+                        onChange={handleChange}
+                        disabled={loading}
+                      />
+                      <small className="text-muted mt-2 d-block">
+                        Enter your custom domain (e.g., www.reseller.com). Domain changes require admin approval before becoming active.
+                      </small>
+                      {domainData && (
+                        <div className="mt-2">
+                          {domainData.approved ? (
+                            <span className="badge bg-success">Domain Approved</span>
+                          ) : (
+                            <span className="badge bg-warning">Pending Approval</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

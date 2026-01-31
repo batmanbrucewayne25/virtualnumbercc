@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:admin": "vite build --mode admin",
+    "build:clienthub": "vite build --mode clienthub",
     "lint": "eslint .",
     "preview": "vite preview"
   },

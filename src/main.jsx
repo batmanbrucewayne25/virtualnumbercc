@@ -10,6 +10,10 @@ import "lightgallery/css/lg-thumbnail.css";
 import App from "./App.jsx";
 import { isAuthenticated } from "./utils/auth.js";
 
+// Check build type
+const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
+const isClientHubBuild = buildType === 'clienthub';
+
 // Prevent rendering protected pages before auth check — redirect to sign-in if not authenticated
 const publicPaths = [
   "/sign-in",
@@ -19,9 +23,15 @@ const publicPaths = [
   "/coming-soon",
   "/maintenance",
   "/blank-page",
+  "/clienthub",
 ];
 
-if (!isAuthenticated() && !publicPaths.includes(window.location.pathname)) {
+// For ClientHub build, root path is public (no auth required)
+if (isClientHubBuild) {
+  publicPaths.push("/");
+}
+
+if (!isAuthenticated() && !publicPaths.includes(window.location.pathname) && !window.location.pathname.startsWith("/clienthub")) {
   // Hard redirect avoids flashing protected content while React mounts
   window.location.replace("/sign-in");
 } else {

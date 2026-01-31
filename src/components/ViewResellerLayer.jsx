@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
+import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 
 const ViewResellerLayer = () => {
   const { id } = useParams();
@@ -11,6 +12,7 @@ const ViewResellerLayer = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [validity, setValidity] = useState(null);
+  const [domainData, setDomainData] = useState<any>(null);
 
   useEffect(() => {
     const currentId = id;
@@ -48,6 +50,16 @@ const ViewResellerLayer = () => {
             }
           } catch (validityErr) {
             console.warn("Error fetching validity:", validityErr);
+          }
+
+          // Fetch domain data
+          try {
+            const domainResult = await getMstResellerDomainByResellerId(resellerId);
+            if (domainResult.success && domainResult.data) {
+              setDomainData(domainResult.data);
+            }
+          } catch (domainErr) {
+            console.warn("Error fetching domain:", domainErr);
           }
         } else {
           setError(result.message || "Reseller not found");
@@ -354,9 +366,30 @@ const ViewResellerLayer = () => {
                 </div>
 
                 <div className='mb-16'>
+                  <label className='form-label text-xs text-secondary-light mb-4'>Custom Domain</label>
+                  <p className='text-md fw-medium text-primary-light mb-0'>
+                    {domainData?.domain ? (
+                      <>
+                        {domainData.domain}
+                        {domainData.approved ? (
+                          <span className="badge bg-success ms-2">Approved</span>
+                        ) : (
+                          <span className="badge bg-warning ms-2">Pending Approval</span>
+                        )}
+                      </>
+                    ) : (
+                      "-"
+                    )}
+                  </p>
+                </div>
+
+                <div className='mb-16'>
                   <label className='form-label text-xs text-secondary-light mb-4'>Referral Link</label>
                   <p className='text-md fw-medium text-primary-light mb-0'>
-                    {reseller.referral_link || "-"}
+                    {domainData?.domain && domainData.approved 
+                      ? `https://${domainData.domain}/clienthub`
+                      : (reseller.referral_link || "-")
+                    }
                   </p>
                 </div>
               </div>

@@ -2,7 +2,7 @@
  * Razorpay API service for payment gateway configuration and transactions
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+import { getApiBaseUrl } from '../utils/apiUrl.js';
 
 /**
  * Generic API request function
@@ -36,6 +36,7 @@ const apiRequest = async (endpoint, options = {}) => {
   }
 
   try {
+    const API_BASE_URL = getApiBaseUrl();
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
     
     // Check if response is JSON

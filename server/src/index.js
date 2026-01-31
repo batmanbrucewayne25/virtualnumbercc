@@ -4,6 +4,8 @@ dotenv.config();
 
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
@@ -14,7 +16,12 @@ import kycRoutes from "./routes/kyc.routes.js";
 import virtualNumbersRoutes from "./routes/virtualNumbers.routes.js";
 import otpRoutes from "./routes/otp.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
+import resellerRoutes from "./routes/reseller.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
+import { corsOriginHandler } from "./middleware/cors.middleware.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,7 +29,7 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: corsOriginHandler,
     credentials: true,
   }),
 );
@@ -50,9 +57,26 @@ app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/reseller", resellerRoutes);
 
 // External API Routes (Virtual Numbers API)
 app.use("/virtualnumbers", virtualNumbersRoutes);
+
+// Serve static files from dist folder (React build)
+// This should be after API routes so API routes take precedence
+const distPath = path.join(__dirname, "../../dist");
+app.use(express.static(distPath));
+
+// For React Router - serve index.html for all non-API routes
+app.get("*", (req, res, next) => {
+  // Skip API routes and virtualnumbers routes
+  if (req.path.startsWith("/api") || req.path.startsWith("/virtualnumbers")) {
+    return next();
+  }
+  
+  // Serve index.html for all other routes (React Router handles routing)
+  res.sendFile(path.join(distPath, "index.html"));
+});
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

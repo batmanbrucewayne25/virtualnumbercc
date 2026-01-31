@@ -524,6 +524,17 @@ const MasterLayout = ({ children }) => {
                       </li> */}
                       <li>
                         <NavLink
+                          to='/domain-approvals'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-info-main w-auto' />{" "}
+                          Domain Approvals
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
                           to='/change-password'
                           className={(navData) =>
                             navData.isActive ? "active-page" : ""
@@ -666,7 +677,7 @@ const MasterLayout = ({ children }) => {
                       Whatsapp Integration
                     </NavLink>
                   </li>
-                  <li>
+                  {/* <li>
                     <NavLink
                       to='/whatsapptemp'
                       className={(navData) =>
@@ -676,7 +687,7 @@ const MasterLayout = ({ children }) => {
                       <i className='ri-circle-fill circle-icon text-danger-main w-auto' />{" "}
                       Whatsapp template
                     </NavLink>
-                  </li>
+                  </li> */}
                   <li>
                     <NavLink
                       to='/payment-gateway'

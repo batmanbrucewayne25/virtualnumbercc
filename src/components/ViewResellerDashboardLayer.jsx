@@ -5,6 +5,7 @@ import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { getApprovedCustomersByReseller, getCustomerWithTransactions, suspendCustomer } from "@/hasura/mutations/user";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
+import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 
 const ViewResellerDashboardLayer = () => {
   const { id } = useParams();
@@ -19,6 +20,7 @@ const ViewResellerDashboardLayer = () => {
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [validity, setValidity] = useState(null);
+  const [domainData, setDomainData] = useState<any>(null);
 
   useEffect(() => {
     // Get current user role
@@ -58,6 +60,16 @@ const ViewResellerDashboardLayer = () => {
           }
         } catch (validityErr) {
           console.warn("Error fetching validity:", validityErr);
+        }
+
+        // Fetch domain data
+        try {
+          const domainResult = await getMstResellerDomainByResellerId(id);
+          if (domainResult.success && domainResult.data) {
+            setDomainData(domainResult.data);
+          }
+        } catch (domainErr) {
+          console.warn("Error fetching domain:", domainErr);
         }
       } else {
         setError(result.message || "Reseller not found");
