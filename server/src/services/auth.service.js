@@ -3,8 +3,15 @@ import jwt from 'jsonwebtoken';
 import { hasuraClient, getHasuraClient } from '../config/hasura.client.js';
 
 // JWT configuration with fallback
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'JWT_SECRET';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// Log JWT_SECRET status on module load (for debugging)
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  [AuthService] JWT_SECRET not set in environment, using fallback secret');
+} else {
+  console.log('✅ [AuthService] JWT_SECRET is set from environment');
+}
 
 export class AuthService {
   /**
@@ -343,7 +350,16 @@ export class AuthService {
    * @returns {object} Decoded token payload
    */
   static verifyToken(token) {
-    return jwt.verify(token, JWT_SECRET);
+    console.log('🔐 [AuthService] Verifying token with JWT_SECRET:', JWT_SECRET ? 'SET' : 'NOT SET');
+    console.log('🔐 [AuthService] JWT_SECRET length:', JWT_SECRET ? JWT_SECRET.length : 0);
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      console.log('✅ [AuthService] Token verified successfully');
+      return decoded;
+    } catch (error) {
+      console.error('❌ [AuthService] Token verification error:', error.name, error.message);
+      throw error;
+    }
   }
 
   /**

@@ -26,7 +26,12 @@ export const authMiddleware = async (req, res, next) => {
     }
 
     // Verify token
+    console.log('🔐 [Auth Middleware] Verifying token...');
+    console.log('🔑 [Auth Middleware] Token (first 50 chars):', token.substring(0, 50));
+    
     const decoded = AuthService.verifyToken(token);
+    console.log('✅ [Auth Middleware] Token verified successfully');
+    console.log('👤 [Auth Middleware] Decoded user:', { userId: decoded.userId, email: decoded.email, role: decoded.role });
 
     // Attach user info to request
     req.user = {
@@ -37,10 +42,14 @@ export const authMiddleware = async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error('❌ [Auth Middleware] Token verification failed:', error.name, error.message);
+    console.error('📚 [Auth Middleware] Error stack:', error.stack);
+    
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
-        message: 'Invalid token'
+        message: 'Invalid token',
+        error: error.message
       });
     }
 

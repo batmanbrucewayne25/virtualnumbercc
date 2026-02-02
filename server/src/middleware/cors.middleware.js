@@ -83,13 +83,13 @@ export const corsOriginHandler = async (origin, callback) => {
   // 1. Check hardcoded allowed origins from env
   const allowedOrigins = process.env.CORS_ORIGIN 
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-    : ['http://localhost:5173', 'http://localhost:5174'];
+    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001', 'https://app.virtualnumberindia.in'];
 
   if (allowedOrigins.includes(origin)) {
     return callback(null, true);
   }
 
-  // 2. Allow localhost for development
+  // 2. Allow localhost for development (any port)
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return callback(null, true);
   }

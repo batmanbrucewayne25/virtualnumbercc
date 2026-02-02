@@ -3,10 +3,19 @@
  * When UI is served from server's dist folder, API is at same origin + /api
  */
 export const getApiBaseUrl = () => {
-  // 1. Check environment variable first (highest priority)
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
+  // Helper function to normalize URL (ensure /api is present exactly once at the end)
+  const normalizeApiUrl = (url) => {
+    if (!url) return null;
+    
+    // Remove trailing slashes
+    let normalized = url.trim().replace(/\/+$/, '');
+    
+    // Remove all trailing /api segments (handles /api/api/api cases)
+    normalized = normalized.replace(/(\/api)+$/, '');
+    
+    // Add exactly one /api at the end
+    return normalized + '/api';
+  };
 
   // 2. If running in browser, detect from current origin (server base URL)
   if (typeof window !== 'undefined') {
@@ -14,14 +23,14 @@ export const getApiBaseUrl = () => {
     const hostname = window.location.hostname;
     const port = window.location.port;
 
-    // Development: use localhost:3001 (Vite dev server on different port)
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      // If port is 5173 or 5174 (Vite dev), use separate API server
-      if (port === '5173' || port === '5174' || !port) {
-        return 'http://localhost:3001/api';
-      }
-      // If port is 3001 or same as server, use same origin
-      return `${origin}/api`;
+    // 1. Check environment variable for production/custom domains
+    // Only use env variable if not on localhost
+    if (import.meta.env.VITE_API_BASE_URL) {
+      const envUrl = import.meta.env.VITE_API_BASE_URL.trim();
+      // Normalize the environment variable URL
+      const normalizedUrl = normalizeApiUrl(envUrl) || `${origin}/api`;
+      console.log('[API URL] Using VITE_API_BASE_URL:', { original: envUrl, normalized: normalizedUrl });
+      return normalizedUrl;
     }
 
     // Production/Custom domain: use same origin with /api

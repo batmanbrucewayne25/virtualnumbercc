@@ -34,11 +34,25 @@ const SignInLayer = () => {
       // Call Node.js backend API for login
       const result = await login(email.trim(), password);
 
-      if (result.success && result.data) {
-        // Save token and user data from backend response
-        const { token, user } = result.data;
+      console.log("Login result:", result);
+
+      // Handle both response structures: { success, data: { token, user } } or { success, token, user }
+      if (result.success) {
+        // Extract token and user from either structure
+        const token = result.data?.token || result.token;
+        const user = result.data?.user || result.user;
         
-        // Fetch user permissions after login
+        if (!token || !user) {
+          setError("Invalid response from server. Please try again.");
+          return;
+        }
+        
+        console.log("Saving auth token and user data:", { token: token ? "present" : "missing", user });
+        
+        // Save token first to ensure authentication is set
+        saveAuthToken(token, user, null);
+        
+        // Fetch user permissions after login (non-blocking)
         let permissions = null;
         try {
           const permResult = await getUserWithPermissions(user.email || email.trim());
@@ -58,6 +72,10 @@ const SignInLayer = () => {
                 }
               });
               permissions = permMap;
+              // Update permissions if fetched successfully
+              if (Object.keys(permMap).length > 0) {
+                localStorage.setItem('userPermissions', JSON.stringify(permMap));
+              }
             }
           }
         } catch (permError) {
@@ -65,12 +83,19 @@ const SignInLayer = () => {
           // Continue login even if permissions fail to load
         }
         
-        saveAuthToken(token, user, permissions);
-        
         // Dispatch event to refresh permissions in PermissionContext
         window.dispatchEvent(new Event('permissionsUpdated'));
         
         setError("");
+        
+        // Verify authentication is set
+        const authCheck = isAuthenticated();
+        console.log("Auth check after save:", authCheck);
+        console.log("Token saved:", !!localStorage.getItem('authToken'));
+        console.log("User data saved:", !!localStorage.getItem('userData'));
+        
+        // Navigate to dashboard - ProtectedRoutes will verify authentication
+        console.log("Navigating to dashboard...");
         navigate("/", { replace: true });
       } else {
         setError(result.message || "Invalid email or password.");
