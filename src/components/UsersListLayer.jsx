@@ -1,18 +1,26 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getApprovedCustomersByReseller, getAllApprovedCustomers } from "@/hasura/mutations/user";
+import {
+  getApprovedCustomersByReseller,
+  getAllApprovedCustomers,
+} from "@/hasura/mutations/user";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getUserData, getAuthToken } from "@/utils/auth";
 
 // Simple JWT decode function (or use jwt-decode library if available)
 const decodeJWT = (token) => {
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map(function (c) {
+          return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+        })
+        .join("")
+    );
     return JSON.parse(jsonPayload);
   } catch (e) {
     return null;
@@ -40,7 +48,7 @@ const UsersListLayer = () => {
         if (decoded) {
           setUserRole(decoded.role);
           // If admin, fetch resellers for filter
-          if (decoded.role === 'admin' || decoded.role === 'super_admin') {
+          if (decoded.role === "admin" || decoded.role === "super_admin") {
             fetchResellers();
           }
         }
@@ -74,9 +82,9 @@ const UsersListLayer = () => {
       };
 
       let result;
-      
+
       // If user is admin/super_admin, fetch all customers
-      if (userRole === 'admin' || userRole === 'super_admin') {
+      if (userRole === "admin" || userRole === "super_admin") {
         result = await getAllApprovedCustomers(filters);
       } else {
         // For resellers, fetch only their customers
@@ -139,7 +147,12 @@ const UsersListLayer = () => {
   };
 
   const getCustomerName = (customer) => {
-    return customer.business_name || customer.profile_name || customer.pan_full_name || "N/A";
+    return (
+      customer.business_name ||
+      customer.profile_name ||
+      customer.pan_full_name ||
+      "N/A"
+    );
   };
 
   const getVirtualNumber = (customer) => {
@@ -175,21 +188,29 @@ const UsersListLayer = () => {
   // Filter customers based on search term and reseller filter
   const filteredCustomers = customers.filter((customer) => {
     // Filter by reseller (for admins)
-    if ((userRole === 'admin' || userRole === 'super_admin') && selectedResellerId !== "all") {
+    if (
+      (userRole === "admin" || userRole === "super_admin") &&
+      selectedResellerId !== "all"
+    ) {
       if (customer.reseller_id !== selectedResellerId) {
         return false;
       }
     }
-    
+
     // Filter by search term
     if (!searchTerm) return true;
-    
+
     const searchLower = searchTerm.toLowerCase();
     const name = getCustomerName(customer).toLowerCase();
     const virtualNumber = getVirtualNumber(customer).toLowerCase();
     const callForward = getCallForwardNumber(customer).toLowerCase();
-    const resellerName = (customer.mst_reseller?.business_name || 
-      `${customer.mst_reseller?.first_name || ""} ${customer.mst_reseller?.last_name || ""}`.trim() || "").toLowerCase();
+    const resellerName = (
+      customer.mst_reseller?.business_name ||
+      `${customer.mst_reseller?.first_name || ""} ${
+        customer.mst_reseller?.last_name || ""
+      }`.trim() ||
+      ""
+    ).toLowerCase();
 
     return (
       name.includes(searchLower) ||
@@ -200,206 +221,240 @@ const UsersListLayer = () => {
   });
 
   return (
-    <div className='card h-100 p-0 radius-12'>
-      <div className='card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between'>
-        <h5 className='text-md text-primary-light mb-0'>Approved Customers</h5>
+    <div className="card h-100 p-0 radius-12">
+      <div className="card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between">
+        <h5 className="text-md text-primary-light mb-0">Approved Customers</h5>
       </div>
 
-      <div className='card-body p-24'>
+      <div className="card-body p-24">
         {/* Filters */}
-        <div className='row g-3 mb-24'>
-          {(userRole === 'admin' || userRole === 'super_admin') && (
-            <div className='col-md-2'>
-              <label className='form-label text-sm fw-semibold mb-8'>Reseller</label>
+        <div className="row g-3 mb-24">
+          {(userRole === "admin" || userRole === "super_admin") && (
+            <div className="col-md-2">
+              <label className="form-label text-sm fw-semibold mb-8">
+                Reseller
+              </label>
               <select
-                className='form-select form-select-sm'
+                className="form-select form-select-sm"
                 value={selectedResellerId}
                 onChange={(e) => setSelectedResellerId(e.target.value)}
               >
                 <option value="all">All Resellers</option>
                 {resellers.map((reseller) => (
                   <option key={reseller.id} value={reseller.id}>
-                    {reseller.business_name || `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() || reseller.email}
+                    {reseller.business_name ||
+                      `${reseller.first_name || ""} ${
+                        reseller.last_name || ""
+                      }`.trim() ||
+                      reseller.email}
                   </option>
                 ))}
               </select>
             </div>
           )}
 
-          <div className={userRole === 'admin' || userRole === 'super_admin' ? 'col-md-2' : 'col-md-3'}>
-            <label className='form-label text-sm fw-semibold mb-8'>Search</label>
-            <div className='d-flex gap-2'>
+          <div
+            className={
+              userRole === "admin" || userRole === "super_admin"
+                ? "col-md-2"
+                : "col-md-3"
+            }
+          >
+            <label className="form-label text-sm fw-semibold mb-8">
+              Search
+            </label>
+            <div className="d-flex gap-2">
               <input
-                type='text'
-                className='form-control form-control-sm'
-                placeholder='Name, virtual number, alternate number...'
+                type="text"
+                className="form-control form-control-sm"
+                placeholder="Name, virtual number, alternate number..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSearch()}
               />
               <button
-                type='button'
-                className='btn btn-primary btn-sm'
+                type="button"
+                className="btn btn-primary btn-sm"
                 onClick={handleSearch}
               >
-                <Icon icon='ion:search-outline' />
+                <Icon icon="ion:search-outline" />
               </button>
             </div>
           </div>
 
-          <div className='col-md-2'>
-            <label className='form-label text-sm fw-semibold mb-8'>Start Date</label>
+          <div className="col-md-2">
+            <label className="form-label text-sm fw-semibold mb-8">
+              Start Date
+            </label>
             <input
-              type='date'
-              className='form-control form-control-sm'
+              type="date"
+              className="form-control form-control-sm"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
 
-          <div className='col-md-2'>
-            <label className='form-label text-sm fw-semibold mb-8'>End Date</label>
+          <div className="col-md-2">
+            <label className="form-label text-sm fw-semibold mb-8">
+              End Date
+            </label>
             <input
-              type='date'
-              className='form-control form-control-sm'
+              type="date"
+              className="form-control form-control-sm"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
 
-          <div className='col-md-2'>
-            <label className='form-label text-sm fw-semibold mb-8'>Expiring Soon</label>
-            <div className='form-check form-switch'>
+          <div className="col-md-2">
+            <label className="form-label text-sm fw-semibold mb-8">
+              Expiring Soon
+            </label>
+            <div className="form-check form-switch">
               <input
-                className='form-check-input'
-                type='checkbox'
+                className="form-check-input"
+                type="checkbox"
                 checked={expiringSoon}
                 onChange={(e) => setExpiringSoon(e.target.checked)}
               />
             </div>
           </div>
 
-          <div className='col-md-2 d-flex align-items-end'>
+          <div className="col-md-2 d-flex align-items-end">
             <button
-              type='button'
-              className='btn btn-secondary btn-sm'
+              type="button"
+              className="btn btn-secondary btn-sm"
               onClick={handleClearFilters}
             >
-              <Icon icon='mdi:filter-off' className='icon me-2' />
+              <Icon icon="mdi:filter-off" className="icon me-2" />
               Clear Filters
             </button>
           </div>
         </div>
 
         {error && (
-          <div className='alert alert-danger radius-8 mb-24' role='alert'>
-            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+          <div className="alert alert-danger radius-8 mb-24" role="alert">
+            <Icon icon="material-symbols:error-outline" className="icon me-2" />
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className='text-center py-40'>
+          <div className="text-center py-40">
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p className='text-muted mt-3'>Loading customers...</p>
+            <p className="text-muted mt-3">Loading customers...</p>
           </div>
         ) : filteredCustomers.length === 0 ? (
-          <div className='text-center py-40'>
-            <Icon icon='mdi:account-off' className='icon text-6xl text-muted mb-3' />
-            <p className='text-muted'>No customers found</p>
+          <div className="text-center py-40">
+            <Icon
+              icon="mdi:account-off"
+              className="icon text-6xl text-muted mb-3"
+            />
+            <p className="text-muted">No customers found</p>
           </div>
         ) : (
           <>
-            <div className='table-responsive scroll-sm'>
-              <table className='table bordered-table sm-table mb-0'>
+            <div className="table-responsive scroll-sm">
+              <table className="table bordered-table sm-table mb-0">
                 <thead>
                   <tr>
-                    <th scope='col'>S.L</th>
-                    {(userRole === 'admin' || userRole === 'super_admin') && (
-                      <th scope='col'>Reseller</th>
+                    <th scope="col">S.L</th>
+                    {(userRole === "admin" || userRole === "super_admin") && (
+                      <th scope="col">Reseller</th>
                     )}
-                    <th scope='col'>Customer Name</th>
-                    <th scope='col'>Virtual Number</th>
-                    <th scope='col'>Call Forward Number</th>
-                    <th scope='col'>Purchase Date</th>
-                    <th scope='col'>Expiry Date</th>
-                    <th scope='col'>Payment Mode</th>
-                    <th scope='col' className='text-end'>Amount</th>
-                    <th scope='col'>Days Left</th>
-                    <th scope='col' className='text-center'>Renew</th>
-                    <th scope='col' className='text-center'>Action</th>
+                    <th scope="col">Customer Name</th>
+                    <th scope="col">Virtual Number</th>
+                    <th scope="col">Call Forward Number</th>
+                    <th scope="col">Purchase Date</th>
+                    <th scope="col">Expiry Date</th>
+                    <th scope="col">Payment Mode</th>
+                    <th scope="col" className="text-end">
+                      Amount
+                    </th>
+                    <th scope="col">Days Left</th>
+                    <th scope="col" className="text-center">
+                      Renew
+                    </th>
+                    <th scope="col" className="text-center">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCustomers.map((customer, index) => (
                     <tr key={customer.id}>
                       <td>{index + 1}</td>
-                      {(userRole === 'admin' || userRole === 'super_admin') && (
+                      {(userRole === "admin" || userRole === "super_admin") && (
                         <td>
-                          <span className='text-sm fw-medium'>
-                            {customer.mst_reseller?.business_name || 
-                             `${customer.mst_reseller?.first_name || ""} ${customer.mst_reseller?.last_name || ""}`.trim() || 
-                             "N/A"}
+                          <span className="text-sm fw-medium">
+                            {customer.mst_reseller?.business_name ||
+                              `${customer.mst_reseller?.first_name || ""} ${
+                                customer.mst_reseller?.last_name || ""
+                              }`.trim() ||
+                              "N/A"}
                           </span>
                         </td>
                       )}
                       <td>
-                        <span className='text-sm fw-medium'>
+                        <span className="text-sm fw-medium">
                           {getCustomerName(customer)}
                         </span>
                       </td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {getVirtualNumber(customer)}
                         </span>
                       </td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {getCallForwardNumber(customer)}
                         </span>
                       </td>
                       <td>{formatDate(getPurchaseDate(customer))}</td>
                       <td>{formatDate(getExpiryDate(customer))}</td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {getPaymentMode(customer)}
                         </span>
                       </td>
-                      <td className='text-end'>
-                        <span className='text-sm fw-medium text-success-600'>
+                      <td className="text-end">
+                        <span className="text-sm fw-medium text-success-600">
                           {formatCurrency(getAmount(customer))}
                         </span>
                       </td>
                       <td>
-                        <span className={`text-sm fw-medium ${
-                          getDaysLeft(customer) < 30 && getDaysLeft(customer) !== "-" 
-                            ? "text-warning-600" 
-                            : "text-secondary-light"
-                        }`}>
+                        <span
+                          className={`text-sm fw-medium ${
+                            getDaysLeft(customer) < 30 &&
+                            getDaysLeft(customer) !== "-"
+                              ? "text-warning-600"
+                              : "text-secondary-light"
+                          }`}
+                        >
                           {getDaysLeft(customer)}
                         </span>
                       </td>
-                      <td className='text-center'>
+                      <td className="text-center">
                         <button
-                          type='button'
-                          className='btn btn-sm btn-outline-secondary'
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
                           disabled
-                          title='Renew (Disabled)'
+                          title="Renew (Disabled)"
                         >
-                          <Icon icon='mdi:refresh' className='icon' />
+                          <Icon icon="mdi:refresh" className="icon" />
                         </button>
                       </td>
-                      <td className='text-center'>
+                      <td className="text-center">
                         <Link
                           to={`/view-user/${customer.id}`}
-                          className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                          title='View Details'
+                          className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                          title="View Details"
                         >
                           <Icon
-                            icon='majesticons:eye-line'
-                            className='icon text-xl'
+                            icon="majesticons:eye-line"
+                            className="icon text-xl"
                           />
                         </Link>
                       </td>
@@ -408,9 +463,10 @@ const UsersListLayer = () => {
                 </tbody>
               </table>
             </div>
-            <div className='d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24'>
+            <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24">
               <span>
-                Showing {filteredCustomers.length} of {customers.length} customer(s)
+                Showing {filteredCustomers.length} of {customers.length}{" "}
+                customer(s)
               </span>
             </div>
           </>

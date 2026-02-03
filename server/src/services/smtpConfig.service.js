@@ -1,4 +1,4 @@
-import { getHasuraClient } from '../config/hasura.client.js';
+import { getHasuraClient } from "../config/hasura.client.js";
 
 /**
  * Get SMTP config by admin ID
@@ -8,7 +8,7 @@ import { getHasuraClient } from '../config/hasura.client.js';
 export const getAdminSmtpConfig = async (adminId) => {
   try {
     const client = getHasuraClient();
-    
+
     const query = `
       query GetAdminSmtpConfig($admin_id: uuid!) {
         mst_smtp_config(
@@ -31,27 +31,83 @@ export const getAdminSmtpConfig = async (adminId) => {
         }
       }
     `;
-    
+
     const data = await client.client.request(query, { admin_id: adminId });
-    
-    console.log('[SMTP Config Service] Query result:', {
+
+    console.log("[SMTP Config Service] Query result:", {
       admin_id: adminId,
       found_count: data.mst_smtp_config?.length || 0,
-      has_password_field: data.mst_smtp_config?.[0]?.password !== undefined
+      has_password_field: data.mst_smtp_config?.[0]?.password !== undefined,
     });
-    
+
     if (data.mst_smtp_config && data.mst_smtp_config.length > 0) {
       const config = data.mst_smtp_config[0];
       // Check if password is missing (might be due to Hasura permissions)
       if (!config.password) {
-        console.warn('[SMTP Config Service] Password field is missing or null in database response. This might be a Hasura permissions issue.');
+        console.warn(
+          "[SMTP Config Service] Password field is missing or null in database response. This might be a Hasura permissions issue."
+        );
       }
       return config;
     }
-    
+
     return null;
   } catch (error) {
-    console.error('Error fetching admin SMTP config from database:', error);
+    console.error("Error fetching admin SMTP config from database:", error);
+    return null;
+  }
+};
+
+/**
+ * Get SMTP config by reseller ID
+ * @param {string} resellerId - Reseller ID
+ * @returns {Promise<object|null>} SMTP config object or null if not found
+ */
+export const getResellerSmtpConfig = async (resellerId) => {
+  try {
+    const client = getHasuraClient();
+
+    const query = `
+      query GetResellerSmtpConfig($reseller_id: uuid!) {
+        mst_smtp_config(
+          where: { 
+            reseller_id: { _eq: $reseller_id },
+            is_active: { _eq: true }
+          }
+          limit: 1
+          order_by: { created_at: desc }
+        ) {
+          id
+          reseller_id
+          host
+          port
+          username
+          password
+          from_email
+          from_name
+          is_active
+        }
+      }
+    `;
+
+    const data = await client.client.request(query, {
+      reseller_id: resellerId,
+    });
+
+    if (data.mst_smtp_config && data.mst_smtp_config.length > 0) {
+      const config = data.mst_smtp_config[0];
+      // Check if password is missing (might be due to Hasura permissions)
+      if (!config.password) {
+        console.warn(
+          "[SMTP Config Service] Password field is missing or null in database response. This might be a Hasura permissions issue."
+        );
+      }
+      return config;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error fetching reseller SMTP config from database:", error);
     return null;
   }
 };
@@ -63,7 +119,7 @@ export const getAdminSmtpConfig = async (adminId) => {
 export const getFirstAdminSmtpConfig = async () => {
   try {
     const client = getHasuraClient();
-    
+
     const query = `
       query GetFirstAdminSmtpConfig {
         mst_smtp_config(
@@ -86,22 +142,26 @@ export const getFirstAdminSmtpConfig = async () => {
         }
       }
     `;
-    
+
     const data = await client.client.request(query);
-    
+
     if (data.mst_smtp_config && data.mst_smtp_config.length > 0) {
       const config = data.mst_smtp_config[0];
       // Check if password is missing (might be due to Hasura permissions)
       if (!config.password) {
-        console.warn('[SMTP Config Service] Password field is missing or null in database response. This might be a Hasura permissions issue.');
+        console.warn(
+          "[SMTP Config Service] Password field is missing or null in database response. This might be a Hasura permissions issue."
+        );
       }
       return config;
     }
-    
+
     return null;
   } catch (error) {
-    console.error('Error fetching first admin SMTP config from database:', error);
+    console.error(
+      "Error fetching first admin SMTP config from database:",
+      error
+    );
     return null;
   }
 };
-

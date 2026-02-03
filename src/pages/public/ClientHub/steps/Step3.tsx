@@ -12,6 +12,7 @@ const Step3 = ({ email, onBack, onVerify }: Step3Props) => {
     <OtpVerify
       title="Verify Email"
       label="Email"
+      email={email}
       onBack={onBack}
       onVerify={async () => {
         // TODO: Add email OTP verification API call
@@ -23,4 +24,3 @@ const Step3 = ({ email, onBack, onVerify }: Step3Props) => {
 };
 
 export default Step3;
-

@@ -1,5 +1,5 @@
-import crypto from 'crypto';
-import { getHasuraClient } from '../config/hasura.client.js';
+import crypto from "crypto";
+import { getHasuraClient } from "../config/hasura.client.js";
 
 /**
  * Razorpay Webhook Service
@@ -17,22 +17,24 @@ import { getHasuraClient } from '../config/hasura.client.js';
 export function verifyWebhookSignature(body, signature, webhookSecret) {
   if (!webhookSecret || !signature) {
     // If no webhook secret configured, skip verification (not recommended for production)
-    console.warn('Webhook signature verification skipped - no webhook secret configured');
+    console.warn(
+      "Webhook signature verification skipped - no webhook secret configured"
+    );
     return true;
   }
 
   try {
     const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
+      .createHmac("sha256", webhookSecret)
       .update(body)
-      .digest('hex');
+      .digest("hex");
 
     return crypto.timingSafeEqual(
       Buffer.from(signature),
       Buffer.from(expectedSignature)
     );
   } catch (error) {
-    console.error('Webhook signature verification error:', error);
+    console.error("Webhook signature verification error:", error);
     return false;
   }
 }
@@ -61,10 +63,12 @@ export async function getResellerRazorpayConfig(resellerId) {
   `;
 
   try {
-    const result = await client.client.request(query, { reseller_id: resellerId });
+    const result = await client.client.request(query, {
+      reseller_id: resellerId,
+    });
     return result.mst_razorpay_config?.[0] || null;
   } catch (error) {
-    console.error('Error fetching reseller Razorpay config:', error);
+    console.error("Error fetching reseller Razorpay config:", error);
     return null;
   }
 }
@@ -90,10 +94,12 @@ export async function getResellerInfo(resellerId) {
   `;
 
   try {
-    const result = await client.client.request(query, { reseller_id: resellerId });
+    const result = await client.client.request(query, {
+      reseller_id: resellerId,
+    });
     return result.mst_reseller_by_pk || null;
   } catch (error) {
-    console.error('Error fetching reseller info:', error);
+    console.error("Error fetching reseller info:", error);
     return null;
   }
 }
@@ -101,10 +107,10 @@ export async function getResellerInfo(resellerId) {
 /**
  * Check if transaction already exists (to prevent duplicates)
  * @param {string} razorpayPaymentId - Razorpay payment ID
- * @returns {Promise<boolean>}
+ * @returns {Promise<object|null>} Returns transaction object if exists, null otherwise
  */
 export async function transactionExists(razorpayPaymentId) {
-  if (!razorpayPaymentId) return false;
+  if (!razorpayPaymentId) return null;
 
   const client = getHasuraClient();
 
@@ -112,19 +118,174 @@ export async function transactionExists(razorpayPaymentId) {
     query CheckTransactionExists($razorpay_payment_id: String!) {
       mst_transaction(
         where: { razorpay_payment_id: { _eq: $razorpay_payment_id } }
+        order_by: { created_at: desc }
         limit: 1
       ) {
         id
+        transaction_number
+        customer_id
+        status
+        razorpay_payment_id
+        amount
+        reseller_id
       }
     }
   `;
 
   try {
-    const result = await client.client.request(query, { razorpay_payment_id: razorpayPaymentId });
-    return result.mst_transaction && result.mst_transaction.length > 0;
+    const result = await client.client.request(query, {
+      razorpay_payment_id: razorpayPaymentId,
+    });
+    return result.mst_transaction && result.mst_transaction.length > 0
+      ? result.mst_transaction[0]
+      : null;
   } catch (error) {
-    console.error('Error checking transaction existence:', error);
-    return false;
+    console.error("Error checking transaction existence:", error);
+    return null;
+  }
+}
+
+/**
+ * Find customer by email
+ * @param {string} email - Customer email
+ * @param {string} resellerId - Reseller UUID
+ * @returns {Promise<object|null>}
+ */
+export async function findCustomerByEmail(email, resellerId) {
+  if (!email) return null;
+
+  const client = getHasuraClient();
+
+  const query = `
+    query FindCustomerByEmail($email: String!, $reseller_id: uuid!) {
+      mst_customer(
+        where: { 
+          email: { _eq: $email }
+          reseller_id: { _eq: $reseller_id }
+        }
+        limit: 1
+      ) {
+        id
+        email
+        profile_name
+        phone
+      }
+    }
+  `;
+
+  try {
+    const result = await client.client.request(query, {
+      email,
+      reseller_id: resellerId,
+    });
+    return result.mst_customer?.[0] || null;
+  } catch (error) {
+    console.error("Error finding customer by email:", error);
+    return null;
+  }
+}
+
+/**
+ * Find and DELETE existing pending transaction by customer_id and amount
+ * Uses amount tolerance to handle floating point precision issues
+ * Deletes the pending transaction to avoid confusion with the new webhook transaction
+ * @param {string} customerId - Customer UUID
+ * @param {number} amount - Transaction amount
+ * @param {string} resellerId - Reseller UUID
+ * @returns {Promise<object|null>} Returns the pending transaction before deletion
+ */
+export async function findAndDeletePendingTransaction(
+  customerId,
+  amount,
+  resellerId
+) {
+  if (!customerId || !amount) {
+    console.log(
+      "[findAndDeletePendingTransaction] Missing customerId or amount"
+    );
+    return null;
+  }
+
+  const client = getHasuraClient();
+
+  // Use amount tolerance (0.01) to handle floating point precision issues
+  const amountTolerance = 0.01;
+  const minAmount = amount - amountTolerance;
+  const maxAmount = amount + amountTolerance;
+
+  console.log(
+    `[findAndDeletePendingTransaction] Searching for pending transaction: customer=${customerId}, amount=${amount} (${minAmount}-${maxAmount}), reseller=${resellerId}`
+  );
+
+  // Find all pending transactions matching customer_id, amount, and reseller_id
+  const query = `
+    query FindPendingTransactions(
+      $customer_id: uuid!
+      $min_amount: numeric!
+      $max_amount: numeric!
+      $reseller_id: uuid!
+    ) {
+      mst_transaction(
+        where: {
+          customer_id: { _eq: $customer_id }
+          amount: { _gte: $min_amount, _lte: $max_amount }
+          reseller_id: { _eq: $reseller_id }
+          status: { _eq: "pending" }
+          razorpay_payment_id: { _is_null: true }
+        }
+        order_by: { created_at: desc }
+      ) {
+        id
+        transaction_number
+        customer_id
+        amount
+        status
+        reseller_id
+        created_at
+      }
+    }
+  `;
+
+  try {
+    const result = await client.client.request(query, {
+      customer_id: customerId,
+      min_amount: minAmount,
+      max_amount: maxAmount,
+      reseller_id: resellerId,
+    });
+
+    if (result.mst_transaction && result.mst_transaction.length > 0) {
+      const pendingTxn = result.mst_transaction[0];
+      console.log(
+        `[findAndDeletePendingTransaction] Found ${result.mst_transaction.length} pending transaction(s), using: ${pendingTxn.transaction_number}`
+      );
+
+      // Delete ALL matching pending transactions to clean up any duplicates
+      const deleteMutation = `
+        mutation DeletePendingTransactions($ids: [uuid!]!) {
+          delete_mst_transaction(where: { id: { _in: $ids } }) {
+            affected_rows
+          }
+        }
+      `;
+
+      const idsToDelete = result.mst_transaction.map((txn) => txn.id);
+      await client.client.request(deleteMutation, { ids: idsToDelete });
+
+      console.log(
+        `[findAndDeletePendingTransaction] Deleted ${idsToDelete.length} pending transaction(s)`
+      );
+
+      return pendingTxn;
+    }
+
+    console.log(
+      "[findAndDeletePendingTransaction] No pending transaction found"
+    );
+    return null;
+  } catch (error) {
+    console.error("[findAndDeletePendingTransaction] Error:", error);
+    return null;
   }
 }
 
@@ -138,20 +299,42 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
   const client = getHasuraClient();
 
   // Generate unique transaction number
-  const transactionNumber = `TXN${Date.now()}${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+  const transactionNumber = `TXN${Date.now()}${Math.random()
+    .toString(36)
+    .substring(2, 9)
+    .toUpperCase()}`;
 
   // Map Razorpay status to our status
   const statusMap = {
-    'authorized': 'authorized',
-    'captured': 'success',
-    'failed': 'failed',
-    'refunded': 'refunded'
+    authorized: "authorized",
+    captured: "success",
+    failed: "failed",
+    refunded: "refunded",
   };
 
-  const status = statusMap[paymentData.status] || paymentData.status || 'pending';
+  const status =
+    statusMap[paymentData.status] || paymentData.status || "pending";
 
   // Convert amount from paise to rupees for storage
   const amountInRupees = (paymentData.amount || 0) / 100;
+
+  // Try to find customer by email from payment data
+  let customerId = null;
+  const customerEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email;
+  if (customerEmail) {
+    const customer = await findCustomerByEmail(customerEmail, resellerId);
+    if (customer) {
+      customerId = customer.id;
+    }
+  }
+
+  // Also check notes for customer_id (set when creating payment link)
+  if (!customerId && paymentData.notes?.customer_id) {
+    customerId = paymentData.notes.customer_id;
+  }
 
   const mutation = `
     mutation CreateWebhookTransaction(
@@ -210,12 +393,37 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
   `;
 
   try {
+    // CRITICAL: Double-check that transaction doesn't already exist before creating
+    // This is a final safeguard against race conditions
+    if (paymentData.id) {
+      const finalCheck = await transactionExists(paymentData.id);
+      if (finalCheck) {
+        console.log(
+          `[FINAL CHECK] Transaction ${paymentData.id} already exists, returning existing transaction`
+        );
+        return {
+          success: true,
+          data: finalCheck,
+          message: "Transaction already exists",
+        };
+      }
+    }
+
+    // Get customer name if customer found
+    let customerName = paymentData.notes?.customer_name || null;
+    if (customerId && !customerName) {
+      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      if (customer) {
+        customerName = customer.profile_name || customer.email;
+      }
+    }
+
     const result = await client.client.request(mutation, {
       transaction_number: transactionNumber,
       reseller_id: resellerId,
-      customer_id: null, // Can be linked later if customer exists
-      transaction_type: 'payment',
-      payment_mode: 'razorpay',
+      customer_id: customerId, // Link customer if found
+      transaction_type: "payment",
+      payment_mode: "razorpay",
       payment_method: paymentData.method || null,
       amount: amountInRupees,
       status: status,
@@ -223,33 +431,103 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
       razorpay_order_id: paymentData.order_id || null,
       razorpay_signature: null,
       reference_number: paymentData.invoice_id || null,
-      payment_date: paymentData.created_at ? new Date(paymentData.created_at * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      failure_reason: paymentData.error_description || paymentData.error_reason || null,
-      customer_email: paymentData.email || paymentData.notes?.email || null,
+      payment_date: paymentData.created_at
+        ? new Date(paymentData.created_at * 1000).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+      failure_reason:
+        paymentData.error_description || paymentData.error_reason || null,
+      customer_email: customerEmail || null,
       customer_phone: paymentData.contact || paymentData.notes?.phone || null,
-      customer_name: paymentData.notes?.customer_name || null,
-      currency: paymentData.currency || 'INR',
+      customer_name: customerName,
+      currency: paymentData.currency || "INR",
       description: paymentData.description || null,
-      notes: paymentData.notes || null
+      notes: paymentData.notes || null,
     });
 
     if (result?.insert_mst_transaction_one) {
+      // CRITICAL: Update customer status to "active" if payment is successful
+      if (
+        customerId &&
+        (status === "captured" ||
+          status === "authorized" ||
+          status === "success")
+      ) {
+        console.log(
+          `[UPDATE CUSTOMER] Updating customer ${customerId} status to active`
+        );
+        await updateCustomerStatusAfterPayment(customerId, resellerId);
+      }
+
       return {
         success: true,
-        data: result.insert_mst_transaction_one
+        data: result.insert_mst_transaction_one,
       };
     }
 
     return {
       success: false,
-      message: 'Failed to insert transaction'
+      message: "Failed to insert transaction",
     };
   } catch (error) {
-    console.error('Error creating transaction from webhook:', error);
+    console.error("Error creating transaction from webhook:", error);
+
+    // If error is due to duplicate (unique constraint violation), try to fetch and return existing transaction
+    if (
+      paymentData.id &&
+      (error.message?.includes("duplicate") ||
+        error.message?.includes("unique"))
+    ) {
+      console.log(
+        `[DUPLICATE ERROR] Detected duplicate transaction for ${paymentData.id}, fetching existing`
+      );
+      const existing = await transactionExists(paymentData.id);
+      if (existing) {
+        return {
+          success: true,
+          data: existing,
+          message: "Transaction already exists (caught duplicate error)",
+        };
+      }
+    }
+
     return {
       success: false,
-      message: error.message || 'Failed to create transaction'
+      message: error.message || "Failed to create transaction",
     };
+  }
+}
+
+/**
+ * Update customer status to active after successful payment
+ * @param {string} customerId - Customer UUID
+ * @param {string} resellerId - Reseller UUID
+ */
+async function updateCustomerStatusAfterPayment(customerId, resellerId) {
+  const client = getHasuraClient();
+
+  const mutation = `
+    mutation UpdateCustomerStatus($customer_id: uuid!, $status: String!) {
+      update_mst_customer_by_pk(
+        pk_columns: { id: $customer_id }
+        _set: { status: $status, kyc_status: "verified" }
+      ) {
+        id
+        status
+        kyc_status
+      }
+    }
+  `;
+
+  try {
+    await client.client.request(mutation, {
+      customer_id: customerId,
+      status: "active",
+    });
+    console.log(
+      `[UPDATE CUSTOMER] Successfully updated customer ${customerId} to active`
+    );
+  } catch (error) {
+    console.error(`[UPDATE CUSTOMER] Error updating customer status:`, error);
   }
 }
 
@@ -258,66 +536,235 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
  * @param {string} razorpayPaymentId - Razorpay payment ID
  * @param {string} status - New status
  * @param {string} failureReason - Failure reason if applicable
+ * @param {string} transactionId - Optional transaction ID to update
+ * @param {object} paymentData - Optional payment data to update additional fields
  * @returns {Promise<object>}
  */
-export async function updateTransactionStatus(razorpayPaymentId, status, failureReason = null) {
+export async function updateTransactionStatus(
+  razorpayPaymentId,
+  status,
+  failureReason = null,
+  transactionId = null,
+  paymentData = null,
+  resellerId = null
+) {
   const client = getHasuraClient();
 
   const statusMap = {
-    'authorized': 'authorized',
-    'captured': 'success',
-    'failed': 'failed',
-    'refunded': 'refunded'
+    authorized: "authorized",
+    captured: "success",
+    failed: "failed",
+    refunded: "refunded",
   };
 
   const mappedStatus = statusMap[status] || status;
 
-  const mutation = `
+  // Try to find customer by email from payment data to link customer_id
+  let customerId = null;
+  let resellerIdForLookup = resellerId || paymentData?.notes?.reseller_id;
+
+  // If we have transactionId, fetch the transaction to get reseller_id and customer_id
+  if (transactionId) {
+    const fetchQuery = `
+      query GetTransactionDetails($transaction_id: uuid!) {
+        mst_transaction_by_pk(id: $transaction_id) {
+          reseller_id
+          customer_id
+          notes
+        }
+      }
+    `;
+    try {
+      const fetchResult = await client.client.request(fetchQuery, {
+        transaction_id: transactionId,
+      });
+      if (fetchResult.mst_transaction_by_pk) {
+        // Use reseller_id from transaction if not provided
+        if (!resellerIdForLookup) {
+          resellerIdForLookup = fetchResult.mst_transaction_by_pk.reseller_id;
+        }
+        // If transaction already has customer_id, use it (don't overwrite)
+        if (fetchResult.mst_transaction_by_pk.customer_id) {
+          customerId = fetchResult.mst_transaction_by_pk.customer_id;
+        }
+        // If customer_id is null but exists in notes, use it from notes
+        else if (
+          !customerId &&
+          fetchResult.mst_transaction_by_pk.notes?.customer_id
+        ) {
+          customerId = fetchResult.mst_transaction_by_pk.notes.customer_id;
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching transaction details:", error);
+    }
+  }
+
+  // If we still don't have customerId, try to find customer by email
+  if (!customerId && paymentData) {
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email;
+
+    if (customerEmail && resellerIdForLookup) {
+      const customer = await findCustomerByEmail(
+        customerEmail,
+        resellerIdForLookup
+      );
+      if (customer) {
+        customerId = customer.id;
+      }
+    }
+
+    // Also check notes for customer_id (set when creating payment link)
+    if (!customerId && paymentData.notes?.customer_id) {
+      customerId = paymentData.notes.customer_id;
+    }
+  }
+
+  // Build mutation based on identifier
+  let mutation, variables;
+
+  if (transactionId) {
+    // Build mutation with conditional customer_id field
+    const customerIdField = customerId ? "customer_id: $customer_id" : "";
+    const customerIdVar = customerId ? "$customer_id: uuid" : "";
+
+    mutation = `
+    mutation UpdateTransactionStatus(
+      $transaction_id: uuid!
+      $status: String!
+      $failure_reason: String
+      $razorpay_payment_id: String
+      $razorpay_order_id: String
+      $reference_number: String
+      $payment_date: date
+      $payment_method: String
+      $payment_mode: String
+      ${customerIdVar}
+    ) {
+        update_mst_transaction(
+          where: { id: { _eq: $transaction_id } }
+          _set: {
+            status: $status
+            failure_reason: $failure_reason
+            razorpay_payment_id: $razorpay_payment_id
+            razorpay_order_id: $razorpay_order_id
+            reference_number: $reference_number
+            payment_date: $payment_date
+            payment_method: $payment_method
+            payment_mode: $payment_mode
+            ${customerIdField}
+          }
+        ) {
+          affected_rows
+          returning {
+            id
+            transaction_number
+            customer_id
+            status
+            razorpay_payment_id
+            updated_at
+          }
+        }
+      }
+    `;
+    variables = {
+      transaction_id: transactionId,
+      status: mappedStatus,
+      failure_reason: failureReason || null,
+      razorpay_payment_id: razorpayPaymentId || null,
+      razorpay_order_id: paymentData?.order_id || null,
+      reference_number: paymentData?.invoice_id || null,
+      payment_date: paymentData?.created_at
+        ? new Date(paymentData.created_at * 1000).toISOString().split("T")[0]
+        : null,
+      payment_method: paymentData?.method || null,
+      payment_mode: "razorpay", // Always set payment_mode to razorpay for webhook transactions
+      ...(customerId && { customer_id: customerId }), // Link customer_id if found
+    };
+  } else if (razorpayPaymentId) {
+    // Build mutation with conditional customer_id field
+    const customerIdField = customerId ? "customer_id: $customer_id" : "";
+    const customerIdVar = customerId ? "$customer_id: uuid" : "";
+
+    mutation = `
     mutation UpdateTransactionStatus(
       $razorpay_payment_id: String!
       $status: String!
       $failure_reason: String
+      $razorpay_order_id: String
+      $reference_number: String
+      $payment_date: date
+      $payment_method: String
+      $payment_mode: String
+      ${customerIdVar}
     ) {
-      update_mst_transaction(
-        where: { razorpay_payment_id: { _eq: $razorpay_payment_id } }
-        _set: {
-          status: $status
-          failure_reason: $failure_reason
-        }
-      ) {
-        affected_rows
-        returning {
-          id
-          status
-          updated_at
+        update_mst_transaction(
+          where: { razorpay_payment_id: { _eq: $razorpay_payment_id } }
+          _set: {
+            status: $status
+            failure_reason: $failure_reason
+            razorpay_order_id: $razorpay_order_id
+            reference_number: $reference_number
+            payment_date: $payment_date
+            payment_method: $payment_method
+            payment_mode: $payment_mode
+            ${customerIdField}
+          }
+        ) {
+          affected_rows
+          returning {
+            id
+            transaction_number
+            customer_id
+            status
+            razorpay_payment_id
+            updated_at
+          }
         }
       }
-    }
-  `;
-
-  try {
-    const result = await client.client.request(mutation, {
+    `;
+    variables = {
       razorpay_payment_id: razorpayPaymentId,
       status: mappedStatus,
-      failure_reason: failureReason
-    });
+      failure_reason: failureReason || null,
+      razorpay_order_id: paymentData?.order_id || null,
+      reference_number: paymentData?.invoice_id || null,
+      payment_date: paymentData?.created_at
+        ? new Date(paymentData.created_at * 1000).toISOString().split("T")[0]
+        : null,
+      payment_method: paymentData?.method || null,
+      payment_mode: "razorpay", // Always set payment_mode to razorpay for webhook transactions
+      ...(customerId && { customer_id: customerId }), // Link customer_id if found
+    };
+  } else {
+    return {
+      success: false,
+      message: "Transaction ID or Razorpay payment ID required",
+    };
+  }
+
+  try {
+    const result = await client.client.request(mutation, variables);
 
     if (result?.update_mst_transaction?.affected_rows > 0) {
       return {
         success: true,
-        data: result.update_mst_transaction.returning[0]
+        data: result.update_mst_transaction.returning[0],
       };
     }
 
     return {
       success: false,
-      message: 'Transaction not found or not updated'
+      message: "Transaction not found or not updated",
     };
   } catch (error) {
-    console.error('Error updating transaction status:', error);
+    console.error("Error updating transaction status:", error);
     return {
       success: false,
-      message: error.message || 'Failed to update transaction'
+      message: error.message || "Failed to update transaction",
     };
   }
 }
@@ -331,20 +778,67 @@ export async function updateTransactionStatus(razorpayPaymentId, status, failure
 export async function processPaymentAuthorized(resellerId, payload) {
   const paymentData = payload.payload?.payment?.entity;
   if (!paymentData) {
-    return { success: false, message: 'Invalid payment data in webhook payload' };
+    return {
+      success: false,
+      message: "Invalid payment data in webhook payload",
+    };
   }
 
-  // Check if transaction already exists
-  const exists = await transactionExists(paymentData.id);
-  if (exists) {
-    // Update status if it exists
-    return await updateTransactionStatus(paymentData.id, 'authorized');
+  console.log(
+    `[processPaymentAuthorized] Processing payment ${paymentData.id}`
+  );
+
+  // Check if transaction already exists by payment ID FIRST
+  if (paymentData.id) {
+    const existingTransaction = await transactionExists(paymentData.id);
+    if (existingTransaction) {
+      console.log(
+        `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
+      );
+      return {
+        success: true,
+        data: existingTransaction,
+        message: "Transaction already exists",
+      };
+    }
+  }
+
+  const amountInRupees = (paymentData.amount || 0) / 100;
+  const customerId = paymentData.notes?.customer_id;
+
+  // Find and DELETE the pending transaction
+  let pendingTransaction = null;
+  if (customerId) {
+    pendingTransaction = await findAndDeletePendingTransaction(
+      customerId,
+      amountInRupees,
+      resellerId
+    );
+    if (pendingTransaction) {
+      console.log(
+        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+      );
+    }
+  }
+
+  // Final check before creating
+  if (paymentData.id) {
+    const finalCheck = await transactionExists(paymentData.id);
+    if (finalCheck) {
+      console.log(`[RACE CONDITION] Transaction just created, skipping`);
+      return {
+        success: true,
+        data: finalCheck,
+        message: "Transaction created by concurrent webhook",
+      };
+    }
   }
 
   // Create new transaction
+  console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
-    status: 'authorized'
+    status: "authorized",
   });
 }
 
@@ -357,20 +851,69 @@ export async function processPaymentAuthorized(resellerId, payload) {
 export async function processPaymentCaptured(resellerId, payload) {
   const paymentData = payload.payload?.payment?.entity;
   if (!paymentData) {
-    return { success: false, message: 'Invalid payment data in webhook payload' };
+    return {
+      success: false,
+      message: "Invalid payment data in webhook payload",
+    };
   }
 
-  // Check if transaction already exists
-  const exists = await transactionExists(paymentData.id);
-  if (exists) {
-    // Update status if it exists
-    return await updateTransactionStatus(paymentData.id, 'captured');
+  console.log(`[processPaymentCaptured] Processing payment ${paymentData.id}`);
+
+  // CRITICAL: Check if transaction already exists by payment ID FIRST
+  if (paymentData.id) {
+    const existingTransaction = await transactionExists(paymentData.id);
+    if (existingTransaction) {
+      console.log(
+        `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
+      );
+      return {
+        success: true,
+        data: existingTransaction,
+        message: "Transaction already exists",
+      };
+    }
   }
 
-  // Create new transaction
+  const amountInRupees = (paymentData.amount || 0) / 100;
+  const customerId = paymentData.notes?.customer_id;
+
+  console.log(
+    `[processPaymentCaptured] Customer: ${customerId}, Amount: ${amountInRupees}`
+  );
+
+  // Find and DELETE the pending transaction
+  let pendingTransaction = null;
+  if (customerId) {
+    pendingTransaction = await findAndDeletePendingTransaction(
+      customerId,
+      amountInRupees,
+      resellerId
+    );
+    if (pendingTransaction) {
+      console.log(
+        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+      );
+    }
+  }
+
+  // Final check before creating
+  if (paymentData.id) {
+    const finalCheck = await transactionExists(paymentData.id);
+    if (finalCheck) {
+      console.log(`[RACE CONDITION] Transaction just created, skipping`);
+      return {
+        success: true,
+        data: finalCheck,
+        message: "Transaction created by concurrent webhook",
+      };
+    }
+  }
+
+  // Create new SUCCESS transaction
+  console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
-    status: 'captured'
+    status: "captured",
   });
 }
 
@@ -383,26 +926,81 @@ export async function processPaymentCaptured(resellerId, payload) {
 export async function processPaymentFailed(resellerId, payload) {
   const paymentData = payload.payload?.payment?.entity;
   if (!paymentData) {
-    return { success: false, message: 'Invalid payment data in webhook payload' };
+    return {
+      success: false,
+      message: "Invalid payment data in webhook payload",
+    };
   }
 
-  const failureReason = paymentData.error_description || 
-                        paymentData.error_reason || 
-                        payload.payload?.error?.description ||
-                        'Payment failed';
-
-  // Check if transaction already exists
-  const exists = await transactionExists(paymentData.id);
-  if (exists) {
-    // Update status if it exists
-    return await updateTransactionStatus(paymentData.id, 'failed', failureReason);
+  // CRITICAL: Check if transaction already exists by payment ID FIRST
+  // This prevents race conditions where multiple webhooks arrive simultaneously
+  if (paymentData.id) {
+    const existingTransaction = await transactionExists(paymentData.id);
+    if (existingTransaction) {
+      console.log(
+        `[PRIORITY 0] Transaction already exists for payment ${paymentData.id}, updating status to failed`
+      );
+      const failureReason =
+        paymentData.error_description ||
+        paymentData.error_reason ||
+        payload.payload?.error?.description ||
+        "Payment failed";
+      return await updateTransactionStatus(
+        paymentData.id,
+        "failed",
+        failureReason,
+        existingTransaction.id,
+        paymentData,
+        resellerId
+      );
+    }
   }
 
-  // Create new transaction
+  const failureReason =
+    paymentData.error_description ||
+    paymentData.error_reason ||
+    payload.payload?.error?.description ||
+    "Payment failed";
+
+  const amountInRupees = (paymentData.amount || 0) / 100;
+  const customerId = paymentData.notes?.customer_id;
+
+  console.log(
+    `[processPaymentFailed] Customer: ${customerId}, Amount: ${amountInRupees}`
+  );
+
+  // Find and DELETE the pending transaction
+  let pendingTransaction = null;
+  if (customerId) {
+    pendingTransaction = await findAndDeletePendingTransaction(
+      customerId,
+      amountInRupees,
+      resellerId
+    );
+    if (pendingTransaction) {
+      console.log(
+        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+      );
+    }
+  }
+
+  // Final check before creating
+  if (paymentData.id) {
+    const finalCheck = await transactionExists(paymentData.id);
+    if (finalCheck) {
+      console.log(`[RACE CONDITION] Transaction just created, skipping`);
+      return {
+        success: true,
+        data: finalCheck,
+        message: "Transaction created by concurrent webhook",
+      };
+    }
+  }
+
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
-    status: 'failed',
-    error_description: failureReason
+    status: "failed",
+    error_description: failureReason,
   });
 }
 
@@ -415,13 +1013,20 @@ export async function processPaymentFailed(resellerId, payload) {
 export async function processRefundCreated(resellerId, payload) {
   const refundData = payload.payload?.refund?.entity;
   const paymentId = refundData?.payment_id;
-  
+
   if (!refundData || !paymentId) {
-    return { success: false, message: 'Invalid refund data in webhook payload' };
+    return {
+      success: false,
+      message: "Invalid refund data in webhook payload",
+    };
   }
 
   // Update the original transaction status to refunded
-  return await updateTransactionStatus(paymentId, 'refunded', `Refund ID: ${refundData.id}`);
+  return await updateTransactionStatus(
+    paymentId,
+    "refunded",
+    `Refund ID: ${refundData.id}`
+  );
 }
 
 /**
@@ -433,26 +1038,74 @@ export async function processRefundCreated(resellerId, payload) {
 export async function processOrderPaid(resellerId, payload) {
   const orderData = payload.payload?.order?.entity;
   const paymentData = payload.payload?.payment?.entity;
-  
+
   if (!orderData && !paymentData) {
-    return { success: false, message: 'Invalid order data in webhook payload' };
+    return { success: false, message: "Invalid order data in webhook payload" };
   }
 
   // If payment data exists, process as captured payment
+  // NOTE: order.paid and payment.captured can fire for the same payment
+  // So we MUST check if transaction already exists first
   if (paymentData) {
-    const exists = await transactionExists(paymentData.id);
-    if (exists) {
-      return await updateTransactionStatus(paymentData.id, 'captured');
+    console.log(`[processOrderPaid] Processing payment ${paymentData.id}`);
+
+    // Check if transaction already exists by payment ID FIRST
+    if (paymentData.id) {
+      const existingTransaction = await transactionExists(paymentData.id);
+      if (existingTransaction) {
+        console.log(
+          `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
+        );
+        return {
+          success: true,
+          data: existingTransaction,
+          message: "Transaction already exists",
+        };
+      }
     }
 
+    const amountInRupees = (paymentData.amount || 0) / 100;
+    const customerId = paymentData.notes?.customer_id;
+
+    // Find and DELETE the pending transaction
+    let pendingTransaction = null;
+    if (customerId) {
+      pendingTransaction = await findAndDeletePendingTransaction(
+        customerId,
+        amountInRupees,
+        resellerId
+      );
+      if (pendingTransaction) {
+        console.log(
+          `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+        );
+      }
+    }
+
+    // Final check before creating
+    if (paymentData.id) {
+      const finalCheck = await transactionExists(paymentData.id);
+      if (finalCheck) {
+        console.log(`[RACE CONDITION] Transaction just created, skipping`);
+        return {
+          success: true,
+          data: finalCheck,
+          message: "Transaction created by concurrent webhook",
+        };
+      }
+    }
+
+    console.log(
+      `[CREATE] Creating new transaction for ${paymentData.id} (order.paid)`
+    );
     return await createTransactionFromWebhook(resellerId, {
       ...paymentData,
       order_id: orderData?.id,
-      status: 'captured'
+      status: "captured",
     });
   }
 
-  return { success: true, message: 'Order paid event processed' };
+  return { success: true, message: "Order paid event processed" };
 }
 
 /**
@@ -464,26 +1117,73 @@ export async function processOrderPaid(resellerId, payload) {
 export async function processSubscriptionCharged(resellerId, payload) {
   const subscriptionData = payload.payload?.subscription?.entity;
   const paymentData = payload.payload?.payment?.entity;
-  
+
   if (!paymentData) {
-    return { success: false, message: 'Invalid subscription payment data in webhook payload' };
+    return {
+      success: false,
+      message: "Invalid subscription payment data in webhook payload",
+    };
   }
 
-  // Check if transaction already exists
-  const exists = await transactionExists(paymentData.id);
-  if (exists) {
-    return await updateTransactionStatus(paymentData.id, 'captured');
+  console.log(
+    `[processSubscriptionCharged] Processing payment ${paymentData.id}`
+  );
+
+  // Check if transaction already exists by payment ID FIRST
+  if (paymentData.id) {
+    const existingTransaction = await transactionExists(paymentData.id);
+    if (existingTransaction) {
+      console.log(
+        `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
+      );
+      return {
+        success: true,
+        data: existingTransaction,
+        message: "Transaction already exists",
+      };
+    }
+  }
+
+  const amountInRupees = (paymentData.amount || 0) / 100;
+  const customerId = paymentData.notes?.customer_id;
+
+  // Find and DELETE the pending transaction
+  let pendingTransaction = null;
+  if (customerId) {
+    pendingTransaction = await findAndDeletePendingTransaction(
+      customerId,
+      amountInRupees,
+      resellerId
+    );
+    if (pendingTransaction) {
+      console.log(
+        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+      );
+    }
+  }
+
+  // Final check before creating
+  if (paymentData.id) {
+    const finalCheck = await transactionExists(paymentData.id);
+    if (finalCheck) {
+      console.log(`[RACE CONDITION] Transaction just created, skipping`);
+      return {
+        success: true,
+        data: finalCheck,
+        message: "Transaction created by concurrent webhook",
+      };
+    }
   }
 
   // Create new transaction with subscription info
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
-    status: 'captured',
+    status: "captured",
     notes: {
       ...paymentData.notes,
       subscription_id: subscriptionData?.id,
-      subscription_status: subscriptionData?.status
-    }
+      subscription_status: subscriptionData?.status,
+    },
   });
 }
 
@@ -494,13 +1194,21 @@ export async function processSubscriptionCharged(resellerId, payload) {
  */
 export async function getAllTransactions(options = {}) {
   const client = getHasuraClient();
-  const { limit = 100, offset = 0, status, resellerId, startDate, endDate } = options;
+  const {
+    limit = 100,
+    offset = 0,
+    status,
+    resellerId,
+    startDate,
+    endDate,
+  } = options;
 
-  let whereClause = '';
+  let whereClause = "";
   const conditions = [];
 
   // Helper function to check if value is valid (not undefined, null, empty, or string "undefined")
-  const isValidValue = (val) => val && val !== 'all' && val !== 'undefined' && val !== '';
+  const isValidValue = (val) =>
+    val && val !== "all" && val !== "undefined" && val !== "";
 
   if (isValidValue(status)) {
     conditions.push(`status: { _eq: "${status}" }`);
@@ -516,11 +1224,11 @@ export async function getAllTransactions(options = {}) {
   }
 
   // Build where clause for the query
-  let transactionWhereArg = '';
-  let aggregateWhereArg = '';
-  
+  let transactionWhereArg = "";
+  let aggregateWhereArg = "";
+
   if (conditions.length > 0) {
-    whereClause = `where: { ${conditions.join(', ')} }`;
+    whereClause = `where: { ${conditions.join(", ")} }`;
     transactionWhereArg = whereClause;
     aggregateWhereArg = `(${whereClause})`;
   }
@@ -582,13 +1290,17 @@ export async function getAllTransactions(options = {}) {
 
   try {
     const result = await client.client.request(query, { limit, offset });
-    
+
     // Get statistics
     const transactions = result.mst_transaction || [];
     const aggregate = result.mst_transaction_aggregate?.aggregate || {};
-    
-    const successfulTransactions = transactions.filter(t => t.status === 'success' || t.status === 'captured');
-    const failedTransactions = transactions.filter(t => t.status === 'failed');
+
+    const successfulTransactions = transactions.filter(
+      (t) => t.status === "success" || t.status === "captured"
+    );
+    const failedTransactions = transactions.filter(
+      (t) => t.status === "failed"
+    );
 
     return {
       success: true,
@@ -599,15 +1311,15 @@ export async function getAllTransactions(options = {}) {
           total_amount: aggregate.sum?.amount || 0,
           total_amount_formatted: `₹${(aggregate.sum?.amount || 0).toFixed(2)}`,
           successful_count: successfulTransactions.length,
-          failed_count: failedTransactions.length
-        }
-      }
+          failed_count: failedTransactions.length,
+        },
+      },
     };
   } catch (error) {
-    console.error('Error fetching all transactions:', error);
+    console.error("Error fetching all transactions:", error);
     return {
       success: false,
-      message: error.message || 'Failed to fetch transactions'
+      message: error.message || "Failed to fetch transactions",
     };
   }
 }
@@ -653,7 +1365,9 @@ export async function getTransactionStats() {
         }
       }
       today: mst_transaction_aggregate(
-        where: { created_at: { _gte: "${new Date().toISOString().split('T')[0]}" } }
+        where: { created_at: { _gte: "${
+          new Date().toISOString().split("T")[0]
+        }" } }
       ) {
         aggregate {
           count
@@ -683,14 +1397,14 @@ export async function getTransactionStats() {
         refunded_count: result.refunded?.aggregate?.count || 0,
         today_count: result.today?.aggregate?.count || 0,
         today_amount: result.today?.aggregate?.sum?.amount || 0,
-        active_resellers: result.resellers_with_transactions?.length || 0
-      }
+        active_resellers: result.resellers_with_transactions?.length || 0,
+      },
     };
   } catch (error) {
-    console.error('Error fetching transaction stats:', error);
+    console.error("Error fetching transaction stats:", error);
     return {
       success: false,
-      message: error.message || 'Failed to fetch transaction statistics'
+      message: error.message || "Failed to fetch transaction statistics",
     };
   }
 }

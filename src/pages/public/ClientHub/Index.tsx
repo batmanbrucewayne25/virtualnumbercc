@@ -15,7 +15,9 @@ import Step10 from "./steps/Step10";
 import Step11 from "./steps/Step11";
 
 const ClientHubLayer = () => {
-  const { resellerId: resellerIdFromUrl } = useParams<{ resellerId?: string }>();
+  const { resellerId: resellerIdFromUrl } = useParams<{
+    resellerId?: string;
+  }>();
   const [resellerId, setResellerId] = useState<string | null>(null);
   const [step, setStep] = useState<number>(1);
   const [resellerData, setResellerData] = useState<any>(null);
@@ -46,9 +48,13 @@ const ClientHubLayer = () => {
         } else {
           // Try to get resellerId from domain
           const domain = window.location.hostname;
-          
+
           // Skip domain lookup for localhost/development
-          if (domain === 'localhost' || domain === '127.0.0.1' || domain.includes('localhost')) {
+          if (
+            domain === "localhost" ||
+            domain === "127.0.0.1" ||
+            domain.includes("localhost")
+          ) {
             setError("Reseller ID or domain is required");
             setLoading(false);
             return;
@@ -57,9 +63,13 @@ const ClientHubLayer = () => {
           try {
             // Call API to get resellerId by domain
             const API_BASE_URL = getApiBaseUrl();
-            
-            const response = await fetch(`${API_BASE_URL}/reseller/by-domain?domain=${encodeURIComponent(domain)}`);
-            
+
+            const response = await fetch(
+              `${API_BASE_URL}/reseller/by-domain?domain=${encodeURIComponent(
+                domain
+              )}`
+            );
+
             if (response.ok) {
               const result = await response.json();
               if (result.success && result.data) {
@@ -97,7 +107,9 @@ const ClientHubLayer = () => {
         }
       } catch (err: any) {
         console.error("Failed to fetch reseller data:", err);
-        setError(err.message || "An error occurred while loading reseller information");
+        setError(
+          err.message || "An error occurred while loading reseller information"
+        );
       } finally {
         setLoading(false);
       }
@@ -202,7 +214,8 @@ const ClientHubLayer = () => {
               <h5>Access Error</h5>
               <p>{error || "Reseller information not found"}</p>
               <p className="text-sm text-muted mt-2">
-                Please ensure you're accessing this page through the correct domain or contact support.
+                Please ensure you're accessing this page through the correct
+                domain or contact support.
               </p>
             </div>
           </div>
@@ -239,8 +252,9 @@ const ClientHubLayer = () => {
               resellerId={resellerId}
               onSignUp={() => handleStepChange(2)}
               onLogin={() => {
-                // TODO: Handle login flow
-                console.log("Login clicked");
+                // Login handled in Step1 component
+                // This callback can be used for any post-login actions if needed
+                // No need to log here as login is handled in Step1
               }}
             />
           )}
@@ -332,7 +346,9 @@ const ClientHubLayer = () => {
             <Step11
               resellerName={
                 resellerData?.business_name ||
-                `${resellerData?.first_name || ""} ${resellerData?.last_name || ""}`.trim() ||
+                `${resellerData?.first_name || ""} ${
+                  resellerData?.last_name || ""
+                }`.trim() ||
                 "Admin"
               }
             />

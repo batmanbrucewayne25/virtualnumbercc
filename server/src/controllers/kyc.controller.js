@@ -1,5 +1,5 @@
-import { KYCService } from '../services/kyc.service.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import { KYCService } from "../services/kyc.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 /**
  * @desc    Generate Aadhaar OTP
@@ -12,7 +12,7 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
   if (!id_number) {
     return res.status(400).json({
       success: false,
-      message: 'Aadhaar number (id_number) is required'
+      message: "Aadhaar number (id_number) is required",
     });
   }
 
@@ -20,10 +20,22 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
     const result = await KYCService.generateAadhaarOTP(id_number);
     res.status(200).json(result);
   } catch (error) {
-    res.status(error.status || 500).json({
+    console.error("[KYC Controller] Generate OTP Error:", {
+      status: error.status,
+      message: error.message,
+      error: error.error,
+      request_id: error.request_id,
+    });
+
+    // Return appropriate status code and error message
+    const statusCode = error.status || 500;
+    const errorMessage = error.message || "Failed to generate OTP";
+
+    res.status(statusCode).json({
       success: false,
-      message: error.message || 'Failed to generate OTP',
-      error: process.env.NODE_ENV === 'production' ? {} : error.error
+      message: errorMessage,
+      error: process.env.NODE_ENV === "production" ? {} : error.error,
+      request_id: error.request_id || null, // Include request_id if available for debugging
     });
   }
 });
@@ -39,7 +51,7 @@ export const submitAadhaarOTP = asyncHandler(async (req, res) => {
   if (!request_id || !otp) {
     return res.status(400).json({
       success: false,
-      message: 'request_id and otp are required'
+      message: "request_id and otp are required",
     });
   }
 
@@ -49,8 +61,8 @@ export const submitAadhaarOTP = asyncHandler(async (req, res) => {
   } catch (error) {
     res.status(error.status || 500).json({
       success: false,
-      message: error.message || 'Failed to verify OTP',
-      error: process.env.NODE_ENV === 'production' ? {} : error.error
+      message: error.message || "Failed to verify OTP",
+      error: process.env.NODE_ENV === "production" ? {} : error.error,
     });
   }
 });
@@ -66,7 +78,7 @@ export const verifyPAN = asyncHandler(async (req, res) => {
   if (!id_number) {
     return res.status(400).json({
       success: false,
-      message: 'PAN number (id_number) is required'
+      message: "PAN number (id_number) is required",
     });
   }
 
@@ -76,8 +88,8 @@ export const verifyPAN = asyncHandler(async (req, res) => {
   } catch (error) {
     res.status(error.status || 500).json({
       success: false,
-      message: error.message || 'Failed to verify PAN',
-      error: process.env.NODE_ENV === 'production' ? {} : error.error
+      message: error.message || "Failed to verify PAN",
+      error: process.env.NODE_ENV === "production" ? {} : error.error,
     });
   }
 });
@@ -93,18 +105,21 @@ export const verifyGST = asyncHandler(async (req, res) => {
   if (!id_number) {
     return res.status(400).json({
       success: false,
-      message: 'GST number (id_number) is required'
+      message: "GST number (id_number) is required",
     });
   }
 
   try {
-    const result = await KYCService.verifyGST(id_number, filing_status_get !== false);
+    const result = await KYCService.verifyGST(
+      id_number,
+      filing_status_get !== false
+    );
     res.status(200).json(result);
   } catch (error) {
     res.status(error.status || 500).json({
       success: false,
-      message: error.message || 'Failed to verify GST',
-      error: process.env.NODE_ENV === 'production' ? {} : error.error
+      message: error.message || "Failed to verify GST",
+      error: process.env.NODE_ENV === "production" ? {} : error.error,
     });
   }
 });
@@ -120,18 +135,21 @@ export const verifyGSTSpecial = asyncHandler(async (req, res) => {
   if (!id_number) {
     return res.status(400).json({
       success: false,
-      message: 'GST number (id_number) is required'
+      message: "GST number (id_number) is required",
     });
   }
 
   try {
-    const result = await KYCService.verifyGSTSpecial(id_number, filing_status_get !== false);
+    const result = await KYCService.verifyGSTSpecial(
+      id_number,
+      filing_status_get !== false
+    );
     res.status(200).json(result);
   } catch (error) {
     res.status(error.status || 500).json({
       success: false,
-      message: error.message || 'Failed to verify special GST',
-      error: process.env.NODE_ENV === 'production' ? {} : error.error
+      message: error.message || "Failed to verify special GST",
+      error: process.env.NODE_ENV === "production" ? {} : error.error,
     });
   }
 });

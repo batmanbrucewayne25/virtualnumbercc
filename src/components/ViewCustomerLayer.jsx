@@ -1,9 +1,66 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getMstCustomerById, updateMstCustomerStatus } from "@/hasura/mutations/customer";
+import {
+  getMstCustomerById,
+  updateMstCustomerStatus,
+} from "@/hasura/mutations/customer";
 import ApproveCustomerModal from "./ApproveCustomerModal";
 import RejectCustomerModal from "./RejectCustomerModal";
+
+// Helper function to format address object into readable string
+const formatAddress = (address) => {
+  if (!address) return "N/A";
+
+  // If it's already a string, return as is
+  if (typeof address === "string") {
+    try {
+      // Try to parse if it's a JSON string
+      const parsed = JSON.parse(address);
+      if (typeof parsed === "object") {
+        return formatAddressObject(parsed);
+      }
+      return address;
+    } catch {
+      return address;
+    }
+  }
+
+  // If it's an object, format it
+  if (typeof address === "object") {
+    return formatAddressObject(address);
+  }
+
+  return "N/A";
+};
+
+const formatAddressObject = (addr) => {
+  const parts = [];
+
+  // House number and street
+  if (addr.house) parts.push(addr.house);
+  if (addr.street) parts.push(addr.street);
+
+  // Landmark
+  if (addr.landmark) parts.push(addr.landmark);
+
+  // Location/Village/Town/City
+  if (addr.loc) parts.push(addr.loc);
+  if (addr.vtc) parts.push(addr.vtc);
+
+  // Sub-district and District
+  if (addr.subdist) parts.push(addr.subdist);
+  if (addr.dist) parts.push(addr.dist);
+
+  // State and Post Office
+  if (addr.state) parts.push(addr.state);
+  if (addr.po) parts.push(`PIN: ${addr.po}`);
+
+  // Country
+  if (addr.country) parts.push(addr.country);
+
+  return parts.length > 0 ? parts.join(", ") : "N/A";
+};
 
 const ViewCustomerLayer = () => {
   const { id } = useParams();
@@ -53,13 +110,13 @@ const ViewCustomerLayer = () => {
 
     try {
       // Call backend API to approve customer
-      const { getApiBaseUrl } = await import('@/utils/apiUrl');
+      const { getApiBaseUrl } = await import("@/utils/apiUrl");
       const API_BASE_URL = getApiBaseUrl();
       const response = await fetch(`${API_BASE_URL}/customer/approve`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
         },
         body: JSON.stringify({
           customer_id: customer.id,
@@ -74,7 +131,9 @@ const ViewCustomerLayer = () => {
         // Refresh customer data
         await fetchCustomer();
         setApproveModalOpen(false);
-        alert("Customer approved successfully! Virtual number generated and emails sent.");
+        alert(
+          "Customer approved successfully! Virtual number generated and emails sent."
+        );
       } else {
         setError(result.message || "Failed to approve customer");
       }
@@ -127,13 +186,13 @@ const ViewCustomerLayer = () => {
 
   if (loading) {
     return (
-      <div className='card h-100 p-0 radius-12'>
-        <div className='card-body p-24'>
-          <div className='text-center py-40'>
+      <div className="card h-100 p-0 radius-12">
+        <div className="card-body p-24">
+          <div className="text-center py-40">
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p className='text-muted mt-3'>Loading customer details...</p>
+            <p className="text-muted mt-3">Loading customer details...</p>
           </div>
         </div>
       </div>
@@ -142,16 +201,16 @@ const ViewCustomerLayer = () => {
 
   if (error && !customer) {
     return (
-      <div className='card h-100 p-0 radius-12'>
-        <div className='card-body p-24'>
-          <div className='alert alert-danger radius-8' role='alert'>
-            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+      <div className="card h-100 p-0 radius-12">
+        <div className="card-body p-24">
+          <div className="alert alert-danger radius-8" role="alert">
+            <Icon icon="material-symbols:error-outline" className="icon me-2" />
             {error}
           </div>
           <button
-            type='button'
-            className='btn btn-secondary mt-3'
-            onClick={() => navigate('/customer-list')}
+            type="button"
+            className="btn btn-secondary mt-3"
+            onClick={() => navigate("/customer-list")}
           >
             Back to Customer List
           </button>
@@ -162,15 +221,18 @@ const ViewCustomerLayer = () => {
 
   if (!customer) {
     return (
-      <div className='card h-100 p-0 radius-12'>
-        <div className='card-body p-24'>
-          <div className='text-center py-40'>
-            <Icon icon='mdi:account-off' className='icon text-6xl text-muted mb-3' />
-            <p className='text-muted'>Customer not found</p>
+      <div className="card h-100 p-0 radius-12">
+        <div className="card-body p-24">
+          <div className="text-center py-40">
+            <Icon
+              icon="mdi:account-off"
+              className="icon text-6xl text-muted mb-3"
+            />
+            <p className="text-muted">Customer not found</p>
             <button
-              type='button'
-              className='btn btn-secondary mt-3'
-              onClick={() => navigate('/customer-list')}
+              type="button"
+              className="btn btn-secondary mt-3"
+              onClick={() => navigate("/customer-list")}
             >
               Back to Customer List
             </button>
@@ -181,90 +243,124 @@ const ViewCustomerLayer = () => {
   }
 
   return (
-    <div className='card h-100 p-0 radius-12'>
-      <div className='card-header border-bottom bg-base py-16 px-24 d-flex align-items-center justify-content-between'>
-        <h5 className='text-md text-primary-light mb-0'>Customer KYC Details</h5>
+    <div className="card h-100 p-0 radius-12">
+      <div className="card-header border-bottom bg-base py-16 px-24 d-flex align-items-center justify-content-between">
+        <h5 className="text-md text-primary-light mb-0">
+          Customer KYC Details
+        </h5>
         <button
-          type='button'
-          className='btn btn-secondary btn-sm'
-          onClick={() => navigate('/customer-list')}
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => navigate("/customer-list")}
         >
-          <Icon icon='mdi:arrow-left' className='icon me-2' />
+          <Icon icon="mdi:arrow-left" className="icon me-2" />
           Back
         </button>
       </div>
-      <div className='card-body p-24'>
+      <div className="card-body p-24">
         {error && (
-          <div className='alert alert-danger radius-8 mb-24' role='alert'>
-            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+          <div className="alert alert-danger radius-8 mb-24" role="alert">
+            <Icon icon="material-symbols:error-outline" className="icon me-2" />
             {error}
           </div>
         )}
 
         {/* Action Buttons - Only show if status is pending */}
         {customer.status === "pending" && customer.kyc_status === "pending" && (
-          <div className='d-flex gap-3 mb-24'>
+          <div className="d-flex gap-3 mb-24">
             <button
-              type='button'
-              className='btn btn-success'
+              type="button"
+              className="btn btn-success"
               onClick={handleApproveClick}
               disabled={actionLoading}
             >
-              <Icon icon='material-symbols:check-circle-outline' className='icon me-2' />
+              <Icon
+                icon="material-symbols:check-circle-outline"
+                className="icon me-2"
+              />
               Approve
             </button>
             <button
-              type='button'
-              className='btn btn-danger'
+              type="button"
+              className="btn btn-danger"
               onClick={handleRejectClick}
               disabled={actionLoading}
             >
-              <Icon icon='material-symbols:cancel-outline' className='icon me-2' />
+              <Icon
+                icon="material-symbols:cancel-outline"
+                className="icon me-2"
+              />
               Reject
             </button>
           </div>
         )}
 
         {/* Customer Information */}
-        <div className='row g-3 mb-24'>
-          <div className='col-md-6'>
-            <div className='card bg-base border p-16 radius-8'>
-              <h6 className='text-sm text-secondary-light mb-12'>Basic Information</h6>
-              <div className='d-flex flex-column gap-2'>
+        <div className="row g-3 mb-24">
+          <div className="col-md-6">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                Basic Information
+              </h6>
+              <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className='text-xs text-secondary-light'>Profile Name:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.profile_name || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Profile Name:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.profile_name || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Email:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.email || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">Email:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.email || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Phone:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.phone || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">Phone:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.phone || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Business Email:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.business_email || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Business Email:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.business_email || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Status:</span>
-                  <p className='text-sm fw-medium mb-0'>
-                    <span className={`badge ${
-                      customer.status === "approved" ? "bg-success" :
-                      customer.status === "rejected" ? "bg-danger" : "bg-warning"
-                    }`}>
+                  <span className="text-xs text-secondary-light">Status:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    <span
+                      className={`badge ${
+                        customer.status === "approved"
+                          ? "bg-success"
+                          : customer.status === "rejected"
+                          ? "bg-danger"
+                          : "bg-warning"
+                      }`}
+                    >
                       {customer.status || "N/A"}
                     </span>
                   </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>KYC Status:</span>
-                  <p className='text-sm fw-medium mb-0'>
-                    <span className={`badge ${
-                      customer.kyc_status === "verified" ? "bg-success" :
-                      customer.kyc_status === "rejected" ? "bg-danger" : "bg-warning"
-                    }`}>
+                  <span className="text-xs text-secondary-light">
+                    KYC Status:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    <span
+                      className={`badge ${
+                        customer.kyc_status === "verified"
+                          ? "bg-success"
+                          : customer.kyc_status === "rejected"
+                          ? "bg-danger"
+                          : "bg-warning"
+                      }`}
+                    >
                       {customer.kyc_status || "N/A"}
                     </span>
                   </p>
@@ -273,49 +369,79 @@ const ViewCustomerLayer = () => {
             </div>
           </div>
 
-          <div className='col-md-6'>
-            <div className='card bg-base border p-16 radius-8'>
-              <h6 className='text-sm text-secondary-light mb-12'>PAN Card Details</h6>
-              <div className='d-flex flex-column gap-2'>
+          <div className="col-md-6">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                PAN Card Details
+              </h6>
+              <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className='text-xs text-secondary-light'>PAN Number:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.pan_number || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    PAN Number:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.pan_number || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Full Name:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.pan_full_name || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Full Name:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.pan_full_name || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Date of Birth:</span>
-                  <p className='text-sm fw-medium mb-0'>{formatDate(customer.pan_dob) || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Date of Birth:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.pan_dob) || "N/A"}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className='col-md-6'>
-            <div className='card bg-base border p-16 radius-8'>
-              <h6 className='text-sm text-secondary-light mb-12'>Aadhaar Card Details</h6>
-              <div className='d-flex flex-column gap-2'>
+          <div className="col-md-6">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                Aadhaar Card Details
+              </h6>
+              <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className='text-xs text-secondary-light'>Aadhaar Number:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.aadhaar_number ? "****" + customer.aadhaar_number.slice(-4) : "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Aadhaar Number:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.aadhaar_number
+                      ? "****" + customer.aadhaar_number.slice(-4)
+                      : "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Date of Birth:</span>
-                  <p className='text-sm fw-medium mb-0'>{formatDate(customer.aadhaar_dob) || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Date of Birth:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.aadhaar_dob) || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Gender:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.gender || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">Gender:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.gender || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>DOB Match Verified:</span>
-                  <p className='text-sm fw-medium mb-0'>
+                  <span className="text-xs text-secondary-light">
+                    DOB Match Verified:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
                     {customer.dob_match_verified ? (
-                      <span className='badge bg-success'>Verified</span>
+                      <span className="badge bg-success">Verified</span>
                     ) : (
-                      <span className='badge bg-warning'>Not Verified</span>
+                      <span className="badge bg-warning">Not Verified</span>
                     )}
                   </p>
                 </div>
@@ -323,31 +449,37 @@ const ViewCustomerLayer = () => {
             </div>
           </div>
 
-          <div className='col-md-6'>
-            <div className='card bg-base border p-16 radius-8'>
-              <h6 className='text-sm text-secondary-light mb-12'>GST Details</h6>
-              <div className='d-flex flex-column gap-2'>
+          <div className="col-md-6">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                GST Details
+              </h6>
+              <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className='text-xs text-secondary-light'>GSTIN:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.gstin || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">GSTIN:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.gstin || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Business Name:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.business_name || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Business Name:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.business_name || "N/A"}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
           {customer.address && (
-            <div className='col-md-12'>
-              <div className='card bg-base border p-16 radius-8'>
-                <h6 className='text-sm text-secondary-light mb-12'>Address</h6>
-                <div className='d-flex flex-column gap-2'>
-                  <p className='text-sm fw-medium mb-0'>
-                    {typeof customer.address === 'string' 
-                      ? customer.address 
-                      : JSON.stringify(customer.address)}
+            <div className="col-md-12">
+              <div className="card bg-base border p-16 radius-8">
+                <h6 className="text-sm text-secondary-light mb-12">Address</h6>
+                <div className="d-flex flex-column gap-2">
+                  <p className="text-sm fw-medium mb-0">
+                    {formatAddress(customer.address)}
                   </p>
                 </div>
               </div>
@@ -355,29 +487,43 @@ const ViewCustomerLayer = () => {
           )}
 
           {customer.rejection_reason && (
-            <div className='col-md-12'>
-              <div className='alert alert-danger radius-8'>
-                <h6 className='text-sm mb-8'>Rejection Reason:</h6>
-                <p className='text-sm mb-0'>{customer.rejection_reason}</p>
+            <div className="col-md-12">
+              <div className="alert alert-danger radius-8">
+                <h6 className="text-sm mb-8">Rejection Reason:</h6>
+                <p className="text-sm mb-0">{customer.rejection_reason}</p>
               </div>
             </div>
           )}
 
-          <div className='col-md-12'>
-            <div className='card bg-base border p-16 radius-8'>
-              <h6 className='text-sm text-secondary-light mb-12'>Additional Information</h6>
-              <div className='d-flex flex-column gap-2'>
+          <div className="col-md-12">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                Additional Information
+              </h6>
+              <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className='text-xs text-secondary-light'>Max Virtual Numbers:</span>
-                  <p className='text-sm fw-medium mb-0'>{customer.max_virtual_numbers || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Max Virtual Numbers:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.max_virtual_numbers || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Created At:</span>
-                  <p className='text-sm fw-medium mb-0'>{formatDate(customer.created_at) || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Created At:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.created_at) || "N/A"}
+                  </p>
                 </div>
                 <div>
-                  <span className='text-xs text-secondary-light'>Updated At:</span>
-                  <p className='text-sm fw-medium mb-0'>{formatDate(customer.updated_at) || "N/A"}</p>
+                  <span className="text-xs text-secondary-light">
+                    Updated At:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.updated_at) || "N/A"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -411,4 +557,3 @@ const ViewCustomerLayer = () => {
 };
 
 export default ViewCustomerLayer;
-

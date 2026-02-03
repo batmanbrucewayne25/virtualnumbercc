@@ -1,5 +1,9 @@
-import { getHasuraClient } from '../config/hasura.client.js';
-import { sendVirtualNumberEmail, sendRazorpayLinkEmail } from '../../services/emailService.js';
+import { getHasuraClient } from "../config/hasura.client.js";
+import {
+  sendVirtualNumberEmail,
+  sendRazorpayLinkEmail,
+} from "../../services/emailService.js";
+import { getResellerSmtpConfig } from "./smtpConfig.service.js";
 
 export class CustomerService {
   /**
@@ -15,13 +19,13 @@ export class CustomerService {
 
   /**
    * Get admin wallet by admin ID
-   * @param {string} adminId 
+   * @param {string} adminId
    * @returns {Promise<object|null>}
    */
   static async getAdminWallet(adminId) {
     try {
       const client = getHasuraClient();
-      
+
       // Try to get admin wallet - assuming wallet table has user_type and reseller_id/admin_id fields
       const query = `
         query GetAdminWallet($admin_id: uuid!) {
@@ -41,7 +45,7 @@ export class CustomerService {
       `;
 
       const data = await client.client.request(query, { admin_id: adminId });
-      
+
       if (data.mst_wallet && data.mst_wallet.length > 0) {
         return data.mst_wallet[0];
       }
@@ -63,24 +67,28 @@ export class CustomerService {
         }
       `;
 
-      const altData = await client.client.request(altQuery, { admin_id: adminId });
-      return altData.mst_wallet && altData.mst_wallet.length > 0 ? altData.mst_wallet[0] : null;
+      const altData = await client.client.request(altQuery, {
+        admin_id: adminId,
+      });
+      return altData.mst_wallet && altData.mst_wallet.length > 0
+        ? altData.mst_wallet[0]
+        : null;
     } catch (error) {
-      console.error('Error fetching admin wallet:', error);
+      console.error("Error fetching admin wallet:", error);
       return null;
     }
   }
 
   /**
    * Debit amount from admin wallet
-   * @param {string} walletId 
-   * @param {number} amount 
+   * @param {string} walletId
+   * @param {number} amount
    * @returns {Promise<boolean>}
    */
   static async debitAdminWallet(walletId, amount) {
     try {
       const client = getHasuraClient();
-      
+
       // Get current balance
       const getWalletQuery = `
         query GetWallet($id: uuid!) {
@@ -91,11 +99,13 @@ export class CustomerService {
         }
       `;
 
-      const walletData = await client.client.request(getWalletQuery, { id: walletId });
+      const walletData = await client.client.request(getWalletQuery, {
+        id: walletId,
+      });
       const currentBalance = Number(walletData.mst_wallet_by_pk?.balance || 0);
 
       if (currentBalance < amount) {
-        throw new Error('Insufficient wallet balance');
+        throw new Error("Insufficient wallet balance");
       }
 
       // Update wallet balance
@@ -119,25 +129,29 @@ export class CustomerService {
 
       return true;
     } catch (error) {
-      console.error('Error debiting admin wallet:', error);
+      console.error("Error debiting admin wallet:", error);
       throw error;
     }
   }
 
   /**
    * Create virtual number for customer
-   * @param {string} customerId 
-   * @param {string} virtualNumber 
+   * @param {string} customerId
+   * @param {string} virtualNumber
    * @param {string} resellerId - Optional reseller ID
    * @returns {Promise<object>}
    */
-  static async createVirtualNumber(customerId, virtualNumber, resellerId = null) {
+  static async createVirtualNumber(
+    customerId,
+    virtualNumber,
+    resellerId = null
+  ) {
     try {
       const client = getHasuraClient();
-      
+
       // Get today's date in YYYY-MM-DD format
-      const purchaseDate = new Date().toISOString().split('T')[0];
-      
+      const purchaseDate = new Date().toISOString().split("T")[0];
+
       const mutation = `
         mutation CreateVirtualNumber(
           $customer_id: uuid!
@@ -175,24 +189,27 @@ export class CustomerService {
         return result.insert_mst_virtual_number_one;
       }
 
-      throw new Error('Failed to create virtual number');
+      throw new Error("Failed to create virtual number");
     } catch (error) {
-      console.error('Error creating virtual number:', error);
+      console.error("Error creating virtual number:", error);
       throw error;
     }
   }
 
   /**
    * Create transaction record
-   * @param {object} transactionData 
+   * @param {object} transactionData
    * @returns {Promise<object>}
    */
   static async createTransaction(transactionData) {
     try {
       const client = getHasuraClient();
-      
+
       // Generate unique transaction number
-      const transactionNumber = `TXN${Date.now()}${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+      const transactionNumber = `TXN${Date.now()}${Math.random()
+        .toString(36)
+        .substring(2, 9)
+        .toUpperCase()}`;
 
       const mutation = `
         mutation CreateTransaction(
@@ -243,31 +260,31 @@ export class CustomerService {
         customer_id: transactionData.customer_id || null,
         reseller_id: transactionData.reseller_id,
         virtual_number_id: transactionData.virtual_number_id || null,
-        transaction_type: transactionData.transaction_type || 'payment',
+        transaction_type: transactionData.transaction_type || "payment",
         payment_mode: transactionData.payment_mode || null,
         payment_method: transactionData.payment_method || null,
         amount: transactionData.amount,
-        status: transactionData.status || 'success',
+        status: transactionData.status || "success",
         reference_number: transactionData.reference_number || null,
         payment_date: transactionData.payment_date || null,
       });
 
       return result.insert_mst_transaction_one;
     } catch (error) {
-      console.error('Error creating transaction:', error);
+      console.error("Error creating transaction:", error);
       throw error;
     }
   }
 
   /**
    * Get customer by ID
-   * @param {string} customerId 
+   * @param {string} customerId
    * @returns {Promise<object|null>}
    */
   static async getCustomerById(customerId) {
     try {
       const client = getHasuraClient();
-      
+
       const query = `
         query GetCustomerById($id: uuid!) {
           mst_customer_by_pk(id: $id) {
@@ -293,20 +310,20 @@ export class CustomerService {
       const data = await client.client.request(query, { id: customerId });
       return data.mst_customer_by_pk;
     } catch (error) {
-      console.error('Error fetching customer:', error);
+      console.error("Error fetching customer:", error);
       throw error;
     }
   }
 
   /**
    * Get subscription plan by ID
-   * @param {string} planId 
+   * @param {string} planId
    * @returns {Promise<object|null>}
    */
   static async getSubscriptionPlanById(planId) {
     try {
       const client = getHasuraClient();
-      
+
       const query = `
         query GetSubscriptionPlanById($id: uuid!) {
           mst_subscription_plan_by_pk(id: $id) {
@@ -325,22 +342,22 @@ export class CustomerService {
       const data = await client.client.request(query, { id: planId });
       return data.mst_subscription_plan_by_pk;
     } catch (error) {
-      console.error('Error fetching subscription plan:', error);
+      console.error("Error fetching subscription plan:", error);
       throw error;
     }
   }
 
   /**
    * Update customer status
-   * @param {string} customerId 
-   * @param {string} status 
-   * @param {string} kycStatus 
+   * @param {string} customerId
+   * @param {string} status
+   * @param {string} kycStatus
    * @returns {Promise<object>}
    */
   static async updateCustomerStatus(customerId, status, kycStatus) {
     try {
       const client = getHasuraClient();
-      
+
       const mutation = `
         mutation UpdateCustomerStatus(
           $id: uuid!
@@ -369,14 +386,14 @@ export class CustomerService {
 
       return data.update_mst_customer_by_pk;
     } catch (error) {
-      console.error('Error updating customer status:', error);
+      console.error("Error updating customer status:", error);
       throw error;
     }
   }
 
   /**
    * Approve customer with payment processing
-   * @param {object} approvalData 
+   * @param {object} approvalData
    * @returns {Promise<object>}
    */
   static async approveCustomer(approvalData) {
@@ -394,71 +411,85 @@ export class CustomerService {
       // Get customer details
       const customer = await this.getCustomerById(customer_id);
       if (!customer) {
-        throw new Error('Customer not found');
+        throw new Error("Customer not found");
       }
 
       // Get reseller details for admin email
       const reseller = customer.mst_reseller;
       if (!reseller) {
-        throw new Error('Reseller not found');
+        throw new Error("Reseller not found");
       }
 
-      if (payment_method === 'offline') {
+      if (payment_method === "offline") {
         // Offline payment flow
         // 1. Get admin wallet (assuming reseller_id in approvalData is actually admin_id)
         // For now, we'll skip wallet debit as the exact admin wallet structure is unclear
         // TODO: Implement proper admin wallet debit logic based on actual schema
-        
+
         // 2. Generate virtual number
         const virtualNumber = await this.generateVirtualNumber();
-        
+
         // 3. Create virtual number record (pass reseller_id if available)
-        const virtualNumberRecord = await this.createVirtualNumber(customer_id, virtualNumber, reseller_id);
-        
+        const virtualNumberRecord = await this.createVirtualNumber(
+          customer_id,
+          virtualNumber,
+          reseller_id
+        );
+
         // 4. Create transaction record
         await this.createTransaction({
           customer_id: customer_id,
           reseller_id: reseller_id,
           virtual_number_id: virtualNumberRecord?.id || null,
-          transaction_type: 'payment',
-          payment_mode: 'offline',
-          payment_method: 'offline',
+          transaction_type: "payment",
+          payment_mode: "offline",
+          payment_method: "offline",
           amount: parseFloat(payment_amount) || 0,
-          status: 'success',
+          status: "success",
           reference_number: payment_reference_number || null,
-          payment_date: payment_date || new Date().toISOString().split('T')[0],
+          payment_date: payment_date || new Date().toISOString().split("T")[0],
         });
-        
+
         // 5. Update customer status
-        await this.updateCustomerStatus(customer_id, 'approved', 'verified');
-        
-        // 6. Send emails
+        await this.updateCustomerStatus(customer_id, "approved", "verified");
+
+        // 6. Get reseller SMTP config for sending emails
+        const resellerSmtpConfig = await getResellerSmtpConfig(reseller_id);
+
+        // 7. Send emails using reseller SMTP config
         await sendVirtualNumberEmail(
           customer.email,
           customer.profile_name || customer.email,
           virtualNumber,
-          reseller.business_name || `${reseller.first_name} ${reseller.last_name}`
+          reseller.business_name ||
+            `${reseller.first_name} ${reseller.last_name}`,
+          resellerSmtpConfig // Pass reseller SMTP config
         );
-        
+
         // Send to admin (reseller email)
         await sendVirtualNumberEmail(
           reseller.email,
-          reseller.business_name || `${reseller.first_name} ${reseller.last_name}`,
+          reseller.business_name ||
+            `${reseller.first_name} ${reseller.last_name}`,
           virtualNumber,
-          customer.profile_name || customer.email
+          customer.profile_name || customer.email,
+          resellerSmtpConfig // Pass reseller SMTP config
         );
 
         return {
           success: true,
           virtual_number: virtualNumber,
-          message: 'Customer approved successfully. Virtual number generated and emails sent.',
+          message:
+            "Customer approved successfully. Virtual number generated and emails sent.",
         };
-      } else if (payment_method === 'online') {
+      } else if (payment_method === "online") {
         // Online payment flow
         // 1. Get subscription plan
-        const subscriptionPlan = await this.getSubscriptionPlanById(subscription_plan_id);
+        const subscriptionPlan = await this.getSubscriptionPlanById(
+          subscription_plan_id
+        );
         if (!subscriptionPlan) {
-          throw new Error('Subscription plan not found');
+          throw new Error("Subscription plan not found");
         }
 
         // 2. Create pending transaction record
@@ -466,27 +497,126 @@ export class CustomerService {
           customer_id: customer_id,
           reseller_id: reseller_id,
           virtual_number_id: null, // Will be updated after payment
-          transaction_type: 'payment',
-          payment_mode: 'online',
-          payment_method: 'razorpay',
+          transaction_type: "payment",
+          payment_mode: "online",
+          payment_method: "razorpay",
           amount: Number(subscriptionPlan.amount) || 0,
-          status: 'pending',
+          status: "pending",
           reference_number: null,
           payment_date: null,
         });
 
         // 3. Update customer status (but don't generate virtual number yet - wait for payment)
-        await this.updateCustomerStatus(customer_id, 'pending_payment', 'verified');
-        
-        // 4. Send Razorpay link email
-        const razorpayLink = subscriptionPlan.razorpay_link_id 
-          ? `https://razorpay.com/payment-link/${subscriptionPlan.razorpay_link_id}`
-          : subscriptionPlan.razorpay_plan_id
-          ? `https://razorpay.com/plans/${subscriptionPlan.razorpay_plan_id}`
-          : null;
+        await this.updateCustomerStatus(
+          customer_id,
+          "pending_payment",
+          "verified"
+        );
+
+        // 4. Get reseller SMTP config for sending emails
+        const resellerSmtpConfig = await getResellerSmtpConfig(reseller_id);
+
+        // 5. Generate Razorpay payment link
+        let razorpayLink = null;
+
+        // If razorpay_link_id is provided, use it (format: https://rzp.io/i/{link_id})
+        // IMPORTANT: razorpay_link_id should be a payment link ID (plink_...), NOT a subscription ID (sub_...)
+        if (
+          subscriptionPlan.razorpay_link_id &&
+          subscriptionPlan.razorpay_link_id.trim()
+        ) {
+          const linkId = subscriptionPlan.razorpay_link_id.trim();
+
+          // Validate: Don't use subscription IDs (sub_...) as payment links
+          if (linkId.startsWith("sub_")) {
+            console.warn(
+              `razorpay_link_id contains a subscription ID (${linkId}), not a payment link ID. Creating payment link dynamically instead.`
+            );
+            // Fall through to create payment link dynamically
+          } else {
+            // Check if it's already a full URL
+            if (linkId.startsWith("http://") || linkId.startsWith("https://")) {
+              razorpayLink = linkId;
+            } else if (
+              linkId.startsWith("rzp.io/i/") ||
+              linkId.startsWith("www.rzp.io/i/")
+            ) {
+              // If it starts with rzp.io but missing https://
+              razorpayLink = `https://${linkId}`;
+            } else {
+              // Format as rzp.io short link (correct Razorpay payment link format)
+              // Remove any leading slashes or spaces
+              const cleanLinkId = linkId.replace(/^\/+/, "").trim();
+              razorpayLink = `https://rzp.io/i/${cleanLinkId}`;
+            }
+          }
+        }
+
+        // If razorpay_link_id was not set (or was invalid like a subscription ID),
+        // and razorpay_plan_id is provided, create a payment link dynamically
+        // Note: razorpay_plan_id might be a plan_id (plan_...) or subscription_id (sub_...)
+        // We always create a payment link for the amount, not use the plan/subscription ID directly
+        if (!razorpayLink && subscriptionPlan.razorpay_plan_id) {
+          // Import Razorpay service to create payment link
+          const { createRazorpayPaymentLink } = await import(
+            "./razorpay.service.js"
+          );
+
+          try {
+            // Always create a new payment link for the subscription plan amount
+            // This ensures we have a valid payment link regardless of whether
+            // razorpay_plan_id is a plan ID or subscription ID
+            // Create payment link WITHOUT Razorpay's email notification
+            // We send the email ourselves using reseller's SMTP config below
+            const paymentLinkResult = await createRazorpayPaymentLink(
+              reseller_id,
+              {
+                amount: Number(subscriptionPlan.amount) || 0,
+                currency: subscriptionPlan.currency || "INR",
+                description: `Payment for ${subscriptionPlan.plan_name}`,
+                customer: {
+                  name: customer.profile_name || customer.email,
+                  email: customer.email,
+                  contact: customer.phone || undefined,
+                },
+                // Disable Razorpay's email notification - we send it ourselves using reseller SMTP
+                notify: {
+                  email: false,
+                  sms: false,
+                },
+                notes: {
+                  customer_id: customer_id,
+                  subscription_plan_id: subscription_plan_id,
+                  razorpay_plan_id: subscriptionPlan.razorpay_plan_id,
+                  reseller_id: reseller_id,
+                },
+              }
+            );
+
+            if (paymentLinkResult && paymentLinkResult.short_url) {
+              razorpayLink = paymentLinkResult.short_url;
+            } else if (paymentLinkResult && paymentLinkResult.id) {
+              // Format as rzp.io short link if short_url not available
+              razorpayLink = `https://rzp.io/i/${paymentLinkResult.id}`;
+            } else {
+              throw new Error(
+                "Payment link creation returned invalid response"
+              );
+            }
+          } catch (linkError) {
+            console.error("Error creating Razorpay payment link:", linkError);
+            throw new Error(
+              `Failed to create Razorpay payment link: ${
+                linkError.message || linkError
+              }. Please ensure Razorpay credentials are configured correctly.`
+            );
+          }
+        }
 
         if (!razorpayLink) {
-          throw new Error('Razorpay link not configured for this subscription plan');
+          throw new Error(
+            "Razorpay link not configured for this subscription plan. Please add razorpay_link_id or razorpay_plan_id to the subscription plan."
+          );
         }
 
         await sendRazorpayLinkEmail(
@@ -495,21 +625,22 @@ export class CustomerService {
           razorpayLink,
           subscriptionPlan.plan_name,
           subscriptionPlan.amount,
-          reseller.business_name || `${reseller.first_name} ${reseller.last_name}`
+          reseller.business_name ||
+            `${reseller.first_name} ${reseller.last_name}`,
+          resellerSmtpConfig // Pass reseller SMTP config
         );
 
         return {
           success: true,
           razorpay_link: razorpayLink,
-          message: 'Razorpay payment link sent to customer email.',
+          message: "Razorpay payment link sent to customer email.",
         };
       } else {
-        throw new Error('Invalid payment method');
+        throw new Error("Invalid payment method");
       }
     } catch (error) {
-      console.error('Error approving customer:', error);
+      console.error("Error approving customer:", error);
       throw error;
     }
   }
 }
-

@@ -21,7 +21,8 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarOtp, setAadhaarOtp] = useState("");
   const [requestId, setRequestId] = useState<string | null>(null);
-  const [aadhaarData, setAadhaarData] = useState<AadhaarVerificationData | null>(null);
+  const [aadhaarData, setAadhaarData] =
+    useState<AadhaarVerificationData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,24 +46,71 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
     try {
       const { generateAadhaarOTP } = await import("@/utils/api");
       const result = await generateAadhaarOTP(aadhaarNumber);
-      const status = result.data?.data?.status || result.data?.status || result.status;
-      const requestId = result.data?.request_id || result.data?.data?.request_id || result.request_id;
 
-      if (result.success && (status === "generate_otp_success" || status === "success" || requestId)) {
+      console.log("[Step6] Generate OTP Result:", result);
+
+      // Handle different response structures
+      const statusCode = result.data?.status_code || result.status_code;
+      const status =
+        result.status || result.data?.status || result.data?.data?.status;
+      const requestId =
+        result.request_id ||
+        result.data?.request_id ||
+        result.data?.data?.request_id;
+      const responseData = result.data || result;
+
+      // Check for error status first (API may return 200 OK but with error in body)
+      if (
+        !result.success ||
+        statusCode === 500 ||
+        status === "error" ||
+        (statusCode && statusCode >= 400) ||
+        (responseData?.message &&
+          (responseData.message.toLowerCase().includes("error") ||
+            responseData.message.toLowerCase().includes("went wrong") ||
+            responseData.message.toLowerCase().includes("failed")))
+      ) {
+        const errorMsg =
+          result.message ||
+          responseData?.message ||
+          responseData?.data?.message ||
+          "Failed to send OTP. Please check your Aadhaar number and try again.";
+        console.error("[Step6] OTP generation failed:", errorMsg, result);
+        setError(errorMsg);
+        return;
+      }
+
+      // Check if the response indicates success
+      if (
+        status === "generate_otp_success" ||
+        status === "success" ||
+        requestId
+      ) {
         if (requestId) {
           setRequestId(requestId);
           setAadhaarOtpSent(true);
           setError("");
+          console.log("[Step6] OTP sent successfully, request_id:", requestId);
         } else {
+          console.error("[Step6] Request ID missing in response:", result);
           setError("OTP sent but request ID missing. Please try again.");
         }
       } else {
-        const errorMsg = result.data?.data?.message || result.data?.message || result.message || "Failed to send OTP.";
+        const errorMsg =
+          responseData?.message ||
+          responseData?.data?.message ||
+          result.message ||
+          "Failed to send OTP.";
+        console.error("[Step6] OTP generation failed:", errorMsg, result);
         setError(errorMsg);
       }
     } catch (err: any) {
-      console.error("OTP generation error:", err);
-      setError(err.message || "OTP generation failed.");
+      console.error("[Step6] OTP generation error:", err);
+      const errorMsg =
+        err.response?.data?.message ||
+        err.message ||
+        "OTP generation failed. Please check your Aadhaar number and try again.";
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -90,41 +138,63 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
     try {
       const { submitAadhaarOTP } = await import("@/utils/api");
       const result = await submitAadhaarOTP(requestId, aadhaarOtp);
-      const data = result.data?.data || result.data || result;
-      const status = data?.status || result.status;
 
-      if (result.success && (status === "success_aadhaar" || status === "success")) {
+      console.log("[Step6] Submit OTP Result:", result);
+
+      // Handle different response structures
+      const responseData = result.data || result;
+      const data = responseData?.data || responseData;
+      const status = data?.status || responseData?.status || result.status;
+
+      if (
+        result.success &&
+        (status === "success_aadhaar" ||
+          status === "success" ||
+          data?.aadhaar_number)
+      ) {
+        // Check for required fields
         if (!data.dob || !data.gender) {
-          setError("Aadhaar verification incomplete. Missing required information.");
+          console.error("[Step6] Missing required fields:", {
+            dob: data.dob,
+            gender: data.gender,
+            data,
+          });
+          setError(
+            "Aadhaar verification incomplete. Missing required information (DOB or Gender)."
+          );
           return;
         }
 
-        setAadhaarData({
-          full_name: data.full_name || "",
+        const aadhaarData = {
+          full_name: data.full_name || data.name || "",
           aadhaar_number: data.aadhaar_number || aadhaarNumber,
           dob: data.dob,
           gender: data.gender,
-          address: data.address || null,
-          zip: data.zip || "",
-          profile_image: data.profile_image || "",
-        });
+          address: data.address || data.full_address || null,
+          zip: data.zip || data.pincode || "",
+          profile_image: data.profile_image || data.photo || "",
+        };
 
-        onSubmit({
-          full_name: data.full_name || "",
-          aadhaar_number: data.aadhaar_number || aadhaarNumber,
-          dob: data.dob,
-          gender: data.gender,
-          address: data.address || null,
-          zip: data.zip || "",
-          profile_image: data.profile_image || "",
-        });
+        console.log("[Step6] Aadhaar verification successful:", aadhaarData);
+
+        setAadhaarData(aadhaarData);
+        onSubmit(aadhaarData);
       } else {
-        const errorMsg = data?.message || result.data?.message || result.message || "Invalid OTP.";
+        const errorMsg =
+          data?.message ||
+          responseData?.message ||
+          result.message ||
+          "Invalid OTP. Please check and try again.";
+        console.error("[Step6] OTP verification failed:", errorMsg, result);
         setError(errorMsg);
       }
     } catch (err: any) {
-      console.error("OTP verification error:", err);
-      setError(err.message || "OTP verification failed.");
+      console.error("[Step6] OTP verification error:", err);
+      const errorMsg =
+        err.response?.data?.message ||
+        err.message ||
+        "OTP verification failed. Please check the OTP and try again.";
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -185,8 +255,8 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
             ? "Verifying OTP..."
             : "Sending OTP..."
           : aadhaarOtpSent
-            ? "Verify OTP"
-            : "Get OTP"}
+          ? "Verify OTP"
+          : "Get OTP"}
       </button>
 
       {aadhaarOtpSent && !loading && (
@@ -233,4 +303,3 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
 };
 
 export default Step6;
-

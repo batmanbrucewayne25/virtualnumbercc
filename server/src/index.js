@@ -1,11 +1,16 @@
 // Load environment variables FIRST before any other imports
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from server directory (parent of src)
+dotenv.config({ path: path.join(__dirname, "../.env") });
 
 import express from "express";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
@@ -20,9 +25,6 @@ import resellerRoutes from "./routes/reseller.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { corsOriginHandler } from "./middleware/cors.middleware.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -31,7 +33,7 @@ app.use(
   cors({
     origin: corsOriginHandler,
     credentials: true,
-  }),
+  })
 );
 
 // Body parser middleware - but webhook routes will use raw body
@@ -73,7 +75,7 @@ app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api") || req.path.startsWith("/virtualnumbers")) {
     return next();
   }
-  
+
   // Serve index.html for all other routes (React Router handles routing)
   res.sendFile(path.join(distPath, "index.html"));
 });

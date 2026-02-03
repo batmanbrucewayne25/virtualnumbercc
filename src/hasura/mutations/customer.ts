@@ -349,7 +349,8 @@ export const updateMstCustomerStatus = async (
     if (result?.errors) {
       return {
         success: false,
-        message: result.errors[0]?.message || "Failed to update customer status",
+        message:
+          result.errors[0]?.message || "Failed to update customer status",
         data: null,
       };
     }
@@ -375,4 +376,3 @@ export const updateMstCustomerStatus = async (
     };
   }
 };
-

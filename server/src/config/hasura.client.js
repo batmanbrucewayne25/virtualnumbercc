@@ -1,24 +1,26 @@
-import { GraphQLClient } from 'graphql-request';
+import { GraphQLClient } from "graphql-request";
 
 class HasuraClient {
   constructor() {
     if (!process.env.HASURA_GRAPHQL_ENDPOINT) {
-      throw new Error('HASURA_GRAPHQL_ENDPOINT is not set in environment variables');
+      throw new Error(
+        "HASURA_GRAPHQL_ENDPOINT is not set in environment variables"
+      );
     }
 
     this.client = new GraphQLClient(process.env.HASURA_GRAPHQL_ENDPOINT, {
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...(process.env.HASURA_ADMIN_SECRET && {
-          'x-hasura-admin-secret': process.env.HASURA_ADMIN_SECRET
-        })
-      }
+          "x-hasura-admin-secret": process.env.HASURA_ADMIN_SECRET,
+        }),
+      },
     });
   }
 
   /**
    * Get user by email
-   * @param {string} email 
+   * @param {string} email
    * @returns {Promise<object|null>}
    */
   async getUserByEmail(email) {
@@ -49,18 +51,74 @@ class HasuraClient {
 
     try {
       const data = await this.client.request(query, { email });
-      return data.mst_reseller && data.mst_reseller.length > 0 
-        ? data.mst_reseller[0] 
+      return data.mst_reseller && data.mst_reseller.length > 0
+        ? data.mst_reseller[0]
         : null;
     } catch (error) {
-      console.error('Hasura query error:', error);
-      throw new Error('Failed to query user from database');
+      console.error("Hasura query error:", error);
+      throw new Error("Failed to query user from database");
+    }
+  }
+
+  /**
+   * Get customer by email
+   * @param {string} email
+   * @returns {Promise<object|null>}
+   */
+  async getCustomerByEmail(email) {
+    // Check both email and business_email fields
+    const query = `
+      query GetCustomerByEmail($email: String!) {
+        mst_customer(
+          where: {
+            _or: [
+              {email: {_eq: $email}},
+              {business_email: {_eq: $email}}
+            ]
+          },
+          limit: 1
+        ) {
+          id
+          email
+          phone
+          password_hash
+          profile_name
+          business_email
+          status
+          kyc_status
+          reseller_id
+          created_at
+          updated_at
+        }
+      }
+    `;
+
+    try {
+      console.log("🔍 Querying customer by email:", email);
+      const data = await this.client.request(query, { email });
+      const customer =
+        data.mst_customer && data.mst_customer.length > 0
+          ? data.mst_customer[0]
+          : null;
+      console.log(
+        "📊 Customer query result:",
+        customer ? "Found" : "Not found"
+      );
+      return customer;
+    } catch (error) {
+      console.error("❌ Hasura query error (customer):", error);
+      console.error("📚 Error details:", {
+        message: error.message,
+        response: error.response,
+        request: error.request,
+      });
+      throw new Error("Failed to query customer from database");
     }
   }
 
   /**
    * Get user by ID
-   * @param {number} id 
+   * @param {number} id
    * @returns {Promise<object|null>}
    */
   async getUserById(id) {
@@ -88,14 +146,14 @@ class HasuraClient {
       const data = await this.client.request(query, { id });
       return data.mst_reseller_by_pk;
     } catch (error) {
-      console.error('Hasura query error:', error);
-      throw new Error('Failed to query user from database');
+      console.error("Hasura query error:", error);
+      throw new Error("Failed to query user from database");
     }
   }
 
   /**
    * Create new user
-   * @param {object} userData 
+   * @param {object} userData
    * @returns {Promise<object>}
    */
   async createUser(userData) {
@@ -142,8 +200,8 @@ class HasuraClient {
       const data = await this.client.request(mutation, userData);
       return data.insert_mst_reseller_one;
     } catch (error) {
-      console.error('Hasura mutation error:', error);
-      throw new Error('Failed to create user in database');
+      console.error("Hasura mutation error:", error);
+      throw new Error("Failed to create user in database");
     }
   }
 }
@@ -155,7 +213,9 @@ let hasuraClientInstance = null;
 export const getHasuraClient = () => {
   if (!hasuraClientInstance) {
     if (!process.env.HASURA_GRAPHQL_ENDPOINT) {
-      throw new Error('HASURA_GRAPHQL_ENDPOINT is not set in environment variables. Make sure .env file exists and dotenv.config() is called before using HasuraClient.');
+      throw new Error(
+        "HASURA_GRAPHQL_ENDPOINT is not set in environment variables. Make sure .env file exists and dotenv.config() is called before using HasuraClient."
+      );
     }
     hasuraClientInstance = new HasuraClient();
   }
@@ -171,12 +231,15 @@ export const hasuraClient = {
   getUserByEmail(email) {
     return getHasuraClient().getUserByEmail(email);
   },
+  getCustomerByEmail(email) {
+    return getHasuraClient().getCustomerByEmail(email);
+  },
   getUserById(id) {
     return getHasuraClient().getUserById(id);
   },
   createUser(userData) {
     return getHasuraClient().createUser(userData);
-  }
+  },
 };
 
 export { HasuraClient };

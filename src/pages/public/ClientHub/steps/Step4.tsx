@@ -12,6 +12,7 @@ const Step4 = ({ phone, onBack, onVerify }: Step4Props) => {
     <OtpVerify
       title="Verify Phone Number (WhatsApp)"
       label="Phone"
+      phone={phone}
       onBack={onBack}
       onVerify={async () => {
         // TODO: Add WhatsApp OTP verification API call
@@ -23,4 +24,3 @@ const Step4 = ({ phone, onBack, onVerify }: Step4Props) => {
 };
 
 export default Step4;
-

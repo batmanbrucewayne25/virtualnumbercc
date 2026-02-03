@@ -3,14 +3,12 @@ import { graphqlRequest } from "@/hasura";
 /**
  * Get all approved customers (for Super Admin)
  */
-export const getAllApprovedCustomers = async (
-  filters?: {
-    startDate?: string;
-    endDate?: string;
-    searchTerm?: string;
-    expiringSoon?: boolean;
-  }
-) => {
+export const getAllApprovedCustomers = async (filters?: {
+  startDate?: string;
+  endDate?: string;
+  searchTerm?: string;
+  expiringSoon?: boolean;
+}) => {
   const QUERY = `query GetAllApprovedCustomers {
     mst_customer(
       where: { status: { _eq: "approved" } }
@@ -61,7 +59,7 @@ export const getAllApprovedCustomers = async (
 
   try {
     const result = await graphqlRequest(QUERY, {});
-    
+
     if (result?.errors) {
       return {
         success: false,
@@ -69,19 +67,38 @@ export const getAllApprovedCustomers = async (
         data: [],
       };
     }
-    
+
     let customers = result?.data?.mst_customer || [];
 
     // Client-side filtering
     if (filters?.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
       customers = customers.filter((customer: any) => {
-        const name = (customer.profile_name || customer.business_name || customer.pan_full_name || "").toLowerCase();
-        const virtualNumber = customer.mst_virtual_numbers?.[0]?.virtual_number?.toLowerCase() || "";
-        const callForward = customer.mst_virtual_numbers?.[0]?.call_forwarding_number?.toLowerCase() || "";
-        const resellerName = (customer.mst_reseller?.business_name || 
-          `${customer.mst_reseller?.first_name || ""} ${customer.mst_reseller?.last_name || ""}`.trim() || "").toLowerCase();
-        return name.includes(searchLower) || virtualNumber.includes(searchLower) || callForward.includes(searchLower) || resellerName.includes(searchLower);
+        const name = (
+          customer.profile_name ||
+          customer.business_name ||
+          customer.pan_full_name ||
+          ""
+        ).toLowerCase();
+        const virtualNumber =
+          customer.mst_virtual_numbers?.[0]?.virtual_number?.toLowerCase() ||
+          "";
+        const callForward =
+          customer.mst_virtual_numbers?.[0]?.call_forwarding_number?.toLowerCase() ||
+          "";
+        const resellerName = (
+          customer.mst_reseller?.business_name ||
+          `${customer.mst_reseller?.first_name || ""} ${
+            customer.mst_reseller?.last_name || ""
+          }`.trim() ||
+          ""
+        ).toLowerCase();
+        return (
+          name.includes(searchLower) ||
+          virtualNumber.includes(searchLower) ||
+          callForward.includes(searchLower) ||
+          resellerName.includes(searchLower)
+        );
       });
     }
 
@@ -91,8 +108,10 @@ export const getAllApprovedCustomers = async (
         const purchaseDate = customer.mst_virtual_numbers?.[0]?.purchase_date;
         if (!purchaseDate) return false;
         const purchase = new Date(purchaseDate);
-        if (filters?.startDate && purchase < new Date(filters.startDate)) return false;
-        if (filters?.endDate && purchase > new Date(filters.endDate)) return false;
+        if (filters?.startDate && purchase < new Date(filters.startDate))
+          return false;
+        if (filters?.endDate && purchase > new Date(filters.endDate))
+          return false;
         return true;
       });
     }
@@ -109,7 +128,7 @@ export const getAllApprovedCustomers = async (
         return expiry >= today && expiry <= thirtyDaysLater;
       });
     }
-    
+
     return {
       success: true,
       data: customers,
@@ -182,12 +201,12 @@ export const getApprovedCustomersByReseller = async (
   }`;
 
   try {
-    const variables: any = { 
+    const variables: any = {
       reseller_id: resellerId,
     };
 
     const result = await graphqlRequest(QUERY, variables);
-    
+
     if (result?.errors) {
       return {
         success: false,
@@ -195,17 +214,29 @@ export const getApprovedCustomersByReseller = async (
         data: [],
       };
     }
-    
+
     let customers = result?.data?.mst_customer || [];
 
     // Client-side filtering
     if (filters?.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
       customers = customers.filter((customer: any) => {
-        const name = (customer.profile_name || customer.business_name || customer.pan_full_name || "").toLowerCase();
-        const virtualNumber = customer.mst_virtual_number?.[0]?.virtual_number?.toLowerCase() || "";
-        const callForward = customer.mst_virtual_number?.[0]?.call_forwarding_number?.toLowerCase() || "";
-        return name.includes(searchLower) || virtualNumber.includes(searchLower) || callForward.includes(searchLower);
+        const name = (
+          customer.profile_name ||
+          customer.business_name ||
+          customer.pan_full_name ||
+          ""
+        ).toLowerCase();
+        const virtualNumber =
+          customer.mst_virtual_number?.[0]?.virtual_number?.toLowerCase() || "";
+        const callForward =
+          customer.mst_virtual_number?.[0]?.call_forwarding_number?.toLowerCase() ||
+          "";
+        return (
+          name.includes(searchLower) ||
+          virtualNumber.includes(searchLower) ||
+          callForward.includes(searchLower)
+        );
       });
     }
 
@@ -215,8 +246,10 @@ export const getApprovedCustomersByReseller = async (
         const purchaseDate = customer.mst_virtual_number?.[0]?.purchase_date;
         if (!purchaseDate) return false;
         const purchase = new Date(purchaseDate);
-        if (filters?.startDate && purchase < new Date(filters.startDate)) return false;
-        if (filters?.endDate && purchase > new Date(filters.endDate)) return false;
+        if (filters?.startDate && purchase < new Date(filters.startDate))
+          return false;
+        if (filters?.endDate && purchase > new Date(filters.endDate))
+          return false;
         return true;
       });
     }
@@ -233,7 +266,7 @@ export const getApprovedCustomersByReseller = async (
         return expiry >= today && expiry <= thirtyDaysLater;
       });
     }
-    
+
     return {
       success: true,
       data: customers,
@@ -308,7 +341,7 @@ export const getCustomerWithTransactions = async (customerId: string) => {
 
   try {
     const result = await graphqlRequest(QUERY, { id: customerId });
-    
+
     if (result?.errors) {
       return {
         success: false,
@@ -316,14 +349,14 @@ export const getCustomerWithTransactions = async (customerId: string) => {
         data: null,
       };
     }
-    
+
     if (result?.data?.mst_customer_by_pk) {
       return {
         success: true,
         data: result.data.mst_customer_by_pk,
       };
     }
-    
+
     return {
       success: false,
       message: "Customer not found",
@@ -357,7 +390,7 @@ export const suspendCustomer = async (customerId: string) => {
 
   try {
     const result = await graphqlRequest(MUTATION, { id: customerId });
-    
+
     if (result?.errors) {
       return {
         success: false,
@@ -365,7 +398,7 @@ export const suspendCustomer = async (customerId: string) => {
         data: null,
       };
     }
-    
+
     if (result?.data?.update_mst_customer_by_pk) {
       return {
         success: true,
@@ -373,7 +406,7 @@ export const suspendCustomer = async (customerId: string) => {
         message: "Customer account suspended successfully",
       };
     }
-    
+
     return {
       success: false,
       message: "Failed to suspend customer",
@@ -387,4 +420,3 @@ export const suspendCustomer = async (customerId: string) => {
     };
   }
 };
-
