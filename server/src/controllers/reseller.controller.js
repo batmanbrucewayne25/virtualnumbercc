@@ -24,7 +24,8 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
     const domainWithoutWww = normalizedDomain.replace(/^www\./, '');
     
     // Query reseller_domain table (only approved domains)
-    const query = `
+    // First, get the domain record with reseller UUID
+    const domainQuery = `
       query GetResellerByDomain($domain1: String!, $domain2: String!) {
         mst_reseller_domain(
           where: {
@@ -39,7 +40,30 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
           id
           domain
           approved
-          reseller {
+          reseller
+        }
+      }
+    `;
+
+    const domainResult = await client.client.request(domainQuery, {
+      domain1: normalizedDomain,
+      domain2: domainWithoutWww,
+    });
+
+    if (domainResult.mst_reseller_domain && domainResult.mst_reseller_domain.length > 0) {
+      const domainRecord = domainResult.mst_reseller_domain[0];
+      
+      // Fetch reseller separately since reseller is a UUID, not a relationship
+      if (!domainRecord.reseller) {
+        return res.status(404).json({
+          success: false,
+          message: 'Reseller not found for this domain',
+        });
+      }
+
+      const resellerQuery = `
+        query GetResellerById($id: uuid!) {
+          mst_reseller_by_pk(id: $id) {
             id
             first_name
             last_name
@@ -48,20 +72,23 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
             status
           }
         }
-      }
-    `;
+      `;
 
-    const result = await client.client.request(query, {
-      domain1: normalizedDomain,
-      domain2: domainWithoutWww,
-    });
+      const resellerResult = await client.client.request(resellerQuery, {
+        id: domainRecord.reseller
+      });
 
-    if (result.mst_reseller_domain && result.mst_reseller_domain.length > 0) {
-      const domainRecord = result.mst_reseller_domain[0];
-      const reseller = domainRecord.reseller;
+      const reseller = resellerResult.mst_reseller_by_pk;
       
-      // Check if reseller is active
-      if (!reseller || reseller.status !== true) {
+      // Check if reseller exists and is active
+      if (!reseller) {
+        return res.status(404).json({
+          success: false,
+          message: 'Reseller not found',
+        });
+      }
+
+      if (reseller.status !== true) {
         return res.status(404).json({
           success: false,
           message: 'Reseller account is not active',

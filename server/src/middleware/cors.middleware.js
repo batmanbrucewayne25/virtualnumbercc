@@ -30,10 +30,7 @@ const isDomainApproved = async (hostname) => {
           id
           domain
           approved
-          reseller {
-            id
-            status
-          }
+          reseller
         }
       }
     `;
@@ -45,13 +42,33 @@ const isDomainApproved = async (hostname) => {
 
     if (result.mst_reseller_domain && result.mst_reseller_domain.length > 0) {
       const domainRecord = result.mst_reseller_domain[0];
-      // Check if reseller is active
-      return domainRecord.reseller && domainRecord.reseller.status === true;
+      
+      // Fetch reseller separately since reseller is a UUID, not a relationship
+      if (domainRecord.reseller) {
+        const resellerQuery = `
+          query GetResellerStatus($id: uuid!) {
+            mst_reseller_by_pk(id: $id) {
+              id
+              status
+            }
+          }
+        `;
+        
+        const resellerResult = await client.client.request(resellerQuery, {
+          id: domainRecord.reseller
+        });
+        
+        // Check if reseller is active
+        return resellerResult.mst_reseller_by_pk && resellerResult.mst_reseller_by_pk.status === true;
+      }
+      
+      return false;
     }
 
     return false;
   } catch (error) {
     console.error('Error checking domain approval:', error);
+    console.error('Error details:', error.message, error.stack);
     // On error, deny access for security
     return false;
   }
@@ -77,8 +94,11 @@ export const corsOriginHandler = async (origin, callback) => {
     hostname = url.hostname;
   } catch (e) {
     // Invalid URL, deny
+    console.error('Invalid origin URL:', origin, e.message);
     return callback(new Error('Invalid origin'));
   }
+
+  console.log(`[CORS] Checking origin: ${origin} (hostname: ${hostname})`);
 
   // 1. Check hardcoded allowed origins from env
   const allowedOrigins = process.env.CORS_ORIGIN 
@@ -86,22 +106,32 @@ export const corsOriginHandler = async (origin, callback) => {
     : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3001', 'https://app.virtualnumberindia.in'];
 
   if (allowedOrigins.includes(origin)) {
+    console.log(`[CORS] Origin allowed via CORS_ORIGIN env: ${origin}`);
     return callback(null, true);
   }
 
   // 2. Allow localhost for development (any port)
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    console.log(`[CORS] Origin allowed (localhost): ${origin}`);
     return callback(null, true);
   }
 
   // 3. Check database for approved domains
-  const isApproved = await isDomainApproved(hostname);
-  if (isApproved) {
-    return callback(null, true);
+  try {
+    const isApproved = await isDomainApproved(hostname);
+    if (isApproved) {
+      console.log(`[CORS] Origin allowed (approved domain): ${origin}`);
+      return callback(null, true);
+    } else {
+      console.log(`[CORS] Domain not approved in database: ${hostname}`);
+    }
+  } catch (error) {
+    console.error(`[CORS] Error checking domain approval for ${hostname}:`, error);
+    // Continue to deny if there's an error
   }
 
   // 4. Deny if not in any allowed list
-  console.warn(`CORS blocked origin: ${origin} (hostname: ${hostname})`);
+  console.warn(`[CORS] Blocked origin: ${origin} (hostname: ${hostname})`);
   return callback(new Error('Not allowed by CORS'));
 };
 
