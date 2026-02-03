@@ -10,7 +10,11 @@ interface PanVerificationData {
   gender: string;
 }
 
-const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
+interface Step4PropsWithSkip extends Step3Props {
+  skipOtpVerification?: boolean;
+}
+
+const Step4 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step4PropsWithSkip) => {
   const [panNumber, setPanNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -55,6 +59,35 @@ const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
   };
 
   const handleSubmit = async () => {
+    // If skipOtpVerification, allow manual entry without verification
+    if (skipOtpVerification) {
+      if (!panNumber.trim()) {
+        setError("Please enter PAN number.");
+        return;
+      }
+      if (!validatePanFormat(panNumber.trim())) {
+        setError("Invalid PAN format. Example: AAAAA1234A");
+        return;
+      }
+      
+      setLoading(true);
+      try {
+        await updatePanStep({
+          email,
+          pan_number: panNumber.trim(),
+          pan_dob: null,
+          pan_full_name: null,
+        });
+        onSubmit();
+      } catch {
+        setError("Failed to submit PAN details.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Original flow with verification
     if (!panData) return;
 
     setLoading(true);
@@ -79,6 +112,12 @@ const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
 
       {error && <div className="alert alert-danger mb-12">{error}</div>}
 
+      {skipOtpVerification && (
+        <div className="alert alert-info mb-16">
+          <p className="mb-0">PAN verification skipped (Admin mode). Enter PAN number manually.</p>
+        </div>
+      )}
+
       <input
         className="form-control h-56-px mb-16"
         placeholder="Enter PAN Number"
@@ -87,11 +126,11 @@ const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
           const value = e.target.value.toUpperCase();
           if (value === "" || /^[A-Z0-9]*$/.test(value)) setPanNumber(value);
         }}
-        disabled={isPanVerified}
+        disabled={isPanVerified && !skipOtpVerification}
       />
 
-      {/* VERIFY BUTTON */}
-      {!isPanVerified && (
+      {/* VERIFY BUTTON - Only show if not skipping verification */}
+      {!isPanVerified && !skipOtpVerification && (
         <button
           className="btn btn-outline-primary w-100 radius-12 mb-16"
           onClick={handleVerifyPan}
@@ -130,7 +169,7 @@ const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
       <button
         className="btn btn-primary w-100 radius-12"
         onClick={handleSubmit}
-        disabled={!showDetails || loading}
+        disabled={(skipOtpVerification ? false : !showDetails) || loading}
       >
         {loading ? "Please wait..." : "Submit & Continue"}
       </button>
@@ -138,4 +177,4 @@ const Step3 = ({ email, onBack, onSubmit }: Step3Props) => {
   );
 };
 
-export default Step3;
+export default Step4;

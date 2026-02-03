@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { validateAadharFormat } from "@/utils/aadharValidation";
 
 interface AadhaarVerificationData {
   full_name: string;
@@ -12,11 +13,12 @@ interface AadhaarVerificationData {
 
 interface Step6Props {
   email: string;
+  skipOtpVerification?: boolean;
   onBack: () => void;
   onSubmit: (data: AadhaarVerificationData) => void;
 }
 
-const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
+const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Props) => {
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarOtp, setAadhaarOtp] = useState("");
@@ -25,7 +27,6 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const validateAadhaar = (value: string) => /^\d{12}$/.test(value);
   const validateOtp = (value: string) => /^\d{6}$/.test(value);
 
   const handleGetOtp = async () => {
@@ -36,8 +37,44 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       return;
     }
 
-    if (!validateAadhaar(aadhaarNumber)) {
-      setError("Aadhaar must be exactly 12 digits.");
+    // If skipOtpVerification, allow manual entry without OTP
+    if (skipOtpVerification) {
+      // Validate Aadhar format (but not checksum for admin mode)
+      const cleaned = aadhaarNumber.replace(/[\s-]/g, '');
+      if (!/^\d{12}$/.test(cleaned)) {
+        setError("Aadhaar must be exactly 12 digits.");
+        return;
+      }
+      if (cleaned[0] === '0' || cleaned[0] === '1') {
+        setError("Aadhaar number cannot start with 0 or 1.");
+        return;
+      }
+      
+      // Auto-proceed without OTP
+      setLoading(true);
+      try {
+        onSubmit({
+          full_name: "",
+          aadhaar_number: cleaned,
+          dob: "",
+          gender: "",
+          address: null,
+          zip: "",
+          profile_image: "",
+        });
+      } catch (err) {
+        console.error("Failed to submit Aadhaar:", err);
+        setError("Failed to save Aadhaar details.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Validate Aadhar format and checksum
+    const validation = validateAadharFormat(aadhaarNumber);
+    if (!validation.valid) {
+      setError(validation.message);
       return;
     }
 
@@ -136,6 +173,12 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
 
       {error && <div className="alert alert-danger mb-12">{error}</div>}
 
+      {skipOtpVerification && (
+        <div className="alert alert-info mb-16">
+          <p className="mb-0">Aadhaar OTP verification skipped (Admin mode). Enter Aadhaar number manually.</p>
+        </div>
+      )}
+
       <div className="mb-16">
         <label className="form-label text-sm mb-8">
           Aadhaar Number <span className="text-danger">*</span>
@@ -144,14 +187,14 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
           className="form-control h-56-px mb-16"
           placeholder="Enter 12-digit Aadhaar Number"
           value={aadhaarNumber}
-          disabled={aadhaarOtpSent || loading}
+          disabled={(aadhaarOtpSent && !skipOtpVerification) || loading}
           onChange={(e) =>
             setAadhaarNumber(e.target.value.replace(/\D/g, "").slice(0, 12))
           }
         />
       </div>
 
-      {aadhaarOtpSent && (
+      {aadhaarOtpSent && !skipOtpVerification && (
         <div className="mb-16">
           <label className="form-label text-sm mb-8">Enter 6-digit OTP</label>
           <input
@@ -173,7 +216,9 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         disabled={loading}
         onClick={(e) => {
           e.preventDefault();
-          if (aadhaarOtpSent) {
+          if (skipOtpVerification) {
+            handleGetOtp();
+          } else if (aadhaarOtpSent) {
             handleSubmitOtp();
           } else {
             handleGetOtp();
@@ -181,12 +226,16 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         }}
       >
         {loading
-          ? aadhaarOtpSent
-            ? "Verifying OTP..."
-            : "Sending OTP..."
-          : aadhaarOtpSent
-            ? "Verify OTP"
-            : "Get OTP"}
+          ? skipOtpVerification
+            ? "Saving..."
+            : aadhaarOtpSent
+              ? "Verifying OTP..."
+              : "Sending OTP..."
+          : skipOtpVerification
+            ? "Continue"
+            : aadhaarOtpSent
+              ? "Verify OTP"
+              : "Get OTP"}
       </button>
 
       {aadhaarOtpSent && !loading && (

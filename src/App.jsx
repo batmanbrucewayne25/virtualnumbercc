@@ -15,6 +15,7 @@ import EditAdminPage from "./pages/EditAdminPage";
 import ResellerListPage from "./pages/ResellerListPage";
 import ViewResellerPage from "./pages/ViewResellerPage";
 import EditResellerPage from "./pages/EditResellerPage";
+import AdminAddResellerPage from "./pages/AdminAddResellerPage";
 import SubscriptionPlanListPage from "./pages/SubscriptionPlanListPage";
 import AddSubscriptionPlanPage from "./pages/AddSubscriptionPlanPage";
 import ViewSubscriptionPlanPage from "./pages/ViewSubscriptionPlanPage";
@@ -82,6 +83,7 @@ import WalletPage from "./pages/WalletPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ClientHubPage from "./pages/public/ClientHub/index";
 import CustomerListPage from "./pages/CustomerListPage";
+import AdminAddCustomerPage from "./pages/AdminAddCustomerPage";
 import ViewCustomerPage from "./pages/ViewCustomerPage";
 import TransactionListPage from "./pages/TransactionListPage";
 import ViewUserPage from "./pages/ViewUserPage";
@@ -134,6 +136,7 @@ function App() {
           <Route exact path='/view-admin/:id' element={<ViewAdminPage />} />
           <Route exact path='/edit-admin/:id' element={<EditAdminPage />} />
           <Route exact path='/reseller-list' element={<ResellerListPage />} />
+          <Route exact path='/add-reseller' element={<AdminAddResellerPage />} />
           <Route exact path='/view-reseller/:id' element={<ViewResellerPage />} />
           <Route exact path='/edit-reseller/:id' element={<EditResellerPage />} />
           <Route exact path='/subscription-plan-list' element={<SubscriptionPlanListPage />} />
@@ -141,6 +144,7 @@ function App() {
           <Route exact path='/view-subscription-plan/:id' element={<ViewSubscriptionPlanPage />} />
           <Route exact path='/edit-subscription-plan/:id' element={<EditSubscriptionPlanPage />} />
           <Route exact path='/customer-list' element={<CustomerListPage />} />
+          <Route exact path='/add-customer' element={<AdminAddCustomerPage />} />
           <Route exact path='/view-customer/:id' element={<ViewCustomerPage />} />
           <Route exact path='/transaction-list' element={<TransactionListPage />} />
           <Route exact path='/users-list' element={<UsersListPage />} />

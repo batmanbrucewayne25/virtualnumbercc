@@ -10,11 +10,12 @@ interface PanVerificationData {
 
 interface Step5Props {
   email: string;
+  skipOtpVerification?: boolean;
   onBack: () => void;
   onSubmit: (data: PanVerificationData) => void;
 }
 
-const Step5 = ({ email, onBack, onSubmit }: Step5Props) => {
+const Step5 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step5Props) => {
   const [panNumber, setPanNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -57,6 +58,29 @@ const Step5 = ({ email, onBack, onSubmit }: Step5Props) => {
   };
 
   const handleSubmit = async () => {
+    // If skipOtpVerification, allow manual entry without verification
+    if (skipOtpVerification) {
+      if (!panNumber.trim()) {
+        setError("Please enter PAN number.");
+        return;
+      }
+      if (!validatePanFormat(panNumber.trim())) {
+        setError("Invalid PAN format. Example: AAAAA1234A");
+        return;
+      }
+      
+      // Submit with minimal data
+      onSubmit({
+        pan_number: panNumber.trim(),
+        full_name: "",
+        category: "",
+        dob: "",
+        gender: "",
+      });
+      return;
+    }
+
+    // Original flow with verification
     if (!panData) return;
     onSubmit(panData);
   };
@@ -66,6 +90,12 @@ const Step5 = ({ email, onBack, onSubmit }: Step5Props) => {
       <h4 className="mb-12">PAN Card Verification</h4>
 
       {error && <div className="alert alert-danger mb-12">{error}</div>}
+
+      {skipOtpVerification && (
+        <div className="alert alert-info mb-16">
+          <p className="mb-0">PAN verification skipped (Admin mode). Enter PAN number manually.</p>
+        </div>
+      )}
 
       <div className="mb-16">
         <label className="form-label text-sm mb-8">
@@ -79,11 +109,11 @@ const Step5 = ({ email, onBack, onSubmit }: Step5Props) => {
             const value = e.target.value.toUpperCase();
             if (value === "" || /^[A-Z0-9]*$/.test(value)) setPanNumber(value);
           }}
-          disabled={isPanVerified}
+          disabled={isPanVerified && !skipOtpVerification}
         />
       </div>
 
-      {!isPanVerified && (
+      {!isPanVerified && !skipOtpVerification && (
         <button
           type="button"
           className="btn btn-outline-primary w-100 radius-12 mb-16"
@@ -131,7 +161,7 @@ const Step5 = ({ email, onBack, onSubmit }: Step5Props) => {
           e.preventDefault();
           handleSubmit();
         }}
-        disabled={!isPanVerified || loading}
+        disabled={(skipOtpVerification ? false : !isPanVerified) || loading}
       >
         {loading ? "Please wait..." : "Submit & Continue"}
       </button>
