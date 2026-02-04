@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getApiBaseUrl } from "@/utils/apiUrl";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
 type OtpVerifyProps = {
   title: string;

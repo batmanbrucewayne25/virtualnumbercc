@@ -19,7 +19,7 @@ const decodeJWT = (token) => {
         .map(function (c) {
           return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
         })
-        .join("")
+        .join(""),
     );
     return JSON.parse(jsonPayload);
   } catch (e) {
@@ -220,10 +220,24 @@ const UsersListLayer = () => {
     );
   });
 
+  const isAdmin = userRole === "admin" || userRole === "super_admin";
+
   return (
     <div className="card h-100 p-0 radius-12">
       <div className="card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between">
         <h5 className="text-md text-primary-light mb-0">Approved Customers</h5>
+        {isAdmin && (
+          <Link
+            to="/add-customer"
+            className="btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2"
+          >
+            <Icon
+              icon="ic:baseline-plus"
+              className="icon text-xl line-height-1"
+            />
+            Add New Customer
+          </Link>
+        )}
       </div>
 
       <div className="card-body p-24">

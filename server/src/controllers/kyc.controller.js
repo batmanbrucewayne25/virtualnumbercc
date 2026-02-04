@@ -1,5 +1,6 @@
 import { KYCService } from "../services/kyc.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { validateAadharFormat } from "../utils/aadharValidation.js";
 
 /**
  * @desc    Generate Aadhaar OTP
@@ -13,6 +14,15 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: "Aadhaar number (id_number) is required",
+    });
+  }
+
+  // Validate Aadhar format and checksum before proceeding
+  const validation = validateAadharFormat(id_number);
+  if (!validation.valid) {
+    return res.status(400).json({
+      success: false,
+      message: validation.message,
     });
   }
 
@@ -112,7 +122,7 @@ export const verifyGST = asyncHandler(async (req, res) => {
   try {
     const result = await KYCService.verifyGST(
       id_number,
-      filing_status_get !== false
+      filing_status_get !== false,
     );
     res.status(200).json(result);
   } catch (error) {
@@ -142,7 +152,7 @@ export const verifyGSTSpecial = asyncHandler(async (req, res) => {
   try {
     const result = await KYCService.verifyGSTSpecial(
       id_number,
-      filing_status_get !== false
+      filing_status_get !== false,
     );
     res.status(200).json(result);
   } catch (error) {

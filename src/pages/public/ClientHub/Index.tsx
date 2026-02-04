@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
-import { getApiBaseUrl } from "@/utils/apiUrl";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
 import Step3 from "./steps/Step3";
@@ -14,14 +14,26 @@ import Step9 from "./steps/Step9";
 import Step10 from "./steps/Step10";
 import Step11 from "./steps/Step11";
 
-const ClientHubLayer = () => {
+interface ClientHubLayerProps {
+  skipOtpVerification?: boolean;
+  resellerId?: string;
+  isAdminMode?: boolean;
+}
+
+const ClientHubLayer = ({
+  skipOtpVerification = false,
+  resellerId: resellerIdProp,
+  isAdminMode = false,
+}: ClientHubLayerProps) => {
   const { resellerId: resellerIdFromUrl } = useParams<{
     resellerId?: string;
   }>();
-  const [resellerId, setResellerId] = useState<string | null>(null);
-  const [step, setStep] = useState<number>(1);
+  const [resellerId, setResellerId] = useState<string | null>(
+    resellerIdProp || null
+  );
+  const [step, setStep] = useState<number>(isAdminMode ? 2 : 1); // Skip Step1 (login/signup) in admin mode
   const [resellerData, setResellerData] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!isAdminMode); // Don't load if admin mode with resellerId provided
   const [error, setError] = useState<string>("");
   const [formData, setFormData] = useState<any>({
     email: "",
@@ -34,6 +46,26 @@ const ClientHubLayer = () => {
   });
 
   useEffect(() => {
+    // If resellerId is provided as prop (admin mode), use it directly
+    if (resellerIdProp) {
+      setResellerId(resellerIdProp);
+      // Fetch reseller data
+      const fetchResellerData = async () => {
+        try {
+          const result = await getMstResellerById(resellerIdProp);
+          if (result.success && result.data) {
+            setResellerData(result.data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch reseller data:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchResellerData();
+      return;
+    }
+
     // Determine resellerId from URL param or domain
     const determineResellerId = async () => {
       setLoading(true);
@@ -116,7 +148,7 @@ const ClientHubLayer = () => {
     };
 
     determineResellerId();
-  }, [resellerIdFromUrl]);
+  }, [resellerIdFromUrl, resellerIdProp]);
 
   const handleStepChange = (newStep: number) => {
     setStep(newStep);
@@ -271,6 +303,7 @@ const ClientHubLayer = () => {
           {step === 3 && (
             <Step3
               email={formData.email}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(2)}
               onVerify={handleStep3Verify}
             />
@@ -280,6 +313,7 @@ const ClientHubLayer = () => {
           {step === 4 && (
             <Step4
               phone={formData.phone}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(3)}
               onVerify={handleStep4Verify}
             />
@@ -289,6 +323,7 @@ const ClientHubLayer = () => {
           {step === 5 && (
             <Step5
               email={formData.email}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(4)}
               onSubmit={handleStep5Success}
             />
@@ -298,6 +333,7 @@ const ClientHubLayer = () => {
           {step === 6 && (
             <Step6
               email={formData.email}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(5)}
               onSubmit={handleStep6Success}
             />
@@ -308,6 +344,7 @@ const ClientHubLayer = () => {
             <Step7
               panData={formData.panData}
               aadhaarData={formData.aadhaarData}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(6)}
               onSuccess={handleStep7Success}
             />
@@ -355,7 +392,7 @@ const ClientHubLayer = () => {
           )}
 
           {/* FOOTER */}
-          {step !== 11 && (
+          {step !== 11 && !skipOtpVerification && (
             <div className="mt-32 text-center text-sm">
               <p>
                 Already have an account?{" "}
