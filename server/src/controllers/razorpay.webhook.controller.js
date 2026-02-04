@@ -479,3 +479,59 @@ export const getResellerConfig = asyncHandler(async (req, res) => {
     });
   }
 });
+
+/**
+ * @desc    Cleanup duplicate transactions for a customer
+ * @route   POST /api/razorpay/cleanup-duplicates
+ * @access  Private (Super Admin only)
+ */
+export const cleanupDuplicateTransactions = asyncHandler(async (req, res) => {
+  const { customer_id, reseller_id } = req.body;
+
+  // Validate UUIDs
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (!customer_id || !uuidRegex.test(customer_id)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid customer ID",
+    });
+  }
+
+  if (!reseller_id || !uuidRegex.test(reseller_id)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid reseller ID",
+    });
+  }
+
+  try {
+    const result = await WebhookService.cleanupDuplicateTransactions(
+      customer_id,
+      reseller_id
+    );
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: result.message,
+        data: {
+          deleted_count: result.deleted_count,
+          deleted_transactions: result.deleted_transactions || [],
+        },
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error cleaning up duplicate transactions:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to cleanup duplicate transactions",
+    });
+  }
+});

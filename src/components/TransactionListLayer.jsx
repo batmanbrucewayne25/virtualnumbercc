@@ -67,17 +67,20 @@ const TransactionListLayer = () => {
       // Prepare data for Excel
       const excelData = transactions.map((txn) => ({
         "Transaction Number": txn.transaction_number || "-",
-        "Customer Name": txn.mst_customer?.profile_name || txn.mst_customer?.email || "-",
+        "Customer Name":
+          txn.mst_customer?.profile_name || txn.mst_customer?.email || "-",
         "Customer Email": txn.mst_customer?.email || "-",
         "Virtual Number": txn.mst_virtual_number?.virtual_number || "-",
         "Payment Mode": txn.payment_mode || "-",
         "Payment Method": txn.payment_method || "-",
         "Reference Number": txn.reference_number || "-",
         "Amount (₹)": Number(txn.amount).toFixed(2),
-        "Status": txn.status || "-",
+        Status: txn.status || "-",
         "Transaction Type": txn.transaction_type || "-",
         "Payment Date": txn.payment_date || "-",
-        "Created At": txn.created_at ? new Date(txn.created_at).toLocaleString() : "-",
+        "Created At": txn.created_at
+          ? new Date(txn.created_at).toLocaleString()
+          : "-",
         "Failure Reason": txn.failure_reason || "-",
       }));
 
@@ -107,14 +110,15 @@ const TransactionListLayer = () => {
       XLSX.utils.book_append_sheet(wb, ws, "Transactions");
 
       // Generate filename with date range
-      const dateStr = startDate && endDate 
-        ? `${startDate}_to_${endDate}`
-        : new Date().toISOString().split("T")[0];
+      const dateStr =
+        startDate && endDate
+          ? `${startDate}_to_${endDate}`
+          : new Date().toISOString().split("T")[0];
       const filename = `transactions_${dateStr}.xlsx`;
 
       // Write file
       XLSX.writeFile(wb, filename);
-      
+
       alert("Transactions exported to Excel successfully!");
     } catch (err) {
       console.error("Error exporting to Excel:", err);
@@ -153,14 +157,41 @@ const TransactionListLayer = () => {
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      success: { class: "bg-success-focus text-success-600 border-success-main", text: "Success" },
-      failure: { class: "bg-danger-focus text-danger-600 border-danger-main", text: "Failure" },
-      pending: { class: "bg-warning-focus text-warning-600 border-warning-main", text: "Pending" },
+      success: {
+        class: "bg-success-focus text-success-600 border-success-main",
+        text: "Success",
+      },
+      captured: {
+        class: "bg-success-focus text-success-600 border-success-main",
+        text: "Success",
+      },
+      authorized: {
+        class: "bg-info-focus text-info-600 border-info-main",
+        text: "Authorized",
+      },
+      failed: {
+        class: "bg-danger-focus text-danger-600 border-danger-main",
+        text: "Failed",
+      },
+      failure: {
+        class: "bg-danger-focus text-danger-600 border-danger-main",
+        text: "Failed",
+      },
+      refunded: {
+        class: "bg-secondary-focus text-secondary-600 border-secondary-main",
+        text: "Refunded",
+      },
+      pending: {
+        class: "bg-warning-focus text-warning-600 border-warning-main",
+        text: "Pending",
+      },
     };
 
     const config = statusConfig[status?.toLowerCase()] || statusConfig.pending;
     return (
-      <span className={`${config.class} border px-24 py-4 radius-4 fw-medium text-sm`}>
+      <span
+        className={`${config.class} border px-24 py-4 radius-4 fw-medium text-sm`}
+      >
         {config.text}
       </span>
     );
@@ -169,11 +200,12 @@ const TransactionListLayer = () => {
   // Filter transactions based on search term (client-side for better UX)
   const filteredTransactions = transactions.filter((txn) => {
     if (!searchTerm) return true;
-    
+
     const searchLower = searchTerm.toLowerCase();
     const customerName = txn.mst_customer?.profile_name?.toLowerCase() || "";
     const customerEmail = txn.mst_customer?.email?.toLowerCase() || "";
-    const virtualNumber = txn.mst_virtual_number?.virtual_number?.toLowerCase() || "";
+    const virtualNumber =
+      txn.mst_virtual_number?.virtual_number?.toLowerCase() || "";
     const referenceNumber = txn.reference_number?.toLowerCase() || "";
     const transactionNumber = txn.transaction_number?.toLowerCase() || "";
 
@@ -187,127 +219,142 @@ const TransactionListLayer = () => {
   });
 
   return (
-    <div className='card h-100 p-0 radius-12'>
-      <div className='card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between'>
-        <h5 className='text-md text-primary-light mb-0'>Transactions</h5>
-        <div className='d-flex align-items-center flex-wrap gap-3'>
+    <div className="card h-100 p-0 radius-12">
+      <div className="card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between">
+        <h5 className="text-md text-primary-light mb-0">Transactions</h5>
+        <div className="d-flex align-items-center flex-wrap gap-3">
           <button
-            type='button'
-            className='btn btn-success btn-sm d-flex align-items-center gap-2'
+            type="button"
+            className="btn btn-success btn-sm d-flex align-items-center gap-2"
             onClick={exportToExcel}
             disabled={exporting || filteredTransactions.length === 0}
           >
-            <Icon icon='mdi:file-excel' className='icon' />
+            <Icon icon="mdi:file-excel" className="icon" />
             {exporting ? "Exporting..." : "Export to Excel"}
           </button>
         </div>
       </div>
 
-      <div className='card-body p-24'>
+      <div className="card-body p-24">
         {/* Filters */}
-        <div className='row g-3 mb-24'>
-          <div className='col-md-3'>
-            <label className='form-label text-sm fw-semibold mb-8'>Search</label>
-            <div className='d-flex gap-2'>
+        <div className="row g-3 mb-24">
+          <div className="col-md-3">
+            <label className="form-label text-sm fw-semibold mb-8">
+              Search
+            </label>
+            <div className="d-flex gap-2">
               <input
-                type='text'
-                className='form-control form-control-sm'
-                placeholder='Customer name, virtual number, reference...'
+                type="text"
+                className="form-control form-control-sm"
+                placeholder="Customer name, virtual number, reference..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSearch()}
               />
               <button
-                type='button'
-                className='btn btn-primary btn-sm'
+                type="button"
+                className="btn btn-primary btn-sm"
                 onClick={handleSearch}
               >
-                <Icon icon='ion:search-outline' />
+                <Icon icon="ion:search-outline" />
               </button>
             </div>
           </div>
 
-          <div className='col-md-2'>
-            <label className='form-label text-sm fw-semibold mb-8'>Status</label>
+          <div className="col-md-2">
+            <label className="form-label text-sm fw-semibold mb-8">
+              Status
+            </label>
             <select
-              className='form-select form-select-sm'
+              className="form-select form-select-sm"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value='all'>All Status</option>
-              <option value='success'>Success</option>
-              <option value='failure'>Failure</option>
-              <option value='pending'>Pending</option>
+              <option value="all">All Status</option>
+              <option value="success">Success</option>
+              <option value="failure">Failure</option>
+              <option value="pending">Pending</option>
             </select>
           </div>
 
-          <div className='col-md-2'>
-            <label className='form-label text-sm fw-semibold mb-8'>Start Date</label>
+          <div className="col-md-2">
+            <label className="form-label text-sm fw-semibold mb-8">
+              Start Date
+            </label>
             <input
-              type='date'
-              className='form-control form-control-sm'
+              type="date"
+              className="form-control form-control-sm"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
 
-          <div className='col-md-2'>
-            <label className='form-label text-sm fw-semibold mb-8'>End Date</label>
+          <div className="col-md-2">
+            <label className="form-label text-sm fw-semibold mb-8">
+              End Date
+            </label>
             <input
-              type='date'
-              className='form-control form-control-sm'
+              type="date"
+              className="form-control form-control-sm"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
 
-          <div className='col-md-3 d-flex align-items-end'>
+          <div className="col-md-3 d-flex align-items-end">
             <button
-              type='button'
-              className='btn btn-secondary btn-sm'
+              type="button"
+              className="btn btn-secondary btn-sm"
               onClick={handleClearFilters}
             >
-              <Icon icon='mdi:filter-off' className='icon me-2' />
+              <Icon icon="mdi:filter-off" className="icon me-2" />
               Clear Filters
             </button>
           </div>
         </div>
 
         {error && (
-          <div className='alert alert-danger radius-8 mb-24' role='alert'>
-            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+          <div className="alert alert-danger radius-8 mb-24" role="alert">
+            <Icon icon="material-symbols:error-outline" className="icon me-2" />
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className='text-center py-40'>
+          <div className="text-center py-40">
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p className='text-muted mt-3'>Loading transactions...</p>
+            <p className="text-muted mt-3">Loading transactions...</p>
           </div>
         ) : filteredTransactions.length === 0 ? (
-          <div className='text-center py-40'>
-            <Icon icon='mdi:receipt-text-outline' className='icon text-6xl text-muted mb-3' />
-            <p className='text-muted'>No transactions found</p>
+          <div className="text-center py-40">
+            <Icon
+              icon="mdi:receipt-text-outline"
+              className="icon text-6xl text-muted mb-3"
+            />
+            <p className="text-muted">No transactions found</p>
           </div>
         ) : (
           <>
-            <div className='table-responsive scroll-sm'>
-              <table className='table bordered-table sm-table mb-0'>
+            <div className="table-responsive scroll-sm">
+              <table className="table bordered-table sm-table mb-0">
                 <thead>
                   <tr>
-                    <th scope='col'>S.L</th>
-                    <th scope='col'>Transaction #</th>
-                    <th scope='col'>Date</th>
-                    <th scope='col'>Customer Name</th>
-                    <th scope='col'>Virtual Number</th>
-                    <th scope='col'>Payment Mode</th>
-                    <th scope='col'>Payment Method</th>
-                    <th scope='col'>Reference Number</th>
-                    <th scope='col' className='text-end'>Amount</th>
-                    <th scope='col' className='text-center'>Status</th>
+                    <th scope="col">S.L</th>
+                    <th scope="col">Transaction #</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Customer Name</th>
+                    <th scope="col">Virtual Number</th>
+                    <th scope="col">Payment Mode</th>
+                    <th scope="col">Payment Method</th>
+                    <th scope="col">Reference Number</th>
+                    <th scope="col" className="text-end">
+                      Amount
+                    </th>
+                    <th scope="col" className="text-center">
+                      Status
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -315,47 +362,47 @@ const TransactionListLayer = () => {
                     <tr key={txn.id}>
                       <td>{index + 1}</td>
                       <td>
-                        <span className='text-sm fw-medium text-primary-600'>
+                        <span className="text-sm fw-medium text-primary-600">
                           {txn.transaction_number || "-"}
                         </span>
                       </td>
                       <td>{formatDate(txn.payment_date || txn.created_at)}</td>
                       <td>
-                        <div className='d-flex flex-column'>
-                          <span className='text-sm fw-medium'>
+                        <div className="d-flex flex-column">
+                          <span className="text-sm fw-medium">
                             {txn.mst_customer?.profile_name || "N/A"}
                           </span>
-                          <span className='text-xs text-secondary-light'>
+                          <span className="text-xs text-secondary-light">
                             {txn.mst_customer?.email || ""}
                           </span>
                         </div>
                       </td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {txn.mst_virtual_number?.virtual_number || "-"}
                         </span>
                       </td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {txn.payment_mode || "-"}
                         </span>
                       </td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {txn.payment_method || "-"}
                         </span>
                       </td>
                       <td>
-                        <span className='text-sm'>
+                        <span className="text-sm">
                           {txn.reference_number || "-"}
                         </span>
                       </td>
-                      <td className='text-end'>
-                        <span className='text-sm fw-medium text-success-600'>
+                      <td className="text-end">
+                        <span className="text-sm fw-medium text-success-600">
                           {formatCurrency(txn.amount)}
                         </span>
                       </td>
-                      <td className='text-center'>
+                      <td className="text-center">
                         {getStatusBadge(txn.status)}
                       </td>
                     </tr>
@@ -363,9 +410,10 @@ const TransactionListLayer = () => {
                 </tbody>
               </table>
             </div>
-            <div className='d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24'>
+            <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24">
               <span>
-                Showing {filteredTransactions.length} of {transactions.length} transaction(s)
+                Showing {filteredTransactions.length} of {transactions.length}{" "}
+                transaction(s)
               </span>
             </div>
           </>
@@ -376,4 +424,3 @@ const TransactionListLayer = () => {
 };
 
 export default TransactionListLayer;
-

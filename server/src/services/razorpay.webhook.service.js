@@ -105,6 +105,138 @@ export async function getResellerInfo(resellerId) {
 }
 
 /**
+ * Check if webhook event was already processed (IDEMPOTENCY CHECK)
+ * Uses webhook event ID to prevent duplicate processing
+ * @param {string} eventId - Razorpay webhook event ID (e.g., event_...)
+ * @param {string} resellerId - Reseller UUID
+ * @returns {Promise<boolean>} True if event was already processed
+ */
+export async function isWebhookEventProcessed(eventId, resellerId) {
+  if (!eventId) return false;
+
+  const client = getHasuraClient();
+
+  // Check if we have a webhook_events table, if not, fall back to old method
+  const query = `
+    query CheckWebhookEvent($event_id: String!, $reseller_id: uuid!) {
+      mst_webhook_events(
+        where: { 
+          event_id: { _eq: $event_id }
+          reseller_id: { _eq: $reseller_id }
+        }
+        limit: 1
+      ) {
+        id
+        event_id
+        processed_at
+        transaction_id
+      }
+    }
+  `;
+
+  try {
+    const result = await client.client.request(query, {
+      event_id: eventId,
+      reseller_id: resellerId,
+    });
+
+    const processed =
+      result.mst_webhook_events && result.mst_webhook_events.length > 0;
+
+    if (processed) {
+      console.log(`[IDEMPOTENCY] Event ${eventId} already processed, skipping`);
+    }
+
+    return processed;
+  } catch (error) {
+    // If table doesn't exist, return false (will be created)
+    if (
+      error.message?.includes("mst_webhook_events") ||
+      error.message?.includes("does not exist")
+    ) {
+      console.log(
+        "[IDEMPOTENCY] Webhook events table not found, using payment ID fallback"
+      );
+      return false;
+    }
+    console.error("Error checking webhook event:", error);
+    return false;
+  }
+}
+
+/**
+ * Record webhook event as processed (IDEMPOTENCY TRACKING)
+ * @param {string} eventId - Razorpay webhook event ID
+ * @param {string} resellerId - Reseller UUID
+ * @param {string} transactionId - Transaction ID that was created/updated
+ * @param {object} payload - Full webhook payload for audit
+ * @returns {Promise<boolean>}
+ */
+export async function recordWebhookEvent(
+  eventId,
+  resellerId,
+  transactionId,
+  payload
+) {
+  if (!eventId) return false;
+
+  const client = getHasuraClient();
+
+  const mutation = `
+    mutation RecordWebhookEvent(
+      $event_id: String!
+      $reseller_id: uuid!
+      $transaction_id: uuid
+      $event_type: String
+      $payload: jsonb
+    ) {
+      insert_mst_webhook_events_one(
+        object: {
+          event_id: $event_id
+          reseller_id: $reseller_id
+          transaction_id: $transaction_id
+          event_type: $event_type
+          payload: $payload
+          processed_at: "now()"
+        }
+        on_conflict: {
+          constraint: mst_webhook_events_event_id_key
+          update_columns: []
+        }
+      ) {
+        id
+        event_id
+      }
+    }
+  `;
+
+  try {
+    await client.client.request(mutation, {
+      event_id: eventId,
+      reseller_id: resellerId,
+      transaction_id: transactionId || null,
+      event_type: payload.event || null,
+      payload: payload || null,
+    });
+    console.log(`[IDEMPOTENCY] Recorded webhook event ${eventId}`);
+    return true;
+  } catch (error) {
+    // If table doesn't exist, continue without recording
+    if (
+      error.message?.includes("mst_webhook_events") ||
+      error.message?.includes("does not exist")
+    ) {
+      console.log(
+        "[IDEMPOTENCY] Webhook events table not found, skipping recording"
+      );
+      return false;
+    }
+    console.error("Error recording webhook event:", error);
+    return false;
+  }
+}
+
+/**
  * Check if transaction already exists (to prevent duplicates)
  * @param {string} razorpayPaymentId - Razorpay payment ID
  * @returns {Promise<object|null>} Returns transaction object if exists, null otherwise
@@ -186,54 +318,61 @@ export async function findCustomerByEmail(email, resellerId) {
 }
 
 /**
- * Find and DELETE existing pending transaction by customer_id and amount
+ * Find existing pending transaction by customer_id and amount
  * Uses amount tolerance to handle floating point precision issues
- * Deletes the pending transaction to avoid confusion with the new webhook transaction
+ * Returns the pending transaction for updating (instead of deleting)
  * @param {string} customerId - Customer UUID
  * @param {number} amount - Transaction amount
  * @param {string} resellerId - Reseller UUID
- * @returns {Promise<object|null>} Returns the pending transaction before deletion
+ * @returns {Promise<object|null>} Returns the pending transaction if found
  */
-export async function findAndDeletePendingTransaction(
+export async function findPendingTransaction(
   customerId,
   amount,
-  resellerId
+  resellerId,
+  orderId = null,
+  paymentId = null
 ) {
-  if (!customerId || !amount) {
-    console.log(
-      "[findAndDeletePendingTransaction] Missing customerId or amount"
-    );
+  if ((!customerId && !orderId && !paymentId) || !amount) {
     return null;
   }
 
   const client = getHasuraClient();
-
-  // Use amount tolerance (0.01) to handle floating point precision issues
   const amountTolerance = 0.01;
   const minAmount = amount - amountTolerance;
   const maxAmount = amount + amountTolerance;
 
-  console.log(
-    `[findAndDeletePendingTransaction] Searching for pending transaction: customer=${customerId}, amount=${amount} (${minAmount}-${maxAmount}), reseller=${resellerId}`
-  );
+  // Build dynamic where clause
+  let whereClause = {
+    amount: { _gte: minAmount, _lte: maxAmount },
+    reseller_id: { _eq: resellerId },
+    status: { _in: ["pending", "authorized"] },
+  };
 
-  // Find all pending transactions matching customer_id, amount, and reseller_id
+  // Search by payment_id if provided (most reliable)
+  if (paymentId) {
+    whereClause.razorpay_payment_id = { _eq: paymentId };
+  }
+  // Search by order_id
+  else if (orderId) {
+    whereClause.razorpay_order_id = { _eq: orderId };
+  }
+  // Search by customer_id (least reliable, only if no payment_id)
+  else if (customerId) {
+    whereClause.customer_id = { _eq: customerId };
+    whereClause.razorpay_payment_id = { _is_null: true };
+  } else {
+    return null;
+  }
+
   const query = `
     query FindPendingTransactions(
-      $customer_id: uuid!
-      $min_amount: numeric!
-      $max_amount: numeric!
-      $reseller_id: uuid!
+      $where: mst_transaction_bool_exp!
     ) {
       mst_transaction(
-        where: {
-          customer_id: { _eq: $customer_id }
-          amount: { _gte: $min_amount, _lte: $max_amount }
-          reseller_id: { _eq: $reseller_id }
-          status: { _eq: "pending" }
-          razorpay_payment_id: { _is_null: true }
-        }
+        where: $where
         order_by: { created_at: desc }
+        limit: 1
       ) {
         id
         transaction_number
@@ -241,6 +380,8 @@ export async function findAndDeletePendingTransaction(
         amount
         status
         reseller_id
+        razorpay_order_id
+        razorpay_payment_id
         created_at
       }
     }
@@ -248,44 +389,137 @@ export async function findAndDeletePendingTransaction(
 
   try {
     const result = await client.client.request(query, {
-      customer_id: customerId,
-      min_amount: minAmount,
-      max_amount: maxAmount,
-      reseller_id: resellerId,
+      where: whereClause,
     });
 
     if (result.mst_transaction && result.mst_transaction.length > 0) {
-      const pendingTxn = result.mst_transaction[0];
-      console.log(
-        `[findAndDeletePendingTransaction] Found ${result.mst_transaction.length} pending transaction(s), using: ${pendingTxn.transaction_number}`
-      );
-
-      // Delete ALL matching pending transactions to clean up any duplicates
-      const deleteMutation = `
-        mutation DeletePendingTransactions($ids: [uuid!]!) {
-          delete_mst_transaction(where: { id: { _in: $ids } }) {
-            affected_rows
-          }
-        }
-      `;
-
-      const idsToDelete = result.mst_transaction.map((txn) => txn.id);
-      await client.client.request(deleteMutation, { ids: idsToDelete });
-
-      console.log(
-        `[findAndDeletePendingTransaction] Deleted ${idsToDelete.length} pending transaction(s)`
-      );
-
-      return pendingTxn;
+      return result.mst_transaction[0];
     }
-
-    console.log(
-      "[findAndDeletePendingTransaction] No pending transaction found"
-    );
     return null;
   } catch (error) {
-    console.error("[findAndDeletePendingTransaction] Error:", error);
+    console.error("[findPendingTransaction] Error:", error);
     return null;
+  }
+}
+
+/**
+ * Update pending transaction with Razorpay payment details
+ * @param {string} transactionId - Transaction UUID to update
+ * @param {object} paymentData - Payment data from Razorpay webhook
+ * @param {string} status - Transaction status (authorized, captured, failed)
+ * @returns {Promise<object>}
+ */
+export async function updatePendingTransactionWithPayment(
+  transactionId,
+  paymentData,
+  status
+) {
+  const client = getHasuraClient();
+
+  // Map Razorpay status to our status
+  const statusMap = {
+    authorized: "authorized",
+    captured: "success",
+    failed: "failed",
+    refunded: "refunded",
+  };
+
+  const mappedStatus = statusMap[status] || status;
+
+  const mutation = `
+    mutation UpdatePendingTransaction(
+      $transaction_id: uuid!
+      $status: String!
+      $razorpay_payment_id: String
+      $razorpay_order_id: String
+      $razorpay_signature: String
+      $reference_number: String
+      $payment_date: date
+      $payment_method: String
+      $customer_email: String
+      $customer_phone: String
+      $customer_name: String
+      $description: String
+      $notes: jsonb
+      $failure_reason: String
+    ) {
+      update_mst_transaction_by_pk(
+        pk_columns: { id: $transaction_id }
+        _set: {
+          status: $status
+          razorpay_payment_id: $razorpay_payment_id
+          razorpay_order_id: $razorpay_order_id
+          razorpay_signature: $razorpay_signature
+          reference_number: $reference_number
+          payment_date: $payment_date
+          payment_method: $payment_method
+          payment_mode: "razorpay"
+          customer_email: $customer_email
+          customer_phone: $customer_phone
+          customer_name: $customer_name
+          description: $description
+          notes: $notes
+          failure_reason: $failure_reason
+        }
+      ) {
+        id
+        transaction_number
+        customer_id
+        reseller_id
+        status
+        razorpay_payment_id
+        razorpay_order_id
+        amount
+        updated_at
+      }
+    }
+  `;
+
+  try {
+    const result = await client.client.request(mutation, {
+      transaction_id: transactionId,
+      status: mappedStatus,
+      razorpay_payment_id: paymentData.id || null,
+      razorpay_order_id: paymentData.order_id || null,
+      razorpay_signature: null,
+      reference_number: paymentData.invoice_id || null,
+      payment_date: paymentData.created_at
+        ? new Date(paymentData.created_at * 1000).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+      payment_method: paymentData.method || null,
+      customer_email:
+        paymentData.email ||
+        paymentData.notes?.email ||
+        paymentData.notes?.customer_email ||
+        null,
+      customer_phone: paymentData.contact || paymentData.notes?.phone || null,
+      customer_name: paymentData.notes?.customer_name || null,
+      description: paymentData.description || null,
+      notes: paymentData.notes || null,
+      failure_reason:
+        paymentData.error_description || paymentData.error_reason || null,
+    });
+
+    if (result?.update_mst_transaction_by_pk) {
+      console.log(
+        `[updatePendingTransaction] Successfully updated transaction ${transactionId} to ${mappedStatus}`
+      );
+      return {
+        success: true,
+        data: result.update_mst_transaction_by_pk,
+      };
+    }
+
+    return {
+      success: false,
+      message: "Failed to update pending transaction",
+    };
+  } catch (error) {
+    console.error("[updatePendingTransaction] Error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to update pending transaction",
+    };
   }
 }
 
@@ -318,22 +552,21 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
   // Convert amount from paise to rupees for storage
   const amountInRupees = (paymentData.amount || 0) / 100;
 
-  // Try to find customer by email from payment data
-  let customerId = null;
-  const customerEmail =
-    paymentData.email ||
-    paymentData.notes?.email ||
-    paymentData.notes?.customer_email;
-  if (customerEmail) {
-    const customer = await findCustomerByEmail(customerEmail, resellerId);
-    if (customer) {
-      customerId = customer.id;
-    }
-  }
+  // Extract customer_id from notes first (most reliable)
+  let customerId = paymentData.notes?.customer_id || null;
 
-  // Also check notes for customer_id (set when creating payment link)
-  if (!customerId && paymentData.notes?.customer_id) {
-    customerId = paymentData.notes.customer_id;
+  // Fallback: Find by email
+  if (!customerId) {
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email;
+    if (customerEmail) {
+      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      if (customer) {
+        customerId = customer.id;
+      }
+    }
   }
 
   const mutation = `
@@ -445,16 +678,8 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
     });
 
     if (result?.insert_mst_transaction_one) {
-      // CRITICAL: Update customer status to "active" if payment is successful
-      if (
-        customerId &&
-        (status === "captured" ||
-          status === "authorized" ||
-          status === "success")
-      ) {
-        console.log(
-          `[UPDATE CUSTOMER] Updating customer ${customerId} status to active`
-        );
+      // Update customer status to "active" if payment is successful
+      if (customerId && (status === "success" || status === "authorized")) {
         await updateCustomerStatusAfterPayment(customerId, resellerId);
       }
 
@@ -503,31 +728,37 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
  * @param {string} resellerId - Reseller UUID
  */
 async function updateCustomerStatusAfterPayment(customerId, resellerId) {
+  if (!customerId) {
+    return false;
+  }
+
   const client = getHasuraClient();
 
   const mutation = `
-    mutation UpdateCustomerStatus($customer_id: uuid!, $status: String!) {
+    mutation UpdateCustomerStatus($customer_id: uuid!, $status: String!, $kyc_status: String!) {
       update_mst_customer_by_pk(
         pk_columns: { id: $customer_id }
-        _set: { status: $status, kyc_status: "verified" }
+        _set: { status: $status, kyc_status: $kyc_status }
       ) {
         id
         status
         kyc_status
+        updated_at
       }
     }
   `;
 
   try {
-    await client.client.request(mutation, {
+    const result = await client.client.request(mutation, {
       customer_id: customerId,
       status: "active",
+      kyc_status: "verified",
     });
-    console.log(
-      `[UPDATE CUSTOMER] Successfully updated customer ${customerId} to active`
-    );
+
+    return result?.update_mst_customer_by_pk ? true : false;
   } catch (error) {
-    console.error(`[UPDATE CUSTOMER] Error updating customer status:`, error);
+    console.error("[updateCustomerStatus] Error:", error.message);
+    return false;
   }
 }
 
@@ -784,17 +1015,10 @@ export async function processPaymentAuthorized(resellerId, payload) {
     };
   }
 
-  console.log(
-    `[processPaymentAuthorized] Processing payment ${paymentData.id}`
-  );
-
-  // Check if transaction already exists by payment ID FIRST
+  // Check if transaction already exists by payment ID
   if (paymentData.id) {
     const existingTransaction = await transactionExists(paymentData.id);
     if (existingTransaction) {
-      console.log(
-        `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
-      );
       return {
         success: true,
         data: existingTransaction,
@@ -804,20 +1028,51 @@ export async function processPaymentAuthorized(resellerId, payload) {
   }
 
   const amountInRupees = (paymentData.amount || 0) / 100;
-  const customerId = paymentData.notes?.customer_id;
 
-  // Find and DELETE the pending transaction
-  let pendingTransaction = null;
-  if (customerId) {
-    pendingTransaction = await findAndDeletePendingTransaction(
-      customerId,
-      amountInRupees,
-      resellerId
+  // Extract customer_id from multiple possible locations
+  let customerId = paymentData.notes?.customer_id || null;
+
+  // If not in notes, try to find by email
+  if (!customerId) {
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email;
+    if (customerEmail) {
+      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      if (customer) {
+        customerId = customer.id;
+      }
+    }
+  }
+
+  const orderId = paymentData.order_id || null;
+
+  // Try to find and UPDATE the pending transaction
+  const pendingTransaction = await findPendingTransaction(
+    customerId,
+    amountInRupees,
+    resellerId,
+    orderId,
+    paymentData.id
+  );
+
+  if (pendingTransaction) {
+    if (!customerId && pendingTransaction.customer_id) {
+      customerId = pendingTransaction.customer_id;
+    }
+
+    const updateResult = await updatePendingTransactionWithPayment(
+      pendingTransaction.id,
+      paymentData,
+      "authorized"
     );
-    if (pendingTransaction) {
-      console.log(
-        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
-      );
+
+    if (updateResult.success) {
+      if (customerId) {
+        await updateCustomerStatusAfterPayment(customerId, resellerId);
+      }
+      return updateResult;
     }
   }
 
@@ -825,7 +1080,6 @@ export async function processPaymentAuthorized(resellerId, payload) {
   if (paymentData.id) {
     const finalCheck = await transactionExists(paymentData.id);
     if (finalCheck) {
-      console.log(`[RACE CONDITION] Transaction just created, skipping`);
       return {
         success: true,
         data: finalCheck,
@@ -835,7 +1089,6 @@ export async function processPaymentAuthorized(resellerId, payload) {
   }
 
   // Create new transaction
-  console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
     status: "authorized",
@@ -850,6 +1103,8 @@ export async function processPaymentAuthorized(resellerId, payload) {
  */
 export async function processPaymentCaptured(resellerId, payload) {
   const paymentData = payload.payload?.payment?.entity;
+  const eventId = payload.event_id || payload.id; // Razorpay event ID
+
   if (!paymentData) {
     return {
       success: false,
@@ -857,50 +1112,155 @@ export async function processPaymentCaptured(resellerId, payload) {
     };
   }
 
-  console.log(`[processPaymentCaptured] Processing payment ${paymentData.id}`);
+  console.log(
+    `[processPaymentCaptured] Processing payment ${paymentData.id}, Event: ${eventId}`
+  );
 
-  // CRITICAL: Check if transaction already exists by payment ID FIRST
-  if (paymentData.id) {
-    const existingTransaction = await transactionExists(paymentData.id);
-    if (existingTransaction) {
+  // ========================================
+  // STEP 1: IDEMPOTENCY CHECK (Event-based)
+  // ========================================
+  if (eventId) {
+    const alreadyProcessed = await isWebhookEventProcessed(eventId, resellerId);
+    if (alreadyProcessed) {
+      const existing = await transactionExists(paymentData.id);
       console.log(
-        `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
+        `[IDEMPOTENCY] Event ${eventId} already processed, returning existing transaction`
       );
       return {
         success: true,
-        data: existingTransaction,
-        message: "Transaction already exists",
+        data: existing,
+        message: "Webhook event already processed (idempotency)",
       };
     }
   }
 
-  const amountInRupees = (paymentData.amount || 0) / 100;
-  const customerId = paymentData.notes?.customer_id;
+  // ========================================
+  // STEP 2: CHECK IF TRANSACTION EXISTS - UPDATE STATUS IF NEEDED
+  // ========================================
+  if (paymentData.id) {
+    const existingTransaction = await transactionExists(paymentData.id);
+    if (existingTransaction) {
+      // If transaction exists but status is not "success", update it
+      if (existingTransaction.status !== "success") {
+        const updateResult = await updateTransactionStatus(
+          paymentData.id,
+          "captured",
+          null,
+          existingTransaction.id,
+          paymentData,
+          resellerId
+        );
 
-  console.log(
-    `[processPaymentCaptured] Customer: ${customerId}, Amount: ${amountInRupees}`
-  );
+        // Update customer status if successful
+        if (updateResult.success && existingTransaction.customer_id) {
+          await updateCustomerStatusAfterPayment(
+            existingTransaction.customer_id,
+            resellerId
+          );
+        }
 
-  // Find and DELETE the pending transaction
-  let pendingTransaction = null;
-  if (customerId) {
-    pendingTransaction = await findAndDeletePendingTransaction(
-      customerId,
-      amountInRupees,
-      resellerId
-    );
-    if (pendingTransaction) {
-      console.log(
-        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
-      );
+        // Record event
+        if (eventId && updateResult.success) {
+          await recordWebhookEvent(
+            eventId,
+            resellerId,
+            existingTransaction.id,
+            payload
+          );
+        }
+
+        return updateResult;
+      }
+
+      // Transaction already exists and is "success", just record event
+      if (eventId) {
+        await recordWebhookEvent(
+          eventId,
+          resellerId,
+          existingTransaction.id,
+          payload
+        );
+      }
+      return {
+        success: true,
+        data: existingTransaction,
+        message: "Transaction already exists and is successful",
+      };
     }
   }
 
-  // Final check before creating
-  if (paymentData.id) {
+  // ========================================
+  // STEP 3: EXTRACT CUSTOMER ID
+  // ========================================
+  const amountInRupees = (paymentData.amount || 0) / 100;
+  let customerId = paymentData.notes?.customer_id || null;
+  const orderId = paymentData.order_id || null;
+
+  // Fallback: Find by email
+  if (!customerId) {
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email;
+    if (customerEmail) {
+      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      if (customer) {
+        customerId = customer.id;
+      }
+    }
+  }
+
+  // ========================================
+  // STEP 4: UPDATE PENDING TRANSACTION
+  // ========================================
+  let result = null;
+  let transactionId = null;
+
+  // Try to find pending transaction by payment_id, order_id, or customer_id
+  const pendingTransaction = await findPendingTransaction(
+    customerId,
+    amountInRupees,
+    resellerId,
+    orderId,
+    paymentData.id
+  );
+
+  if (pendingTransaction) {
+    // If customer_id wasn't found earlier, get it from pending transaction
+    if (!customerId && pendingTransaction.customer_id) {
+      customerId = pendingTransaction.customer_id;
+    }
+
+    const updateResult = await updatePendingTransactionWithPayment(
+      pendingTransaction.id,
+      paymentData,
+      "captured"
+    );
+
+    if (updateResult.success) {
+      result = updateResult;
+      transactionId = pendingTransaction.id;
+
+      // Update customer status to active after successful payment
+      if (customerId) {
+        await updateCustomerStatusAfterPayment(customerId, resellerId);
+      }
+    }
+  }
+
+  // ========================================
+  // STEP 5: FINAL DUPLICATE CHECK & SKIP CREATE
+  // ========================================
+  if (!result && paymentData.id) {
+    // One last check before giving up - maybe another webhook just processed it
     const finalCheck = await transactionExists(paymentData.id);
     if (finalCheck) {
-      console.log(`[RACE CONDITION] Transaction just created, skipping`);
+      console.log(
+        `[RACE CONDITION] Transaction created by concurrent webhook, returning it`
+      );
+      if (eventId) {
+        await recordWebhookEvent(eventId, resellerId, finalCheck.id, payload);
+      }
       return {
         success: true,
         data: finalCheck,
@@ -909,12 +1269,25 @@ export async function processPaymentCaptured(resellerId, payload) {
     }
   }
 
-  // Create new SUCCESS transaction
-  console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
-  return await createTransactionFromWebhook(resellerId, {
-    ...paymentData,
-    status: "captured",
-  });
+  // ========================================
+  // STEP 6: CREATE NEW TRANSACTION (Last Resort)
+  // ========================================
+  if (!result) {
+    result = await createTransactionFromWebhook(resellerId, {
+      ...paymentData,
+      status: "captured",
+    });
+    transactionId = result.data?.id;
+  }
+
+  // ========================================
+  // STEP 7: RECORD EVENT (Idempotency)
+  // ========================================
+  if (eventId && transactionId) {
+    await recordWebhookEvent(eventId, resellerId, transactionId, payload);
+  }
+
+  return result;
 }
 
 /**
@@ -931,6 +1304,8 @@ export async function processPaymentFailed(resellerId, payload) {
       message: "Invalid payment data in webhook payload",
     };
   }
+
+  console.log(`[processPaymentFailed] Processing payment ${paymentData.id}`);
 
   // CRITICAL: Check if transaction already exists by payment ID FIRST
   // This prevents race conditions where multiple webhooks arrive simultaneously
@@ -963,24 +1338,53 @@ export async function processPaymentFailed(resellerId, payload) {
     "Payment failed";
 
   const amountInRupees = (paymentData.amount || 0) / 100;
-  const customerId = paymentData.notes?.customer_id;
+
+  // Extract customer_id from multiple possible locations
+  let customerId = paymentData.notes?.customer_id || null;
+
+  // If not in notes, try to find by email
+  if (!customerId) {
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email;
+    if (customerEmail) {
+      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      if (customer) {
+        customerId = customer.id;
+      }
+    }
+  }
 
   console.log(
     `[processPaymentFailed] Customer: ${customerId}, Amount: ${amountInRupees}`
   );
 
-  // Find and DELETE the pending transaction
+  // Try to find and UPDATE the pending transaction
   let pendingTransaction = null;
   if (customerId) {
-    pendingTransaction = await findAndDeletePendingTransaction(
+    pendingTransaction = await findPendingTransaction(
       customerId,
       amountInRupees,
       resellerId
     );
     if (pendingTransaction) {
       console.log(
-        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+        `[UPDATE] Found pending transaction ${pendingTransaction.transaction_number}, updating with failure details`
       );
+      const updateResult = await updatePendingTransactionWithPayment(
+        pendingTransaction.id,
+        { ...paymentData, error_description: failureReason },
+        "failed"
+      );
+
+      if (updateResult.success) {
+        return updateResult;
+      } else {
+        console.error(
+          `[ERROR] Failed to update pending transaction, will create new one: ${updateResult.message}`
+        );
+      }
     }
   }
 
@@ -997,6 +1401,8 @@ export async function processPaymentFailed(resellerId, payload) {
     }
   }
 
+  // Create new transaction only if no pending transaction found
+  console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
     status: "failed",
@@ -1065,20 +1471,55 @@ export async function processOrderPaid(resellerId, payload) {
     }
 
     const amountInRupees = (paymentData.amount || 0) / 100;
-    const customerId = paymentData.notes?.customer_id;
 
-    // Find and DELETE the pending transaction
+    // Extract customer_id from multiple possible locations
+    let customerId = paymentData.notes?.customer_id || null;
+
+    // If not in notes, try to find by email
+    if (!customerId) {
+      const customerEmail =
+        paymentData.email ||
+        paymentData.notes?.email ||
+        paymentData.notes?.customer_email;
+      if (customerEmail) {
+        const customer = await findCustomerByEmail(customerEmail, resellerId);
+        if (customer) {
+          customerId = customer.id;
+        }
+      }
+    }
+
+    console.log(
+      `[processOrderPaid] Customer: ${customerId}, Amount: ${amountInRupees}`
+    );
+
+    // Try to find and UPDATE the pending transaction
     let pendingTransaction = null;
     if (customerId) {
-      pendingTransaction = await findAndDeletePendingTransaction(
+      pendingTransaction = await findPendingTransaction(
         customerId,
         amountInRupees,
         resellerId
       );
       if (pendingTransaction) {
         console.log(
-          `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+          `[UPDATE] Found pending transaction ${pendingTransaction.transaction_number}, updating with payment details`
         );
+        const updateResult = await updatePendingTransactionWithPayment(
+          pendingTransaction.id,
+          { ...paymentData, order_id: orderData?.id },
+          "captured"
+        );
+
+        if (updateResult.success) {
+          // Update customer status to active after successful payment
+          await updateCustomerStatusAfterPayment(customerId, resellerId);
+          return updateResult;
+        } else {
+          console.error(
+            `[ERROR] Failed to update pending transaction, will create new one: ${updateResult.message}`
+          );
+        }
       }
     }
 
@@ -1145,20 +1586,62 @@ export async function processSubscriptionCharged(resellerId, payload) {
   }
 
   const amountInRupees = (paymentData.amount || 0) / 100;
-  const customerId = paymentData.notes?.customer_id;
 
-  // Find and DELETE the pending transaction
+  // Extract customer_id from multiple possible locations
+  let customerId = paymentData.notes?.customer_id || null;
+
+  // If not in notes, try to find by email
+  if (!customerId) {
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email;
+    if (customerEmail) {
+      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      if (customer) {
+        customerId = customer.id;
+      }
+    }
+  }
+
+  console.log(
+    `[processSubscriptionCharged] Customer: ${customerId}, Amount: ${amountInRupees}`
+  );
+
+  // Try to find and UPDATE the pending transaction
   let pendingTransaction = null;
   if (customerId) {
-    pendingTransaction = await findAndDeletePendingTransaction(
+    pendingTransaction = await findPendingTransaction(
       customerId,
       amountInRupees,
       resellerId
     );
     if (pendingTransaction) {
       console.log(
-        `[DELETED] Removed pending transaction ${pendingTransaction.transaction_number}`
+        `[UPDATE] Found pending transaction ${pendingTransaction.transaction_number}, updating with payment details`
       );
+      const updateResult = await updatePendingTransactionWithPayment(
+        pendingTransaction.id,
+        {
+          ...paymentData,
+          notes: {
+            ...paymentData.notes,
+            subscription_id: subscriptionData?.id,
+            subscription_status: subscriptionData?.status,
+          },
+        },
+        "captured"
+      );
+
+      if (updateResult.success) {
+        // Update customer status to active after successful payment
+        await updateCustomerStatusAfterPayment(customerId, resellerId);
+        return updateResult;
+      } else {
+        console.error(
+          `[ERROR] Failed to update pending transaction, will create new one: ${updateResult.message}`
+        );
+      }
     }
   }
 
@@ -1175,7 +1658,8 @@ export async function processSubscriptionCharged(resellerId, payload) {
     }
   }
 
-  // Create new transaction with subscription info
+  // Create new transaction with subscription info only if no pending transaction found
+  console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
   return await createTransactionFromWebhook(resellerId, {
     ...paymentData,
     status: "captured",
@@ -1417,4 +1901,169 @@ export async function getTransactionStats() {
  */
 export function generateWebhookUrl(resellerId, baseUrl) {
   return `${baseUrl}/api/razorpay/webhook/${resellerId}`;
+}
+
+/**
+ * Cleanup duplicate transactions for a customer
+ * Finds duplicate transactions (pending + successful for same customer/amount)
+ * and removes the pending ones, keeping only the successful transaction
+ * @param {string} customerId - Customer UUID
+ * @param {string} resellerId - Reseller UUID
+ * @returns {Promise<object>}
+ */
+export async function cleanupDuplicateTransactions(customerId, resellerId) {
+  if (!customerId || !resellerId) {
+    return {
+      success: false,
+      message: "Customer ID and Reseller ID are required",
+    };
+  }
+
+  const client = getHasuraClient();
+
+  // Find all transactions for this customer
+  const query = `
+    query FindCustomerTransactions($customer_id: uuid!, $reseller_id: uuid!) {
+      mst_transaction(
+        where: {
+          customer_id: { _eq: $customer_id }
+          reseller_id: { _eq: $reseller_id }
+          transaction_type: { _eq: "payment" }
+        }
+        order_by: { created_at: asc }
+      ) {
+        id
+        transaction_number
+        status
+        amount
+        razorpay_payment_id
+        created_at
+        updated_at
+      }
+    }
+  `;
+
+  try {
+    const result = await client.client.request(query, {
+      customer_id: customerId,
+      reseller_id: resellerId,
+    });
+
+    const transactions = result.mst_transaction || [];
+
+    if (transactions.length <= 1) {
+      console.log(
+        `[cleanupDuplicates] No duplicates found for customer ${customerId}`
+      );
+      return {
+        success: true,
+        message: "No duplicate transactions found",
+        deleted_count: 0,
+      };
+    }
+
+    // Group transactions by amount to find duplicates
+    const transactionsByAmount = {};
+    transactions.forEach((txn) => {
+      const amountKey = Math.round(txn.amount * 100) / 100; // Round to 2 decimals
+      if (!transactionsByAmount[amountKey]) {
+        transactionsByAmount[amountKey] = [];
+      }
+      transactionsByAmount[amountKey].push(txn);
+    });
+
+    // Find duplicates: if there's a pending and a successful transaction with same amount
+    const transactionsToDelete = [];
+
+    Object.values(transactionsByAmount).forEach((group) => {
+      if (group.length > 1) {
+        const pendingTxns = group.filter((t) => t.status === "pending");
+        const successfulTxns = group.filter(
+          (t) =>
+            t.status === "success" ||
+            t.status === "authorized" ||
+            t.status === "captured"
+        );
+
+        // If we have both pending and successful transactions, delete the pending ones
+        if (pendingTxns.length > 0 && successfulTxns.length > 0) {
+          console.log(
+            `[cleanupDuplicates] Found ${pendingTxns.length} pending + ${successfulTxns.length} successful transactions for amount ${group[0].amount}`
+          );
+          transactionsToDelete.push(...pendingTxns);
+        }
+        // If we have multiple pending transactions (edge case), keep the newest one
+        else if (pendingTxns.length > 1) {
+          const sorted = pendingTxns.sort(
+            (a, b) => new Date(b.created_at) - new Date(a.created_at)
+          );
+          transactionsToDelete.push(...sorted.slice(1)); // Delete all but the newest
+        }
+        // If we have multiple successful transactions with same razorpay_payment_id (shouldn't happen)
+        else if (successfulTxns.length > 1) {
+          // Group by razorpay_payment_id
+          const byPaymentId = {};
+          successfulTxns.forEach((txn) => {
+            const key = txn.razorpay_payment_id || "no_payment_id";
+            if (!byPaymentId[key]) byPaymentId[key] = [];
+            byPaymentId[key].push(txn);
+          });
+
+          // If multiple transactions for same payment, keep only the oldest
+          Object.values(byPaymentId).forEach((dupGroup) => {
+            if (dupGroup.length > 1) {
+              const sorted = dupGroup.sort(
+                (a, b) => new Date(a.created_at) - new Date(b.created_at)
+              );
+              transactionsToDelete.push(...sorted.slice(1)); // Delete all but the oldest
+            }
+          });
+        }
+      }
+    });
+
+    if (transactionsToDelete.length === 0) {
+      console.log(`[cleanupDuplicates] No duplicate transactions to delete`);
+      return {
+        success: true,
+        message: "No duplicate transactions to cleanup",
+        deleted_count: 0,
+      };
+    }
+
+    // Delete duplicate transactions
+    const deleteMutation = `
+      mutation DeleteDuplicateTransactions($ids: [uuid!]!) {
+        delete_mst_transaction(where: { id: { _in: $ids } }) {
+          affected_rows
+        }
+      }
+    `;
+
+    const idsToDelete = transactionsToDelete.map((t) => t.id);
+    const deleteResult = await client.client.request(deleteMutation, {
+      ids: idsToDelete,
+    });
+
+    console.log(
+      `[cleanupDuplicates] Deleted ${deleteResult.delete_mst_transaction.affected_rows} duplicate transaction(s)`
+    );
+
+    return {
+      success: true,
+      message: `Cleaned up ${deleteResult.delete_mst_transaction.affected_rows} duplicate transaction(s)`,
+      deleted_count: deleteResult.delete_mst_transaction.affected_rows,
+      deleted_transactions: transactionsToDelete.map((t) => ({
+        id: t.id,
+        transaction_number: t.transaction_number,
+        status: t.status,
+      })),
+    };
+  } catch (error) {
+    console.error("[cleanupDuplicates] Error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to cleanup duplicate transactions",
+    };
+  }
 }

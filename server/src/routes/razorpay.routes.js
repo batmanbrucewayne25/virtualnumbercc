@@ -1,14 +1,19 @@
-import express from 'express';
-import { createPlan, createSubscription, createPlanAndSubscription } from '../controllers/razorpay.controller.js';
-import { 
-  handleWebhook, 
-  getAllTransactions, 
-  getTransactionStats, 
+import express from "express";
+import {
+  createPlan,
+  createSubscription,
+  createPlanAndSubscription,
+} from "../controllers/razorpay.controller.js";
+import {
+  handleWebhook,
+  getAllTransactions,
+  getTransactionStats,
   getWebhookUrl,
   saveResellerConfig,
-  getResellerConfig
-} from '../controllers/razorpay.webhook.controller.js';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+  getResellerConfig,
+  cleanupDuplicateTransactions,
+} from "../controllers/razorpay.webhook.controller.js";
+import { authMiddleware } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
@@ -23,7 +28,11 @@ const router = express.Router();
  * @note    This route receives payment notifications from Razorpay
  *          Resellers configure this URL in their Razorpay dashboard
  */
-router.post('/webhook/:resellerId', express.raw({ type: 'application/json' }), handleWebhook);
+router.post(
+  "/webhook/:resellerId",
+  express.raw({ type: "application/json" }),
+  handleWebhook
+);
 
 // ==========================================
 // CONFIGURATION ROUTES (Private)
@@ -34,21 +43,21 @@ router.post('/webhook/:resellerId', express.raw({ type: 'application/json' }), h
  * @desc    Save reseller Razorpay configuration
  * @access  Private (Reseller only)
  */
-router.post('/config', authMiddleware, saveResellerConfig);
+router.post("/config", authMiddleware, saveResellerConfig);
 
 /**
  * @route   GET /api/razorpay/config/:resellerId
  * @desc    Get reseller Razorpay configuration
  * @access  Private (Reseller or Super Admin)
  */
-router.get('/config/:resellerId', authMiddleware, getResellerConfig);
+router.get("/config/:resellerId", authMiddleware, getResellerConfig);
 
 /**
  * @route   GET /api/razorpay/webhook-url/:resellerId
  * @desc    Get webhook URL for a reseller to configure in Razorpay dashboard
  * @access  Private (Reseller or Super Admin)
  */
-router.get('/webhook-url/:resellerId', authMiddleware, getWebhookUrl);
+router.get("/webhook-url/:resellerId", authMiddleware, getWebhookUrl);
 
 // ==========================================
 // TRANSACTION ROUTES (Private - Super Admin)
@@ -59,14 +68,25 @@ router.get('/webhook-url/:resellerId', authMiddleware, getWebhookUrl);
  * @desc    Get all transactions for super admin dashboard
  * @access  Private (Super Admin only)
  */
-router.get('/transactions', authMiddleware, getAllTransactions);
+router.get("/transactions", authMiddleware, getAllTransactions);
 
 /**
  * @route   GET /api/razorpay/transactions/stats
  * @desc    Get transaction statistics for super admin dashboard
  * @access  Private (Super Admin only)
  */
-router.get('/transactions/stats', authMiddleware, getTransactionStats);
+router.get("/transactions/stats", authMiddleware, getTransactionStats);
+
+/**
+ * @route   POST /api/razorpay/cleanup-duplicates
+ * @desc    Cleanup duplicate transactions for a customer
+ * @access  Private (Super Admin only)
+ */
+router.post(
+  "/cleanup-duplicates",
+  authMiddleware,
+  cleanupDuplicateTransactions
+);
 
 // ==========================================
 // PLAN & SUBSCRIPTION ROUTES (Private)
@@ -77,20 +97,24 @@ router.get('/transactions/stats', authMiddleware, getTransactionStats);
  * @desc    Create Razorpay plan
  * @access  Private
  */
-router.post('/plan', authMiddleware, createPlan);
+router.post("/plan", authMiddleware, createPlan);
 
 /**
  * @route   POST /api/razorpay/subscription
  * @desc    Create Razorpay subscription
  * @access  Private
  */
-router.post('/subscription', authMiddleware, createSubscription);
+router.post("/subscription", authMiddleware, createSubscription);
 
 /**
  * @route   POST /api/razorpay/plan-and-subscription
  * @desc    Create Razorpay plan and subscription
  * @access  Private
  */
-router.post('/plan-and-subscription', authMiddleware, createPlanAndSubscription);
+router.post(
+  "/plan-and-subscription",
+  authMiddleware,
+  createPlanAndSubscription
+);
 
 export default router;
