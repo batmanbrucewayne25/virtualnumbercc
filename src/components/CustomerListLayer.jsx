@@ -2,7 +2,8 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstCustomersByReseller } from "@/hasura/mutations/customer";
-import { getUserData } from "@/utils/auth";
+import { getUserData, getAuthToken } from "@/utils/auth";
+import PermissionGuard from "@/components/PermissionGuard";
 
 const CustomerListLayer = () => {
   const [customers, setCustomers] = useState([]);
@@ -10,8 +11,25 @@ const CustomerListLayer = () => {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("pending"); // Default to pending to show newly registered customers
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isReseller, setIsReseller] = useState(false);
 
   useEffect(() => {
+    // Check if user is admin or reseller
+    const token = getAuthToken();
+    const userData = getUserData();
+    
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const role = payload.role || userData?.role;
+        setIsAdmin(role === 'admin' || role === 'super_admin');
+        setIsReseller(role === 'reseller');
+      } catch (err) {
+        console.error("Error decoding token:", err);
+      }
+    }
+    
     fetchCustomers();
   }, []);
 
@@ -124,6 +142,19 @@ const CustomerListLayer = () => {
             <option value='rejected'>Rejected</option>
           </select>
         </div>
+        
+        {(isAdmin || isReseller) && (
+          <Link
+            to='/add-customer'
+            className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+          >
+            <Icon
+              icon='ic:baseline-plus'
+              className='icon text-xl line-height-1'
+            />
+            Add New Customer
+          </Link>
+        )}
       </div>
       <div className='card-body p-24'>
         {error && (

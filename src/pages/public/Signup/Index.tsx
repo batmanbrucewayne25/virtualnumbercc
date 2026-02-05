@@ -10,7 +10,11 @@ import Step5 from "./steps/Step5";
 import Step6 from "./steps/Step6";
 import Step7 from "./steps/Step7";
 
-const SignUpLayer = () => {
+interface SignUpLayerProps {
+  skipOtpVerification?: boolean;
+}
+
+const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   const [step, setStep] = useState<number>(1);
   const [email, setEmail] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
@@ -107,6 +111,7 @@ const SignUpLayer = () => {
           {step === 2 && (
             <Step2
               email={email}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(1)}
               onVerify={() => handleStepChange(3)}
             />
@@ -117,24 +122,27 @@ const SignUpLayer = () => {
             <Step3
               email={email}
               phone={phone}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(2)}
               onVerify={() => handleStepChange(4)}
             />
           )}
 
-          {/* STEP 4 (Aadhaar) */}
+          {/* STEP 4 (PAN) */}
           {step === 4 && (
             <Step4
               email={email}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(3)}
               onSubmit={() => handleStepChange(5)}
             />
           )}
 
-          {/* STEP 5 ✅ FIXED */}
+          {/* STEP 5 (Aadhaar) */}
           {step === 5 && (
             <Step5
               email={email}
+              skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(4)}
               onSubmit={() => handleStepChange(6)}
             />
@@ -159,14 +167,16 @@ const SignUpLayer = () => {
           )}
 
           {/* FOOTER */}
-          <div className="mt-32 text-center text-sm">
-            <p>
-              Already have an account?{" "}
-              <Link to="/sign-in" className="text-primary-600 fw-semibold">
-                Sign In
-              </Link>
-            </p>
-          </div>
+          {!skipOtpVerification && (
+            <div className="mt-32 text-center text-sm">
+              <p>
+                Already have an account?{" "}
+                <Link to="/sign-in" className="text-primary-600 fw-semibold">
+                  Sign In
+                </Link>
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

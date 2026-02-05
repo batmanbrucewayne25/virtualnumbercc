@@ -1,6 +1,7 @@
 import { updateAadhaarStep } from "@/hasura/mutations";
 import { Step4Props } from "@/types/auth/signup";
 import { useState } from "react";
+import { validateAadharFormat } from "@/utils/aadharValidation";
 
 interface AadhaarVerificationData {
   full_name: string;
@@ -12,7 +13,11 @@ interface AadhaarVerificationData {
   profile_image: string;
 }
 
-const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
+interface Step5PropsWithSkip extends Step4Props {
+  skipOtpVerification?: boolean;
+}
+
+const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5PropsWithSkip) => {
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarOtp, setAadhaarOtp] = useState("");
@@ -22,7 +27,6 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const validateAadhaar = (value: string) => /^\d{12}$/.test(value);
   const validateOtp = (value: string) => /^\d{6}$/.test(value);
 
   /* =======================
@@ -36,8 +40,43 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
       return;
     }
 
-    if (!validateAadhaar(aadhaarNumber)) {
-      setError("Aadhaar must be exactly 12 digits.");
+    // If skipOtpVerification, allow manual entry without OTP
+    if (skipOtpVerification) {
+      // Validate Aadhar format (but not checksum for admin mode)
+      const cleaned = aadhaarNumber.replace(/[\s-]/g, '');
+      if (!/^\d{12}$/.test(cleaned)) {
+        setError("Aadhaar must be exactly 12 digits.");
+        return;
+      }
+      if (cleaned[0] === '0' || cleaned[0] === '1') {
+        setError("Aadhaar number cannot start with 0 or 1.");
+        return;
+      }
+      
+      // Auto-proceed without OTP
+      setLoading(true);
+      try {
+        await updateAadhaarStep({
+          email,
+          aadhaar_number: cleaned,
+          dob: null,
+          gender: null,
+          aadhar_photo: null,
+        });
+        onSubmit();
+      } catch (err) {
+        console.error("Failed to update Aadhaar step:", err);
+        setError("Failed to save Aadhaar details.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Validate Aadhar format and checksum
+    const validation = validateAadharFormat(aadhaarNumber);
+    if (!validation.valid) {
+      setError(validation.message);
       return;
     }
 
@@ -155,19 +194,25 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
 
       {error && <div className="alert alert-danger mb-12">{error}</div>}
 
+      {skipOtpVerification && (
+        <div className="alert alert-info mb-16">
+          <p className="mb-0">Aadhaar OTP verification skipped (Admin mode). Enter Aadhaar number manually.</p>
+        </div>
+      )}
+
       {/* AADHAAR INPUT */}
       <input
         className="form-control h-56-px mb-16"
         placeholder="Enter Aadhaar Number"
         value={aadhaarNumber}
-        disabled={aadhaarOtpSent || loading}
+        disabled={(aadhaarOtpSent && !skipOtpVerification) || loading}
         onChange={(e) =>
           setAadhaarNumber(e.target.value.replace(/\D/g, "").slice(0, 12))
         }
       />
 
-      {/* OTP INPUT (appears but never removes buttons) */}
-      {aadhaarOtpSent && (
+      {/* OTP INPUT (only show if not skipping verification) */}
+      {aadhaarOtpSent && !skipOtpVerification && (
         <input
           className="form-control h-56-px mb-16"
           placeholder="Enter 6-digit OTP"
@@ -184,15 +229,19 @@ const Step5 = ({ email, onBack, onSubmit }: Step4Props) => {
       <button
         className="btn btn-primary w-100 mb-16"
         disabled={loading}
-        onClick={aadhaarOtpSent ? handleSubmitOtp : handleGetOtp}
+        onClick={skipOtpVerification ? handleGetOtp : (aadhaarOtpSent ? handleSubmitOtp : handleGetOtp)}
       >
         {loading
-          ? aadhaarOtpSent
-            ? "Verifying OTP..."
-            : "Sending OTP..."
-          : aadhaarOtpSent
-            ? "Verify OTP"
-            : "Get OTP"}
+          ? skipOtpVerification
+            ? "Saving..."
+            : aadhaarOtpSent
+              ? "Verifying OTP..."
+              : "Sending OTP..."
+          : skipOtpVerification
+            ? "Continue"
+            : aadhaarOtpSent
+              ? "Verify OTP"
+              : "Get OTP"}
       </button>
 
       {/* RESEND OTP */}

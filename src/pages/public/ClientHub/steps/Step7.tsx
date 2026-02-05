@@ -3,11 +3,12 @@ import { useState } from "react";
 interface Step7Props {
   panData: any;
   aadhaarData: any;
+  skipOtpVerification?: boolean;
   onBack: () => void;
   onSuccess: () => void;
 }
 
-const Step7 = ({ panData, aadhaarData, onBack, onSuccess }: Step7Props) => {
+const Step7 = ({ panData, aadhaarData, skipOtpVerification = false, onBack, onSuccess }: Step7Props) => {
   const [error, setError] = useState("");
 
   const normalizeDate = (dateStr: string): string | null => {
@@ -78,6 +79,12 @@ const Step7 = ({ panData, aadhaarData, onBack, onSuccess }: Step7Props) => {
       return;
     }
 
+    // Skip DOB validation if admin is creating customer
+    if (skipOtpVerification) {
+      onSuccess();
+      return;
+    }
+
     const panDob = panData.dob;
     const aadhaarDob = aadhaarData.dob;
 
@@ -108,8 +115,16 @@ const Step7 = ({ panData, aadhaarData, onBack, onSuccess }: Step7Props) => {
         <p className="mb-0"><strong>Aadhaar Card DOB:</strong> {aadhaarData?.dob || "N/A"}</p>
       </div>
 
+      {skipOtpVerification && (
+        <div className="alert alert-info mb-16">
+          <p className="mb-0">DOB verification skipped (Admin mode)</p>
+        </div>
+      )}
+
       <p className="text-sm text-secondary-light mb-24">
-        We need to verify that the date of birth in your PAN card matches your Aadhaar card.
+        {skipOtpVerification 
+          ? "DOB verification is skipped in admin mode."
+          : "We need to verify that the date of birth in your PAN card matches your Aadhaar card."}
       </p>
 
       <button

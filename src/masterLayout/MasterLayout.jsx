@@ -418,6 +418,19 @@ const MasterLayout = ({ children }) => {
                   </NavLink>
                 </li>
 
+                {/* Customer List - Admin Only */}
+                <li>
+                  <NavLink
+                    to='/customer-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='mdi:account-group' className='menu-icon' />
+                    <span>New Customers</span>
+                  </NavLink>
+                </li>
+
                 {/* Wallet Ledger - Admin Only */}
                 <PermissionGuard module="Wallet" action="view">
                   <li>
@@ -2238,7 +2251,7 @@ const MasterLayout = ({ children }) => {
         <footer className='d-footer'>
           <div className='row align-items-center justify-content-between'>
             <div className='col-auto'>
-              <p className='mb-0'>© 2025. All Rights Reserved.</p>
+              <p className='mb-0'>© 2026. All Rights Reserved.</p>
             </div>
             {/* <div className='col-auto'>
               <p className='mb-0'>

@@ -77,7 +77,7 @@ const ViewResellerDashboardLayer = () => {
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [validity, setValidity] = useState(null);
-  const [domainData, setDomainData] = useState < any > null;
+  const [domainData, setDomainData] = useState(null);
 
   useEffect(() => {
     // Get current user role
