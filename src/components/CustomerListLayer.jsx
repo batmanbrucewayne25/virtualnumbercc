@@ -10,7 +10,7 @@ const CustomerListLayer = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("pending"); // Default to pending to show newly registered customers
+  const [statusFilter, setStatusFilter] = useState("all"); // Show all customers by default
   const [isAdmin, setIsAdmin] = useState(false);
   const [isReseller, setIsReseller] = useState(false);
 
@@ -18,18 +18,18 @@ const CustomerListLayer = () => {
     // Check if user is admin or reseller
     const token = getAuthToken();
     const userData = getUserData();
-    
+
     if (token) {
       try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        const payload = JSON.parse(atob(token.split(".")[1]));
         const role = payload.role || userData?.role;
-        setIsAdmin(role === 'admin' || role === 'super_admin');
-        setIsReseller(role === 'reseller');
+        setIsAdmin(role === "admin" || role === "super_admin");
+        setIsReseller(role === "reseller");
       } catch (err) {
         console.error("Error decoding token:", err);
       }
     }
-    
+
     fetchCustomers();
   }, []);
 
@@ -68,10 +68,7 @@ const CustomerListLayer = () => {
       customer.business_email?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "pending" && customer.status === "pending") ||
-      (statusFilter === "approved" && customer.status === "approved") ||
-      (statusFilter === "rejected" && customer.status === "rejected");
+      statusFilter === "all" || customer.status === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
@@ -88,14 +85,37 @@ const CustomerListLayer = () => {
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      pending: { class: "bg-warning-focus text-warning-600 border-warning-main", text: "Pending" },
-      approved: { class: "bg-success-focus text-success-600 border-success-main", text: "Approved" },
-      rejected: { class: "bg-danger-focus text-danger-600 border-danger-main", text: "Rejected" },
+      pending: {
+        class: "bg-warning-focus text-warning-600 border-warning-main",
+        text: "Pending",
+      },
+      pending_payment: {
+        class: "bg-info-focus text-info-600 border-info-main",
+        text: "Pending Payment",
+      },
+      approved: {
+        class: "bg-primary-focus text-primary-600 border-primary-main",
+        text: "Approved",
+      },
+      active: {
+        class: "bg-success-focus text-success-600 border-success-main",
+        text: "Active",
+      },
+      rejected: {
+        class: "bg-danger-focus text-danger-600 border-danger-main",
+        text: "Rejected",
+      },
+      suspended: {
+        class: "bg-secondary-focus text-secondary-600 border-secondary-main",
+        text: "Suspended",
+      },
     };
 
     const config = statusConfig[status] || statusConfig.pending;
     return (
-      <span className={`${config.class} border px-24 py-4 radius-4 fw-medium text-sm`}>
+      <span
+        className={`${config.class} border px-24 py-4 radius-4 fw-medium text-sm`}
+      >
         {config.text}
       </span>
     );
@@ -103,94 +123,117 @@ const CustomerListLayer = () => {
 
   const getKycStatusBadge = (kycStatus) => {
     const statusConfig = {
-      pending: { class: "bg-warning-focus text-warning-600 border-warning-main", text: "Pending" },
-      verified: { class: "bg-success-focus text-success-600 border-success-main", text: "Verified" },
-      rejected: { class: "bg-danger-focus text-danger-600 border-danger-main", text: "Rejected" },
+      pending: {
+        class: "bg-warning-focus text-warning-600 border-warning-main",
+        text: "Pending",
+      },
+      verified: {
+        class: "bg-success-focus text-success-600 border-success-main",
+        text: "Verified",
+      },
+      rejected: {
+        class: "bg-danger-focus text-danger-600 border-danger-main",
+        text: "Rejected",
+      },
     };
 
     const config = statusConfig[kycStatus] || statusConfig.pending;
     return (
-      <span className={`${config.class} border px-24 py-4 radius-4 fw-medium text-sm`}>
+      <span
+        className={`${config.class} border px-24 py-4 radius-4 fw-medium text-sm`}
+      >
         {config.text}
       </span>
     );
   };
 
   return (
-    <div className='card h-100 p-0 radius-12'>
-      <div className='card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between'>
-        <div className='d-flex align-items-center flex-wrap gap-3'>
-          <form className='navbar-search'>
+    <div className="card h-100 p-0 radius-12">
+      <div className="card-header border-bottom bg-base py-16 px-24 d-flex align-items-center flex-wrap gap-3 justify-content-between">
+        <div className="d-flex align-items-center flex-wrap gap-3">
+          <form className="navbar-search">
             <input
-              type='text'
-              className='bg-base h-40-px w-auto'
-              name='search'
-              placeholder='Search by name, email, or phone'
+              type="text"
+              className="bg-base h-40-px w-auto"
+              name="search"
+              placeholder="Search by name, email, or phone"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <Icon icon='ion:search-outline' className='icon' />
+            <Icon icon="ion:search-outline" className="icon" />
           </form>
           <select
-            className='form-select form-select-sm w-auto ps-12 py-6 radius-12 h-40-px'
+            className="form-select form-select-sm w-auto ps-12 py-6 radius-12 h-40-px"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
-            <option value='all'>All Status</option>
-            <option value='pending'>Pending</option>
-            <option value='approved'>Approved</option>
-            <option value='rejected'>Rejected</option>
+            <option value="all">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="pending_payment">Pending Payment</option>
+            <option value="approved">Approved</option>
+            <option value="active">Active</option>
+            <option value="rejected">Rejected</option>
+            <option value="suspended">Suspended</option>
           </select>
         </div>
-        
+
         {(isAdmin || isReseller) && (
           <Link
-            to='/add-customer'
-            className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+            to="/add-customer"
+            className="btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2"
           >
             <Icon
-              icon='ic:baseline-plus'
-              className='icon text-xl line-height-1'
+              icon="ic:baseline-plus"
+              className="icon text-xl line-height-1"
             />
             Add New Customer
           </Link>
         )}
       </div>
-      <div className='card-body p-24'>
+      <div className="card-body p-24">
         {error && (
-          <div className='alert alert-danger radius-8 mb-24' role='alert'>
-            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+          <div className="alert alert-danger radius-8 mb-24" role="alert">
+            <Icon icon="material-symbols:error-outline" className="icon me-2" />
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className='text-center py-40'>
+          <div className="text-center py-40">
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p className='text-muted mt-3'>Loading customers...</p>
+            <p className="text-muted mt-3">Loading customers...</p>
           </div>
         ) : filteredCustomers.length === 0 ? (
-          <div className='text-center py-40'>
-            <Icon icon='mdi:account-off' className='icon text-6xl text-muted mb-3' />
-            <p className='text-muted'>No customers found</p>
+          <div className="text-center py-40">
+            <Icon
+              icon="mdi:account-off"
+              className="icon text-6xl text-muted mb-3"
+            />
+            <p className="text-muted">No customers found</p>
           </div>
         ) : (
           <>
-            <div className='table-responsive scroll-sm'>
-              <table className='table bordered-table sm-table mb-0'>
+            <div className="table-responsive scroll-sm">
+              <table className="table bordered-table sm-table mb-0">
                 <thead>
                   <tr>
-                    <th scope='col'>S.L</th>
-                    <th scope='col'>Date</th>
-                    <th scope='col'>Profile Name</th>
-                    <th scope='col'>Email</th>
-                    <th scope='col'>Phone</th>
-                    <th scope='col'>Business Email</th>
-                    <th scope='col' className='text-center'>Status</th>
-                    <th scope='col' className='text-center'>KYC Status</th>
-                    <th scope='col' className='text-center'>Action</th>
+                    <th scope="col">S.L</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Profile Name</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Phone</th>
+                    <th scope="col">Business Email</th>
+                    <th scope="col" className="text-center">
+                      Status
+                    </th>
+                    <th scope="col" className="text-center">
+                      KYC Status
+                    </th>
+                    <th scope="col" className="text-center">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -199,51 +242,51 @@ const CustomerListLayer = () => {
                       <td>{index + 1}</td>
                       <td>{formatDate(customer.created_at)}</td>
                       <td>
-                        <div className='d-flex align-items-center'>
-                          <div className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center'>
+                        <div className="d-flex align-items-center">
+                          <div className="w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center">
                             <Icon
-                              icon='solar:user-bold'
-                              className='icon text-primary-600 text-xl'
+                              icon="solar:user-bold"
+                              className="icon text-primary-600 text-xl"
                             />
                           </div>
-                          <div className='flex-grow-1'>
-                            <span className='text-md mb-0 fw-normal text-secondary-light'>
+                          <div className="flex-grow-1">
+                            <span className="text-md mb-0 fw-normal text-secondary-light">
                               {customer.profile_name || "N/A"}
                             </span>
                           </div>
                         </div>
                       </td>
                       <td>
-                        <span className='text-md mb-0 fw-normal text-secondary-light'>
+                        <span className="text-md mb-0 fw-normal text-secondary-light">
                           {customer.email || "-"}
                         </span>
                       </td>
                       <td>
-                        <span className='text-md mb-0 fw-normal text-secondary-light'>
+                        <span className="text-md mb-0 fw-normal text-secondary-light">
                           {customer.phone || "-"}
                         </span>
                       </td>
                       <td>
-                        <span className='text-md mb-0 fw-normal text-secondary-light'>
+                        <span className="text-md mb-0 fw-normal text-secondary-light">
                           {customer.business_email || "-"}
                         </span>
                       </td>
-                      <td className='text-center'>
+                      <td className="text-center">
                         {getStatusBadge(customer.status)}
                       </td>
-                      <td className='text-center'>
+                      <td className="text-center">
                         {getKycStatusBadge(customer.kyc_status)}
                       </td>
-                      <td className='text-center'>
-                        <div className='d-flex align-items-center gap-10 justify-content-center flex-wrap'>
+                      <td className="text-center">
+                        <div className="d-flex align-items-center gap-10 justify-content-center flex-wrap">
                           <Link
                             to={`/view-customer/${customer.id}`}
-                            className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='View KYC Details'
+                            className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                            title="View KYC Details"
                           >
                             <Icon
-                              icon='majesticons:eye-line'
-                              className='icon text-xl'
+                              icon="majesticons:eye-line"
+                              className="icon text-xl"
                             />
                           </Link>
                         </div>
@@ -253,9 +296,10 @@ const CustomerListLayer = () => {
                 </tbody>
               </table>
             </div>
-            <div className='d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24'>
+            <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-24">
               <span>
-                Showing {filteredCustomers.length} of {customers.length} customer(s)
+                Showing {filteredCustomers.length} of {customers.length}{" "}
+                customer(s)
               </span>
             </div>
           </>
@@ -266,4 +310,3 @@ const CustomerListLayer = () => {
 };
 
 export default CustomerListLayer;
-

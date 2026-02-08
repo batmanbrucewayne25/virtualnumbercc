@@ -24,7 +24,7 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
   if (!validation.valid) {
     return res.status(400).json({
       success: false,
-      message: validation.message
+      message: validation.message,
     });
   }
 
@@ -126,7 +126,7 @@ export const verifyGST = asyncHandler(async (req, res) => {
   try {
     const result = await KYCService.verifyGST(
       id_number,
-      filing_status_get !== false
+      filing_status_get !== false,
     );
     res.status(200).json(result);
   } catch (error) {
@@ -156,7 +156,7 @@ export const verifyGSTSpecial = asyncHandler(async (req, res) => {
   try {
     const result = await KYCService.verifyGSTSpecial(
       id_number,
-      filing_status_get !== false
+      filing_status_get !== false,
     );
     res.status(200).json(result);
   } catch (error) {

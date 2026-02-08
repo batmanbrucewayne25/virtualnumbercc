@@ -1,7 +1,7 @@
 import { updateAadhaarStep } from "@/hasura/mutations";
 import { Step4Props } from "@/types/auth/signup";
 import { useState } from "react";
-import { validateAadharFormat } from "@/utils/aadharValidation";
+import { validateAadharFormat } from "@/utils/aadharValidation.js";
 
 interface AadhaarVerificationData {
   full_name: string;
@@ -14,10 +14,15 @@ interface AadhaarVerificationData {
 }
 
 interface Step5PropsWithSkip extends Step4Props {
-  skipOtpVerification?: boolean;
+  skipOtpVerification?: any;
 }
 
-const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5PropsWithSkip) => {
+const Step5 = ({
+  email,
+  onBack,
+  onSubmit,
+  skipOtpVerification = false,
+}: Step5PropsWithSkip) => {
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarOtp, setAadhaarOtp] = useState("");
@@ -42,13 +47,19 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
 
     // If skipOtpVerification, allow manual entry without OTP
     if (skipOtpVerification) {
-      // Validate Aadhar format (basic validation only)
-      const cleaned = aadhaarNumber.replace(/[\s-]/g, '');
+      // Validate Aadhar format (basic validation only) 
+      // Validate Aadhar format (but not checksum for admin mode)
+      const cleaned = aadhaarNumber.replace(/[\s-]/g, "");
       if (!/^\d{12}$/.test(cleaned)) {
         setError("Aadhaar must be exactly 12 digits.");
         return;
       }
       
+      if (cleaned[0] === "0" || cleaned[0] === "1") {
+        setError("Aadhaar number cannot start with 0 or 1.");
+        return;
+      }
+
       // Auto-proceed without OTP
       setLoading(true);
       try {
@@ -87,10 +98,18 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
       // Check multiple possible response structures
       if (result.success) {
         // Check if status indicates success
-        const status = result.data?.data?.status || result.data?.status || result.status;
-        const requestId = result.data?.request_id || result.data?.data?.request_id || result.request_id;
-        
-        if (status === "generate_otp_success" || status === "success" || requestId) {
+        const status =
+          result.data?.data?.status || result.data?.status || result.status;
+        const requestId =
+          result.data?.request_id ||
+          result.data?.data?.request_id ||
+          result.request_id;
+
+        if (
+          status === "generate_otp_success" ||
+          status === "success" ||
+          requestId
+        ) {
           if (requestId) {
             setRequestId(requestId);
             setAadhaarOtpSent(true);
@@ -99,16 +118,27 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
             setError("OTP sent but request ID missing. Please try again.");
           }
         } else {
-          const errorMsg = result.data?.data?.message || result.data?.message || result.message || "Failed to send OTP. Please try again.";
+          const errorMsg =
+            result.data?.data?.message ||
+            result.data?.message ||
+            result.message ||
+            "Failed to send OTP. Please try again.";
           setError(errorMsg);
         }
       } else {
-        const errorMsg = result.data?.data?.message || result.data?.message || result.message || "Failed to send OTP. Please try again.";
+        const errorMsg =
+          result.data?.data?.message ||
+          result.data?.message ||
+          result.message ||
+          "Failed to send OTP. Please try again.";
         setError(errorMsg);
       }
     } catch (err: any) {
       console.error("OTP generation error:", err);
-      setError(err.message || "OTP generation failed. Please check your connection and try again.");
+      setError(
+        err.message ||
+          "OTP generation failed. Please check your connection and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -139,15 +169,20 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
     try {
       const { submitAadhaarOTP } = await import("@/utils/api");
       const result = await submitAadhaarOTP(requestId, aadhaarOtp);
-      
+
       // Check multiple possible response structures
       const data = result.data?.data || result.data || result;
       const status = data?.status || result.status;
 
-      if (result.success && (status === "success_aadhaar" || status === "success")) {
+      if (
+        result.success &&
+        (status === "success_aadhaar" || status === "success")
+      ) {
         // Verify required fields are present
         if (!data.dob || !data.gender) {
-          setError("Aadhaar verification incomplete. Missing required information.");
+          setError(
+            "Aadhaar verification incomplete. Missing required information."
+          );
           return;
         }
 
@@ -173,15 +208,24 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
           onSubmit();
         } catch (updateErr) {
           console.error("Failed to update Aadhaar step:", updateErr);
-          setError("Verification successful but failed to save. Please try again.");
+          setError(
+            "Verification successful but failed to save. Please try again."
+          );
         }
       } else {
-        const errorMsg = data?.message || result.data?.message || result.message || "Invalid or incomplete Aadhaar verification.";
+        const errorMsg =
+          data?.message ||
+          result.data?.message ||
+          result.message ||
+          "Invalid or incomplete Aadhaar verification.";
         setError(errorMsg);
       }
     } catch (err: any) {
       console.error("OTP verification error:", err);
-      setError(err.message || "OTP verification failed. Please check your connection and try again.");
+      setError(
+        err.message ||
+          "OTP verification failed. Please check your connection and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -195,7 +239,10 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
 
       {skipOtpVerification && (
         <div className="alert alert-info mb-16">
-          <p className="mb-0">Aadhaar OTP verification skipped (Admin mode). Enter Aadhaar number manually.</p>
+          <p className="mb-0">
+            Aadhaar OTP verification skipped (Admin mode). Enter Aadhaar number
+            manually.
+          </p>
         </div>
       )}
 
@@ -228,19 +275,25 @@ const Step5 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step5Pr
       <button
         className="btn btn-primary w-100 mb-16"
         disabled={loading}
-        onClick={skipOtpVerification ? handleGetOtp : (aadhaarOtpSent ? handleSubmitOtp : handleGetOtp)}
+        onClick={
+          skipOtpVerification
+            ? handleGetOtp
+            : aadhaarOtpSent
+            ? handleSubmitOtp
+            : handleGetOtp
+        }
       >
         {loading
           ? skipOtpVerification
             ? "Saving..."
             : aadhaarOtpSent
-              ? "Verifying OTP..."
-              : "Sending OTP..."
+            ? "Verifying OTP..."
+            : "Sending OTP..."
           : skipOtpVerification
-            ? "Continue"
-            : aadhaarOtpSent
-              ? "Verify OTP"
-              : "Get OTP"}
+          ? "Continue"
+          : aadhaarOtpSent
+          ? "Verify OTP"
+          : "Get OTP"}
       </button>
 
       {/* RESEND OTP */}

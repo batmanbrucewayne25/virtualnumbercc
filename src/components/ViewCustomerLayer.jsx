@@ -336,14 +336,22 @@ const ViewCustomerLayer = () => {
                   <p className="text-sm fw-medium mb-0">
                     <span
                       className={`badge ${
-                        customer.status === "approved"
+                        customer.status === "active"
                           ? "bg-success"
+                          : customer.status === "approved"
+                          ? "bg-primary"
+                          : customer.status === "pending_payment"
+                          ? "bg-info"
                           : customer.status === "rejected"
                           ? "bg-danger"
+                          : customer.status === "suspended"
+                          ? "bg-secondary"
                           : "bg-warning"
                       }`}
                     >
-                      {customer.status || "N/A"}
+                      {customer.status === "pending_payment"
+                        ? "Pending Payment"
+                        : customer.status || "N/A"}
                     </span>
                   </p>
                 </div>

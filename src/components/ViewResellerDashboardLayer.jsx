@@ -77,7 +77,7 @@ const ViewResellerDashboardLayer = () => {
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [validity, setValidity] = useState(null);
-  const [domainData, setDomainData] = useState(null);
+  const [domainData, setDomainData] = useState < any > null;
 
   useEffect(() => {
     // Get current user role
@@ -175,7 +175,7 @@ const ViewResellerDashboardLayer = () => {
       !window.confirm(
         `Are you sure you want to suspend the account for ${
           selectedCustomer.profile_name || selectedCustomer.email
-        }?`
+        }?`,
       )
     ) {
       return;
@@ -398,9 +398,9 @@ const ViewResellerDashboardLayer = () => {
                               const imageSrc = photo.startsWith("data:")
                                 ? photo
                                 : photo.startsWith("http://") ||
-                                  photo.startsWith("https://")
-                                ? photo
-                                : `data:image/jpeg;base64,${photo}`;
+                                    photo.startsWith("https://")
+                                  ? photo
+                                  : `data:image/jpeg;base64,${photo}`;
 
                               return (
                                 <img
@@ -421,20 +421,20 @@ const ViewResellerDashboardLayer = () => {
                                       "Photo length:",
                                       photo.length,
                                       "Starts with:",
-                                      photo.substring(0, 20)
+                                      photo.substring(0, 20),
                                     );
                                     e.target.style.display = "none";
                                   }}
                                   onLoad={() => {
                                     console.log(
-                                      "Aadhaar photo loaded successfully"
+                                      "Aadhaar photo loaded successfully",
                                     );
                                   }}
                                   onClick={() => {
                                     const newWindow = window.open();
                                     if (newWindow) {
                                       newWindow.document.write(
-                                        `<img src="${imageSrc}" style="max-width: 100%; height: auto;" />`
+                                        `<img src="${imageSrc}" style="max-width: 100%; height: auto;" />`,
                                       );
                                     }
                                   }}
@@ -476,7 +476,7 @@ const ViewResellerDashboardLayer = () => {
                                 const newWindow = window.open();
                                 if (newWindow) {
                                   newWindow.document.write(
-                                    `<img src="${img}" style="max-width: 100%; height: auto;" />`
+                                    `<img src="${img}" style="max-width: 100%; height: auto;" />`,
                                   );
                                 }
                               }}
@@ -769,8 +769,8 @@ const ViewResellerDashboardLayer = () => {
                             validity.status === "ACTIVE"
                               ? "bg-success-focus text-success-600 border border-success-main"
                               : validity.status === "EXPIRED"
-                              ? "bg-danger-focus text-danger-600 border border-danger-main"
-                              : "bg-warning-focus text-warning-600 border border-warning-main"
+                                ? "bg-danger-focus text-danger-600 border border-danger-main"
+                                : "bg-warning-focus text-warning-600 border border-warning-main"
                           } px-24 py-4 radius-4 fw-medium text-sm`}
                         >
                           {validity.status || "N/A"}
@@ -818,7 +818,7 @@ const ViewResellerDashboardLayer = () => {
                             const today = new Date();
                             const diffTime = expiry - today;
                             const daysLeft = Math.ceil(
-                              diffTime / (1000 * 60 * 60 * 24)
+                              diffTime / (1000 * 60 * 60 * 24),
                             );
                             if (daysLeft < 0) return "text-danger-600";
                             if (daysLeft <= 30) return "text-warning-600";
@@ -830,7 +830,7 @@ const ViewResellerDashboardLayer = () => {
                             const today = new Date();
                             const diffTime = expiry - today;
                             const daysLeft = Math.ceil(
-                              diffTime / (1000 * 60 * 60 * 24)
+                              diffTime / (1000 * 60 * 60 * 24),
                             );
                             if (daysLeft < 0)
                               return `Expired ${Math.abs(daysLeft)} days ago`;
@@ -942,8 +942,8 @@ const ViewResellerDashboardLayer = () => {
                               daysLeft !== "-" && daysLeft < 7
                                 ? "text-danger-600"
                                 : daysLeft !== "-" && daysLeft < 15
-                                ? "text-warning-600"
-                                : "text-secondary-light"
+                                  ? "text-warning-600"
+                                  : "text-secondary-light"
                             }`}
                           >
                             {daysLeft !== "-" ? `${daysLeft} days` : "-"}
@@ -1138,7 +1138,7 @@ const ViewResellerDashboardLayer = () => {
                               </label>
                               <p className="text-md fw-medium text-primary-light mb-0">
                                 {formatCustomerAddress(
-                                  selectedCustomer.address
+                                  selectedCustomer.address,
                                 )}
                               </p>
                             </div>
@@ -1246,7 +1246,7 @@ const ViewResellerDashboardLayer = () => {
                                   <td>{txn.transaction_number || "-"}</td>
                                   <td>
                                     {formatDate(
-                                      txn.payment_date || txn.created_at
+                                      txn.payment_date || txn.created_at,
                                     )}
                                   </td>
                                   <td>{txn.transaction_type || "-"}</td>
@@ -1258,8 +1258,8 @@ const ViewResellerDashboardLayer = () => {
                                         txn.status === "success"
                                           ? "bg-success-focus text-success-600"
                                           : txn.status === "failure"
-                                          ? "bg-danger-focus text-danger-600"
-                                          : "bg-warning-focus text-warning-600"
+                                            ? "bg-danger-focus text-danger-600"
+                                            : "bg-warning-focus text-warning-600"
                                       } px-12 py-2 radius-4 fw-medium text-xs`}
                                     >
                                       {txn.status || "-"}

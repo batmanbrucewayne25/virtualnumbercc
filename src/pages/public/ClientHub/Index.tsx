@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
-import { getApiBaseUrl } from "@/utils/apiUrl";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
 import Step3 from "./steps/Step3";
@@ -20,9 +20,17 @@ interface ClientHubLayerProps {
   isAdminMode?: boolean;
 }
 
-const ClientHubLayer = ({ skipOtpVerification = false, resellerId: resellerIdProp, isAdminMode = false }: ClientHubLayerProps) => {
-  const { resellerId: resellerIdFromUrl } = useParams<{ resellerId?: string }>();
-  const [resellerId, setResellerId] = useState<string | null>(resellerIdProp || null);
+const ClientHubLayer = ({
+  skipOtpVerification = false,
+  resellerId: resellerIdProp,
+  isAdminMode = false,
+}: ClientHubLayerProps) => {
+  const { resellerId: resellerIdFromUrl } = useParams<{
+    resellerId?: string;
+  }>();
+  const [resellerId, setResellerId] = useState<string | null>(
+    resellerIdProp || null
+  );
   const [step, setStep] = useState<number>(isAdminMode ? 2 : 1); // Skip Step1 (login/signup) in admin mode
   const [resellerData, setResellerData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(!isAdminMode); // Don't load if admin mode with resellerId provided

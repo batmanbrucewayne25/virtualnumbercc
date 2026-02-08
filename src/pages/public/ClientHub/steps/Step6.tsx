@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { validateAadharFormat } from "@/utils/aadharValidation";
+import { validateAadharFormat } from "@/utils/aadharValidation.js";
 
 interface AadhaarVerificationData {
   full_name: string;
@@ -18,7 +18,12 @@ interface Step6Props {
   onSubmit: (data: AadhaarVerificationData) => void;
 }
 
-const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Props) => {
+const Step6 = ({
+  email,
+  skipOtpVerification = false,
+  onBack,
+  onSubmit,
+}: Step6Props) => {
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarOtp, setAadhaarOtp] = useState("");
@@ -40,15 +45,17 @@ const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Pr
 
     // If skipOtpVerification, allow manual entry without OTP
     if (skipOtpVerification) {
-      // Validate Aadhar format (basic validation only - no checksum)
-      const validation = validateAadharFormat(aadhaarNumber);
-      if (!validation.valid) {
-        setError(validation.message);
+      // Validate Aadhar format (but not checksum for admin mode)
+      const cleaned = aadhaarNumber.replace(/[\s-]/g, "");
+      if (!/^\d{12}$/.test(cleaned)) {
+        setError("Aadhaar must be exactly 12 digits.");
         return;
       }
-      
-      const cleaned = aadhaarNumber.replace(/[\s-]/g, '');
-      
+      if (cleaned[0] === "0" || cleaned[0] === "1") {
+        setError("Aadhaar number cannot start with 0 or 1.");
+        return;
+      }
+
       // Auto-proceed without OTP
       setLoading(true);
       try {
@@ -195,7 +202,7 @@ const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Pr
             data,
           });
           setError(
-            "Aadhaar verification incomplete. Missing required information (DOB or Gender)."
+            "Aadhaar verification incomplete. Missing required information (DOB or Gender).",
           );
           return;
         }
@@ -243,7 +250,10 @@ const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Pr
 
       {skipOtpVerification && (
         <div className="alert alert-info mb-16">
-          <p className="mb-0">Aadhaar OTP verification skipped (Admin mode). Enter Aadhaar number manually.</p>
+          <p className="mb-0">
+            Aadhaar OTP verification skipped (Admin mode). Enter Aadhaar number
+            manually.
+          </p>
         </div>
       )}
 
