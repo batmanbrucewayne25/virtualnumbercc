@@ -40,16 +40,14 @@ const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Pr
 
     // If skipOtpVerification, allow manual entry without OTP
     if (skipOtpVerification) {
-      // Validate Aadhar format (but not checksum for admin mode)
+      // Validate Aadhar format (basic validation only - no checksum)
+      const validation = validateAadharFormat(aadhaarNumber);
+      if (!validation.valid) {
+        setError(validation.message);
+        return;
+      }
+      
       const cleaned = aadhaarNumber.replace(/[\s-]/g, '');
-      if (!/^\d{12}$/.test(cleaned)) {
-        setError("Aadhaar must be exactly 12 digits.");
-        return;
-      }
-      if (cleaned[0] === '0' || cleaned[0] === '1') {
-        setError("Aadhaar number cannot start with 0 or 1.");
-        return;
-      }
       
       // Auto-proceed without OTP
       setLoading(true);
@@ -72,7 +70,7 @@ const Step6 = ({ email, skipOtpVerification = false, onBack, onSubmit }: Step6Pr
       return;
     }
 
-    // Validate Aadhar format and checksum
+    // Validate Aadhar format (basic validation only - no checksum)
     const validation = validateAadharFormat(aadhaarNumber);
     if (!validation.valid) {
       setError(validation.message);

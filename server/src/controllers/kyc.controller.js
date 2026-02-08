@@ -18,7 +18,8 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
     });
   }
 
-  // Validate Aadhar format and checksum before proceeding
+  // Validate Aadhar format (basic validation only - no checksum)
+  // Note: External QuickEKYC API may still validate Verhoeff checksum
   const validation = validateAadharFormat(id_number);
   if (!validation.valid) {
     return res.status(400).json({
@@ -36,9 +37,11 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
       message: error.message,
       error: error.error,
       request_id: error.request_id,
+      source: "External QuickEKYC API validation may have failed",
     });
 
     // Return appropriate status code and error message
+    // Note: Error message may come from external QuickEKYC API which validates Verhoeff checksum
     const statusCode = error.status || 500;
     const errorMessage = error.message || "Failed to generate OTP";
 
