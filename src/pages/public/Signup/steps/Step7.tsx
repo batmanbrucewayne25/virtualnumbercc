@@ -37,6 +37,7 @@ interface UserData {
 const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   const [profileImage, setProfileImage] = useState<string>("");
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
+  const [brandName, setBrandName] = useState<string>("");
   const [addressLines, setAddressLines] = useState<string[]>(["", "", ""]);
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [signature, setSignature] = useState<string>("");
@@ -151,6 +152,7 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         profile_image: profileImage,
         address: getFullAddress(),
         signature,
+        brand_name: brandName || null,
         status: false,
       });
       onSubmit();
@@ -229,6 +231,19 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
           </div>
         </div>
       )}
+      {/* Brand Name */}
+      <div className="mb-24">
+        <label className="form-label fw-semibold text-primary-light text-sm mb-8">
+          Brand Name <span className="text-secondary-light">(Optional - displayed to your customers)</span>
+        </label>
+        <input
+          className="form-control h-56-px"
+          placeholder="Enter your brand name"
+          value={brandName}
+          onChange={(e) => setBrandName(e.target.value)}
+        />
+      </div>
+
       {/* Signature Upload */}
       <div className="mb-24">
         <strong className="d-block mb-12">Signature</strong>

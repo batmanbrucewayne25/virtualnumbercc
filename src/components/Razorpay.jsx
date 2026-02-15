@@ -12,6 +12,8 @@ const RazorpayConfigLayer = () => {
   const [razorpayConfig, setRazorpayConfig] = useState(null);
   const [webhookUrl, setWebhookUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showKeySecret, setShowKeySecret] = useState(false);
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -150,6 +152,20 @@ const RazorpayConfigLayer = () => {
     }
   };
 
+  const generateWebhookSecret = () => {
+    // Generate a random 32-character secret (similar to Razorpay webhook secrets)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let secret = '';
+    for (let i = 0; i < 32; i++) {
+      secret += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setFormData(prev => ({
+      ...prev,
+      webhook_secret: secret
+    }));
+    // Keep secret hidden by default - user can click eye icon to reveal
+  };
+
   if (fetching) {
     return (
       <div className="row gy-4">
@@ -239,7 +255,7 @@ const RazorpayConfigLayer = () => {
                   <li className="mb-8">Enter your <strong>Key ID</strong> and <strong>Key Secret</strong> below</li>
                   <li className="mb-8">Go to <strong>Settings → Webhooks</strong> in Razorpay Dashboard</li>
                   <li className="mb-8">Click <strong>"Add New Webhook"</strong> and paste the webhook URL above</li>
-                  <li className="mb-8">Select these events: <code>payment.captured</code>, <code>payment.failed</code>, <code>payment.authorized</code>, <code>refund.created</code></li>
+                  <li className="mb-8">Select these events: <code>payment.captured</code>, <code>payment.failed</code>, <code>subscription.activated</code>, <code>subscription.charged</code></li>
                   <li className="mb-8">Copy the <strong>Webhook Secret</strong> from Razorpay and paste it below</li>
                   <li>Click <strong>"Create Webhook"</strong> in Razorpay Dashboard</li>
                 </ol>
@@ -285,31 +301,63 @@ const RazorpayConfigLayer = () => {
                 <label className="form-label fw-semibold text-primary-light">
                   Razorpay Key Secret
                 </label>
-                <input
-                  type="password"
-                  name="key_secret"
-                  className="form-control radius-8"
-                  placeholder={isConfigured ? "••••••••••••••••" : "Enter key secret"}
-                  value={formData.key_secret}
-                  onChange={handleInputChange}
-                />
-                <small className="text-muted">Leave blank to keep existing secret</small>
-              </div>
+                <div className="position-relative">
+                  <input
+                    type={showKeySecret ? "text" : "password"}
+                    name="key_secret"
+                    className="form-control radius-8 pe-48"
+                    value={formData.key_secret}
+                    onChange={handleInputChange}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-unstyled position-absolute end-0 top-50 translate-middle-y me-12"
+                    onClick={() => setShowKeySecret(!showKeySecret)}
+                    style={{ zIndex: 10 }}
+                  >
+                    <Icon 
+                      icon={showKeySecret ? 'solar:eye-closed-bold' : 'solar:eye-bold'} 
+                      className='icon text-secondary-light text-lg hover-text-primary' 
+                    />
+                  </button>
+                </div>
+                </div>
 
               <div className="col-md-6 mb-20">
                 <label className="form-label fw-semibold text-primary-light">
                   Webhook Secret
                 </label>
-                <input
-                  type="password"
-                  name="webhook_secret"
-                  className="form-control radius-8"
-                  placeholder={razorpayConfig?.webhook_secret ? "••••••••••••••••" : "Enter webhook secret from Razorpay"}
-                  value={formData.webhook_secret}
-                  onChange={handleInputChange}
-                />
-                <small className="text-muted">For webhook signature verification (recommended)</small>
-              </div>
+                <div className="d-flex gap-2 align-items-start">
+                  <div className="position-relative flex-grow-1">
+                    <input
+                      type={showWebhookSecret ? "text" : "password"}
+                      name="webhook_secret"
+                      className="form-control radius-8 pe-48" 
+                      value={formData.webhook_secret}
+                      onChange={handleInputChange}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-unstyled position-absolute end-0 top-50 translate-middle-y me-12"
+                      onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                      style={{ zIndex: 10 }}
+                    >
+                      <Icon 
+                        icon={showWebhookSecret ? 'solar:eye-closed-bold' : 'solar:eye-bold'} 
+                        className='icon text-secondary-light text-lg hover-text-primary' 
+                      />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary radius-8 px-16 py-8 flex-shrink-0"
+                    onClick={generateWebhookSecret}
+                    title="Generate random webhook secret"
+                  >
+                    <Icon icon='solar:refresh-bold' className='icon text-sm' />
+                  </button>
+                </div>
+   </div>
             </div>
 
             <div className="d-flex gap-3 mt-24">
@@ -333,19 +381,7 @@ const RazorpayConfigLayer = () => {
             </div>
           </form>
 
-          {/* Info Section */}
-          <div className="mt-24 p-20 bg-base border radius-8">
-            <h6 className="mb-12">
-              <Icon icon='material-symbols:info' className='icon me-2 text-info-600' />
-              How it works
-            </h6>
-            <ul className="text-sm text-muted mb-0 ps-16">
-              <li className="mb-8">When your customers make a payment, Razorpay will send a notification to the webhook URL above</li>
-              <li className="mb-8">All successful payments will be automatically recorded in your transaction history</li>
-              <li className="mb-8">The super admin can view all your payment transactions for monitoring purposes</li>
-              <li className="mb-8">All money goes directly to your Razorpay account - no intermediaries</li>
-            </ul>
-          </div>
+          
         </div>
       </div>
     </div>

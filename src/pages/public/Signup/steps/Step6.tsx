@@ -84,31 +84,10 @@ const Step5 = ({ email, onBack, onContinue }: Step5Props) => {
     }
   };
 
-  /* =====================
-     SKIP GST
-     ===================== */
-  const handleSkipGst = async () => {
-    try {
-      await updateGstStep({
-        email,
-        gstin: null,
-        gst_pan_number: null,
-        business_name: null,
-        legal_name: null,
-        gstin_status: null,
-        constitution_of_business: null,
-        nature_bus_activities: null,
-      });
-      onContinue();
-    } catch (err) {
-      console.error(err);
-      setError("Unable to skip GST.");
-    }
-  };
 
   return (
     <>
-      <h4 className="mb-12">GST Details (Optional)</h4>
+      <h4 className="mb-12">GST Details <span className="text-danger">*</span></h4>
 
       {error && <div className="alert alert-danger mb-12">{error}</div>}
 
@@ -117,6 +96,7 @@ const Step5 = ({ email, onBack, onContinue }: Step5Props) => {
         placeholder="Enter GST Number"
         value={gstNumber}
         disabled={gstVerified}
+        required
         onChange={(e) =>
           setGstNumber(e.target.value.toUpperCase().slice(0, 15))
         }
@@ -148,16 +128,10 @@ const Step5 = ({ email, onBack, onContinue }: Step5Props) => {
         Back
       </button>
 
-      {!gstVerified && (
-        <button className="btn btn-light w-100 mb-12" onClick={handleSkipGst}>
-          Skip GST Verification
-        </button>
-      )}
-
       <button
         className="btn btn-primary w-100"
         onClick={onContinue}
-        disabled={!gstVerified && gstNumber.trim() !== ""}
+        disabled={!gstVerified}
       >
         Continue
       </button>

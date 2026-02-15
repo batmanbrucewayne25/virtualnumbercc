@@ -25,10 +25,12 @@ export const getAllApprovedCustomers = async (filters?: {
       business_name
       status
       kyc_status
+      approval
       created_at
       mst_reseller {
         id
         business_name
+        brand_name
         first_name
         last_name
       }
@@ -155,7 +157,7 @@ export const getApprovedCustomersByReseller = async (
   }
 ) => {
   // Build where clause - simplified for now, filtering will be done client-side
-  let whereClause = `reseller_id: { _eq: $reseller_id }, status: { _eq: "approved" }`;
+  let whereClause = `reseller_id: { _eq: $reseller_id }, approval: { _eq: "approved" }`;
 
   const QUERY = `query GetApprovedCustomersByReseller(
     $reseller_id: uuid!
@@ -174,6 +176,7 @@ export const getApprovedCustomersByReseller = async (
       business_name
       status
       kyc_status
+      approval
       created_at
       mst_virtual_numbers {
         id
@@ -305,6 +308,7 @@ export const getCustomerWithTransactions = async (customerId: string) => {
       address
       status
       kyc_status
+      approval
       max_virtual_numbers
       created_at
       updated_at

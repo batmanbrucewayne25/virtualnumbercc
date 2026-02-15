@@ -20,6 +20,7 @@ export const getMstResellers = async () => {
       email
       phone
       business_name
+      brand_name
       business_email
       gstin
       status
@@ -29,6 +30,7 @@ export const getMstResellers = async () => {
       isDelete
       approval_date
       approved_by
+      approval
       rejection_reason
       grace_period_days
       suspended_reason
@@ -98,6 +100,7 @@ export const getMstResellerById = async (id: string) => {
       email
       phone
       business_name
+      brand_name
       business_email
       gstin
       gstin_status
@@ -121,6 +124,7 @@ export const getMstResellerById = async (id: string) => {
       referral_link
       approval_date
       approved_by
+      approval
       rejection_reason
       grace_period_days
       current_step
@@ -130,6 +134,7 @@ export const getMstResellerById = async (id: string) => {
       is_email_verified
       is_phone_verified
       profile_image
+      logo
       suspended_reason
       suspended_at
       suspended_by
@@ -281,6 +286,128 @@ export const updateMstResellerStatus = async (id: string, status: boolean) => {
 };
 
 /**
+ * Update reseller logo
+ */
+export const updateMstResellerLogo = async (id: string, logo: string) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || typeof id !== 'string' || !uuidRegex.test(id)) {
+    return {
+      success: false,
+      message: "Invalid reseller ID format",
+    };
+  }
+
+  const MUTATION = `mutation UpdateMstResellerLogo(
+    $id: uuid!
+    $logo: String!
+  ) {
+    update_mst_reseller_by_pk(
+      pk_columns: { id: $id }
+      _set: {
+        logo: $logo
+      }
+    ) {
+      id
+      logo
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, {
+      id,
+      logo: logo,
+    });
+
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update logo",
+      };
+    }
+
+    if (result?.data?.update_mst_reseller_by_pk) {
+      return {
+        success: true,
+        data: result.data.update_mst_reseller_by_pk,
+        message: "Logo updated successfully",
+      };
+    }
+
+    return {
+      success: false,
+      message: "Failed to update logo",
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update logo",
+    };
+  }
+};
+
+/**
+ * Update reseller profile image
+ */
+export const updateMstResellerProfileImage = async (id: string, profileImage: string) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || typeof id !== 'string' || !uuidRegex.test(id)) {
+    return {
+      success: false,
+      message: "Invalid reseller ID format",
+    };
+  }
+
+  const MUTATION = `mutation UpdateMstResellerProfileImage(
+    $id: uuid!
+    $profile_image: String!
+  ) {
+    update_mst_reseller_by_pk(
+      pk_columns: { id: $id }
+      _set: {
+        profile_image: $profile_image
+      }
+    ) {
+      id
+      profile_image
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, {
+      id,
+      profile_image: profileImage,
+    });
+
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update profile image",
+      };
+    }
+
+    if (result?.data?.update_mst_reseller_by_pk) {
+      return {
+        success: true,
+        data: result.data.update_mst_reseller_by_pk,
+        message: "Profile image updated successfully",
+      };
+    }
+
+    return {
+      success: false,
+      message: "Failed to update profile image",
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update profile image",
+    };
+  }
+};
+
+/**
  * Update reseller
  */
 export const updateMstReseller = async (id: string, data: {
@@ -289,6 +416,7 @@ export const updateMstReseller = async (id: string, data: {
   email?: string;
   phone?: string;
   business_name?: string;
+  brand_name?: string;
   business_email?: string;
   gstin?: string;
   status?: boolean;
@@ -305,6 +433,8 @@ export const updateMstReseller = async (id: string, data: {
   gst_pan_number?: string;
   gstin_status?: string;
   validity_date?: string | null;
+  profile_image?: string;
+  logo?: string;
   [key: string]: any;
 }) => {
   // Validate UUID format
@@ -316,66 +446,32 @@ export const updateMstReseller = async (id: string, data: {
     };
   }
 
-  const MUTATION = `mutation UpdateMstReseller(
-    $id: uuid!
-    $first_name: String
-    $last_name: String
-    $email: String
-    $phone: String
-    $business_name: String
-    $business_email: String
-    $gstin: String
-    $status: Boolean
-    $address: [String!]
-    $dob: String
-    $gender: String
-    $pan_number: String
-    $pan_dob: String
-    $aadhaar_number: String
-    $business_address: String
-    $constitution_of_business: String
-    $nature_bus_activities: String
-    $legal_name: String
-    $gst_pan_number: String
-    $gstin_status: String
-  ) {
-    update_mst_reseller_by_pk(
-      pk_columns: { id: $id }
-      _set: {
-        first_name: $first_name
-        last_name: $last_name
-        email: $email
-        phone: $phone
-        business_name: $business_name
-        business_email: $business_email
-        gstin: $gstin
-        status: $status
-        address: $address
-        dob: $dob
-        gender: $gender
-        pan_number: $pan_number
-        pan_dob: $pan_dob
-        aadhaar_number: $aadhaar_number
-        business_address: $business_address
-        constitution_of_business: $constitution_of_business
-        nature_bus_activities: $nature_bus_activities
-        legal_name: $legal_name
-        gst_pan_number: $gst_pan_number
-        gstin_status: $gstin_status
-      }
-    ) {
-      id
-      first_name
-      last_name
-      email
-      phone
-      business_name
-      business_email
-      gstin
-      status
-      updated_at
-    }
-  }`;
+  // Field type mapping for GraphQL variables
+  const fieldTypeMap: Record<string, string> = {
+    first_name: 'String',
+    last_name: 'String',
+    email: 'String',
+    phone: 'String',
+    business_name: 'String',
+    brand_name: 'String',
+    business_email: 'String',
+    gstin: 'String',
+    status: 'Boolean',
+    address: '[String!]',
+    dob: 'String',
+    gender: 'String',
+    pan_number: 'String',
+    pan_dob: 'String',
+    aadhaar_number: 'String',
+    business_address: 'String',
+    constitution_of_business: 'String',
+    nature_bus_activities: 'String',
+    legal_name: 'String',
+    gst_pan_number: 'String',
+    gstin_status: 'String',
+    profile_image: 'String',
+    logo: 'String',
+  };
 
   try {
     // Extract validity_date before processing other fields
@@ -392,11 +488,9 @@ export const updateMstReseller = async (id: string, data: {
       if (data[key] !== undefined) {
         // Handle address field - convert string to array if needed
         if (key === 'address' && typeof data[key] === 'string') {
-          // If address is a string, convert to array (split by newline or comma)
           const addressStr = data[key] as string;
           cleanedData[key] = addressStr.trim() ? addressStr.split(/\n|,/).map(a => a.trim()).filter(a => a) : null;
         } else if (key === 'address' && Array.isArray(data[key])) {
-          // If already an array, use it as is
           cleanedData[key] = (data[key] as string[]).length > 0 ? data[key] : null;
         } else {
           cleanedData[key] = data[key];
@@ -404,8 +498,60 @@ export const updateMstReseller = async (id: string, data: {
       }
     });
 
-    const result = await graphqlRequest(MUTATION, { id, ...cleanedData });
+    // Build dynamic mutation — only include fields that are actually provided
+    // This prevents nullifying fields like logo, profile_image that aren't in the edit form
+    const fieldsToUpdate = Object.keys(cleanedData).filter(key => fieldTypeMap[key]);
+    
+    if (fieldsToUpdate.length === 0) {
+      return {
+        success: false,
+        message: "No valid fields to update",
+      };
+    }
+
+    const variableDefs = fieldsToUpdate.map(key => `$${key}: ${fieldTypeMap[key]}`).join('\n    ');
+    const setFields = fieldsToUpdate.map(key => `${key}: $${key}`).join('\n        ');
+
+    const MUTATION = `mutation UpdateMstReseller(
+    $id: uuid!
+    ${variableDefs}
+  ) {
+    update_mst_reseller_by_pk(
+      pk_columns: { id: $id }
+      _set: {
+        ${setFields}
+      }
+    ) {
+      id
+      first_name
+      last_name
+      email
+      phone
+      business_name
+      brand_name
+      business_email
+      gstin
+      status
+      profile_image
+      logo
+      updated_at
+    }
+  }`;
+
+    // Only pass declared variables to avoid Hasura rejecting undeclared vars
+    const variables: any = { id };
+    fieldsToUpdate.forEach(key => {
+      variables[key] = cleanedData[key];
+    });
+
+    console.log('[updateMstReseller] Fields to update:', fieldsToUpdate);
+    console.log('[updateMstReseller] Variables:', JSON.stringify(variables, null, 2));
+
+    const result = await graphqlRequest(MUTATION, variables);
+    console.log('[updateMstReseller] GraphQL result:', JSON.stringify(result, null, 2));
+    
     if (result?.errors) {
+      console.error('[updateMstReseller] GraphQL errors:', result.errors);
       return {
         success: false,
         message: result.errors[0]?.message || "Failed to update reseller",
@@ -543,6 +689,7 @@ export const approveMstReseller = async (
     $id: uuid!
     $approved_by: uuid!
     $approval_date: timestamp!
+    $approval: String!
     $grace_period_days: Int
     $rejection_reason: String
   ) {
@@ -551,6 +698,7 @@ export const approveMstReseller = async (
       _set: {
         approval_date: $approval_date
         approved_by: $approved_by
+        approval: $approval
         rejection_reason: $rejection_reason
         grace_period_days: $grace_period_days
         status: true
@@ -559,6 +707,7 @@ export const approveMstReseller = async (
       id
       approval_date
       approved_by
+      approval
       rejection_reason
       grace_period_days
       status
@@ -571,6 +720,7 @@ export const approveMstReseller = async (
       id,
       approved_by: approvedBy,
       approval_date: approvalDate,
+      approval: "approved",
       rejection_reason: null,
     };
 
@@ -812,6 +962,7 @@ export const rejectMstReseller = async (
   const MUTATION = `mutation RejectMstReseller(
     $id: uuid!
     $rejection_reason: String!
+    $approval: String!
     $status: Boolean!
   ) {
     update_mst_reseller_by_pk(
@@ -820,6 +971,7 @@ export const rejectMstReseller = async (
         rejection_reason: $rejection_reason
         approval_date: null
         approved_by: null
+        approval: $approval
         status: $status
       }
     ) {
@@ -827,6 +979,7 @@ export const rejectMstReseller = async (
       rejection_reason
       approval_date
       approved_by
+      approval
       status
     }
   }`;
@@ -835,6 +988,7 @@ export const rejectMstReseller = async (
     const result = await graphqlRequest(MUTATION, {
       id,
       rejection_reason: rejectionReason.trim(),
+      approval: "rejected",
       status: false,
     });
     if (result?.errors) {

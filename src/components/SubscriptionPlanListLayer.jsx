@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSubscriptionPlans, deleteMstSubscriptionPlan } from "@/hasura/mutations/subscriptionPlan";
+import { getUserData, getAuthToken } from "@/utils/auth";
 
 const SubscriptionPlanListLayer = () => {
   const [plans, setPlans] = useState([]);
@@ -9,16 +10,49 @@ const SubscriptionPlanListLayer = () => {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [userRole, setUserRole] = useState(null);
+  const [resellerId, setResellerId] = useState(null);
 
   useEffect(() => {
-    fetchPlans();
+    // Get user role and reseller ID
+    const token = getAuthToken();
+    const userData = getUserData();
+
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const role = payload.role || userData?.role;
+        setUserRole(role);
+        
+        // If reseller, get their ID
+        if (role === 'reseller' && userData?.id) {
+          setResellerId(userData.id);
+        } else {
+          // If not reseller (admin), set resellerId to null to fetch all plans
+          setResellerId(null);
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+        setResellerId(null);
+      }
+    } else {
+      setResellerId(null);
+    }
   }, []);
+
+  useEffect(() => {
+    // Fetch plans when resellerId is determined (null for admin, actual ID for reseller)
+    if (userRole !== null) {
+      fetchPlans();
+    }
+  }, [userRole, resellerId]);
 
   const fetchPlans = async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await getMstSubscriptionPlans();
+      // Pass resellerId if user is a reseller, otherwise fetch all plans (for admin)
+      const result = await getMstSubscriptionPlans(userRole === 'reseller' ? resellerId : undefined);
       if (result.success) {
         setPlans(result.data || []);
       } else {

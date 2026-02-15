@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getMstCustomersByReseller } from "@/hasura/mutations/customer";
+import { getMstCustomersByReseller, getAllMstCustomers } from "@/hasura/mutations/customer";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import PermissionGuard from "@/components/PermissionGuard";
 
@@ -23,28 +23,39 @@ const CustomerListLayer = () => {
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
         const role = payload.role || userData?.role;
-        setIsAdmin(role === "admin" || role === "super_admin");
-        setIsReseller(role === "reseller");
+        const adminStatus = role === "admin" || role === "super_admin";
+        const resellerStatus = role === "reseller";
+        setIsAdmin(adminStatus);
+        setIsReseller(resellerStatus);
+        
+        // Fetch customers after role is determined
+        fetchCustomers(adminStatus, resellerStatus);
       } catch (err) {
         console.error("Error decoding token:", err);
       }
     }
-
-    fetchCustomers();
   }, []);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (adminStatus = isAdmin, resellerStatus = isReseller) => {
     setLoading(true);
     setError("");
     try {
-      const userData = getUserData();
-      if (!userData || !userData.id) {
-        setError("Unable to determine reseller ID. Please log in again.");
-        setLoading(false);
-        return;
+      let result;
+
+      // If user is admin/super_admin, fetch all customers
+      if (adminStatus) {
+        result = await getAllMstCustomers();
+      } else {
+        // For resellers, fetch only their customers
+        const userData = getUserData();
+        if (!userData || !userData.id) {
+          setError("Unable to determine reseller ID. Please log in again.");
+          setLoading(false);
+          return;
+        }
+        result = await getMstCustomersByReseller(userData.id);
       }
 
-      const result = await getMstCustomersByReseller(userData.id);
       if (result.success) {
         setCustomers(result.data || []);
       } else {
@@ -221,6 +232,7 @@ const CustomerListLayer = () => {
                   <tr>
                     <th scope="col">S.L</th>
                     <th scope="col">Date</th>
+                    <th scope="col">Reseller</th>
                     <th scope="col">Profile Name</th>
                     <th scope="col">Email</th>
                     <th scope="col">Phone</th>
@@ -241,6 +253,14 @@ const CustomerListLayer = () => {
                     <tr key={customer.id}>
                       <td>{index + 1}</td>
                       <td>{formatDate(customer.created_at)}</td>
+                      <td>
+                        <span className="text-md mb-0 fw-normal text-secondary-light">
+                          {customer.mst_reseller?.brand_name || customer.mst_reseller?.business_name || 
+                           (customer.mst_reseller?.first_name && customer.mst_reseller?.last_name
+                             ? `${customer.mst_reseller.first_name} ${customer.mst_reseller.last_name}`
+                             : customer.mst_reseller?.email || "-")}
+                        </span>
+                      </td>
                       <td>
                         <div className="d-flex align-items-center">
                           <div className="w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center">

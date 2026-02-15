@@ -735,14 +735,15 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId) {
   const client = getHasuraClient();
 
   const mutation = `
-    mutation UpdateCustomerStatus($customer_id: uuid!, $status: String!, $kyc_status: String!) {
+    mutation UpdateCustomerStatus($customer_id: uuid!, $status: String!, $kyc_status: String!, $approval: String!) {
       update_mst_customer_by_pk(
         pk_columns: { id: $customer_id }
-        _set: { status: $status, kyc_status: $kyc_status }
+        _set: { status: $status, kyc_status: $kyc_status, approval: $approval }
       ) {
         id
         status
         kyc_status
+        approval
         updated_at
       }
     }
@@ -753,6 +754,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId) {
       customer_id: customerId,
       status: "active",
       kyc_status: "verified",
+      approval: "approved",
     });
 
     return result?.update_mst_customer_by_pk ? true : false;

@@ -57,8 +57,17 @@ export const login = async (email, password) => {
   }
 
   // Check if user is active
-  if (!user.status) {
-    throw new Error('Account is inactive. Please contact support.');
+  // Status must be explicitly true (boolean) or 1 (number) to be considered active
+  console.log("📊 [OLD AuthService] Reseller status check:", {
+    email: user.email,
+    status: user.status,
+    status_type: typeof user.status
+  });
+  
+  const isStatusActive = user.status === true || user.status === 1 || user.status === "true";
+  if (!isStatusActive) {
+    console.log("🚫 [OLD AuthService] Reseller account is inactive. Status value:", user.status, "Type:", typeof user.status);
+    throw new Error('Your account is inactive. Please contact admin to activate your account.');
   }
 
   // For existing users with plain text passwords, handle migration

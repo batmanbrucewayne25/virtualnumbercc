@@ -69,6 +69,8 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
             last_name
             email
             business_name
+            brand_name
+            logo
             status
           }
         }
@@ -99,7 +101,10 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
         success: true,
         data: {
           resellerId: reseller.id,
-          resellerName: reseller.business_name || `${reseller.first_name} ${reseller.last_name}`.trim(),
+          resellerName: reseller.brand_name || reseller.business_name || `${reseller.first_name} ${reseller.last_name}`.trim(),
+          brandName: reseller.brand_name || null,
+          businessName: reseller.business_name || null,
+          logo: reseller.logo || null,
           domain: domainRecord.domain,
         },
       });

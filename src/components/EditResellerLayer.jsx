@@ -1,9 +1,11 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId, upsertMstResellerDomain } from "@/hasura/mutations/resellerDomain";
+import { getAuthToken, getUserData } from "@/utils/auth";
+import SuccessModal from "./SuccessModal";
 
 const EditResellerLayer = () => {
   const { id } = useParams();
@@ -12,6 +14,9 @@ const EditResellerLayer = () => {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   
   const [formData, setFormData] = useState({
     first_name: "",
@@ -19,6 +24,7 @@ const EditResellerLayer = () => {
     email: "",
     phone: "",
     business_name: "",
+    brand_name: "",
     business_email: "",
     gstin: "",
     status: true,
@@ -34,11 +40,57 @@ const EditResellerLayer = () => {
     gstin_status: "",
     validity_date: "",
     custom_domain: "",
+    profile_image: "",
+    logo: "",
   });
 
   const [domainData, setDomainData] = useState(null);
 
+  // Image/Logo upload state
+  const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads';
+  const [imagePreview, setImagePreview] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [selectedImageFile, setSelectedImageFile] = useState(null);
+  const [selectedLogoFile, setSelectedLogoFile] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef(null);
+  const logoInputRef = useRef(null);
+
   useEffect(() => {
+    // Check if user is admin
+    const token = getAuthToken();
+    const userData = getUserData();
+    
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const role = payload.role || userData?.role;
+        if (role === "admin" || role === "super_admin") {
+          setIsAdmin(true);
+        } else {
+          setError("Access denied. Only Super Admin can edit reseller profiles.");
+          setFetching(false);
+          setTimeout(() => {
+            navigate("/reseller-list");
+          }, 2000);
+          return;
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+        setError("Failed to authenticate user");
+        setFetching(false);
+        return;
+      }
+    } else {
+      setError("Please login to access this page");
+      setFetching(false);
+      setTimeout(() => {
+        navigate("/sign-in");
+      }, 2000);
+      return;
+    }
+
     const currentId = id;
     console.log("useParams id:", currentId, typeof currentId);
     
@@ -53,6 +105,11 @@ const EditResellerLayer = () => {
     if (!uuidRegex.test(resellerId)) {
       setError(`Invalid reseller ID format: ${currentId}`);
       setFetching(false);
+      return;
+    }
+
+    // Only fetch if admin
+    if (!isAdmin) {
       return;
     }
 
@@ -98,12 +155,14 @@ const EditResellerLayer = () => {
             // Continue without domain if fetch fails
           }
 
-          setFormData({
+          setFormData((prev) => ({
+            ...prev,
             first_name: result.data.first_name || "",
             last_name: result.data.last_name || "",
             email: result.data.email || "",
             phone: result.data.phone || "",
             business_name: result.data.business_name || "",
+            brand_name: result.data.brand_name || "",
             business_email: result.data.business_email || "",
             gstin: result.data.gstin || "",
             status: result.data.status !== undefined ? result.data.status : true,
@@ -118,7 +177,17 @@ const EditResellerLayer = () => {
             gst_pan_number: result.data.gst_pan_number || "",
             gstin_status: result.data.gstin_status || "",
             validity_date: validityDate,
-          });
+            profile_image: result.data.profile_image || "",
+            logo: result.data.logo || "",
+          }));
+
+          // Set image/logo previews from existing data
+          if (result.data.profile_image) {
+            setImagePreview(`${IMAGE_BASE_PATH}/profile-images/${result.data.profile_image}`);
+          }
+          if (result.data.logo) {
+            setLogoPreview(`${IMAGE_BASE_PATH}/logos/${result.data.logo}`);
+          }
         } else {
           setError(result.message || "Reseller not found");
         }
@@ -130,8 +199,10 @@ const EditResellerLayer = () => {
       }
     };
 
-    fetchReseller();
-  }, [id]);
+    if (isAdmin) {
+      fetchReseller();
+    }
+  }, [id, isAdmin, navigate]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -188,17 +259,18 @@ const EditResellerLayer = () => {
 
     setLoading(true);
     try {
-      // Update reseller data
-      const result = await updateMstReseller(resellerId, {
+      // Build update payload - only include fields that have values
+      const updatePayload = {
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
         phone: formData.phone,
         business_name: formData.business_name,
+        brand_name: formData.brand_name || null,
         business_email: formData.business_email,
         gstin: formData.gstin || null,
         status: formData.status,
-        address: formData.address || null, // Will be converted to array in mutation
+        address: formData.address || null,
         dob: formData.dob || null,
         gender: formData.gender || null,
         pan_number: formData.pan_number || null,
@@ -209,7 +281,15 @@ const EditResellerLayer = () => {
         gst_pan_number: formData.gst_pan_number || null,
         gstin_status: formData.gstin_status || null,
         validity_date: formData.validity_date || null,
-      });
+        // Only include profile_image and logo if they have values (to preserve existing values if not changed)
+        ...(formData.profile_image ? { profile_image: formData.profile_image } : {}),
+        ...(formData.logo ? { logo: formData.logo } : {}),
+      };
+      console.log('[EditReseller] Saving payload:', JSON.stringify(updatePayload, null, 2));
+
+      // Update reseller data
+      const result = await updateMstReseller(resellerId, updatePayload);
+      console.log('[EditReseller] Save result:', JSON.stringify(result, null, 2));
 
       if (!result.success) {
         setError(result.message || "Failed to update reseller. Please try again.");
@@ -250,9 +330,9 @@ const EditResellerLayer = () => {
           // Domain change requires approval
           setSuccess(true);
           setError("");
+          setSuccessMessage("Domain change submitted successfully. It will be active after admin approval.");
           setTimeout(() => {
-            alert("Domain change submitted successfully. It will be active after admin approval.");
-            navigate("/reseller-list");
+            setShowSuccessModal(true);
           }, 1000);
           return;
         }
@@ -275,6 +355,158 @@ const EditResellerLayer = () => {
       setLoading(false);
     }
   };
+
+  // --- Profile Image Handlers ---
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload a valid image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image size should be less than 5MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => setImagePreview(event.target?.result);
+    reader.readAsDataURL(file);
+    setSelectedImageFile(file);
+    setError("");
+  };
+
+  const handleImageUpload = async () => {
+    const file = selectedImageFile;
+    if (!file) {
+      setError("Please select an image file");
+      return;
+    }
+    const resellerId = id;
+    if (!resellerId) {
+      setError("Reseller ID is missing.");
+      return;
+    }
+    setUploadingImage(true);
+    setError("");
+    try {
+      const token = getAuthToken();
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+      const uploadData = new FormData();
+      uploadData.append('profile_image', file);
+
+      const response = await fetch(`${API_BASE_URL}upload/profile-image?resellerId=${resellerId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: uploadData,
+      });
+      const result = await response.json();
+      if (result.success) {
+        const filename = result.data.filename;
+        const imageUrl = `${IMAGE_BASE_PATH}/profile-images/${filename}`;
+        setImagePreview(imageUrl);
+        // Save filename to formData so it's included in the form submission
+        setFormData((prev) => ({
+          ...prev,
+          profile_image: filename,
+        }));
+        setSelectedImageFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        setSuccess(true);
+        setError("");
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(result.message || "Failed to upload profile image");
+      }
+    } catch (err) {
+      console.error("Error uploading image:", err);
+      setError(err.message || "An error occurred while uploading image");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // --- Logo Handlers ---
+  const handleLogoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload a valid image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Logo size should be less than 5MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => setLogoPreview(event.target?.result);
+    reader.readAsDataURL(file);
+    setSelectedLogoFile(file);
+    setError("");
+  };
+
+  const handleLogoUpload = async () => {
+    const file = selectedLogoFile;
+    if (!file) {
+      setError("Please select a logo file");
+      return;
+    }
+    const resellerId = id;
+    if (!resellerId) {
+      setError("Reseller ID is missing.");
+      return;
+    }
+    setUploadingLogo(true);
+    setError("");
+    try {
+      const token = getAuthToken();
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+      const uploadData = new FormData();
+      uploadData.append('logo', file);
+
+      const response = await fetch(`${API_BASE_URL}upload/logo?resellerId=${resellerId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: uploadData,
+      });
+      const result = await response.json();
+      if (result.success) {
+        const filename = result.data.filename;
+        const logoUrl = `${IMAGE_BASE_PATH}/logos/${filename}`;
+        setLogoPreview(logoUrl);
+        // Save filename to formData so it's included in the form submission
+        setFormData((prev) => ({
+          ...prev,
+          logo: filename,
+        }));
+        setSelectedLogoFile(null);
+        if (logoInputRef.current) logoInputRef.current.value = "";
+        setSuccess(true);
+        setError("");
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(result.message || "Failed to upload logo");
+      }
+    } catch (err) {
+      console.error("Error uploading logo:", err);
+      setError(err.message || "An error occurred while uploading logo");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  // Check access before rendering
+  if (!isAdmin && !fetching) {
+    return (
+      <div className='card h-100 p-0 radius-12'>
+        <div className='card-body p-24'>
+          <div className='alert alert-danger' role='alert'>
+            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+            {error || "Access denied. Only Super Admin can edit reseller profiles."}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (fetching) {
     return (
@@ -529,7 +761,7 @@ const EditResellerLayer = () => {
                       </div>
                     </div>
                   </div>
-
+                  <hr className='my-24' />
                   <h6 className='text-sm text-primary-light mb-16 mt-24'>Business Information</h6>
                   <div className='mb-20'>
                     <label
@@ -547,6 +779,24 @@ const EditResellerLayer = () => {
                       value={formData.business_name}
                       onChange={handleChange}
                       required
+                    />
+                  </div>
+
+                  <div className='mb-20'>
+                    <label
+                      htmlFor='brand_name'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Brand Name
+                    </label>
+                    <input
+                      type='text'
+                      className='form-control radius-8'
+                      id='brand_name'
+                      name='brand_name'
+                      placeholder='Enter brand name (displayed to customers)'
+                      value={formData.brand_name}
+                      onChange={handleChange}
                     />
                   </div>
 
@@ -670,6 +920,143 @@ const EditResellerLayer = () => {
                     />
                   </div>
 
+                  <hr className='my-24' />
+                  <h6 className='text-sm text-primary-light mb-16'>Profile Image & Logo</h6>
+
+                  <div className='row'>
+                    {/* Profile Image */}
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                          Profile Image
+                        </label>
+                        <div className='d-flex align-items-center gap-3 mb-12'>
+                          <div
+                            style={{
+                              width: 80,
+                              height: 80,
+                              borderRadius: '50%',
+                              overflow: 'hidden',
+                              border: '2px solid #e0e0e0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#f5f5f5',
+                            }}
+                          >
+                            {imagePreview ? (
+                              <img
+                                src={imagePreview}
+                                alt='Profile'
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                onError={(e) => { e.currentTarget.src = 'assets/images/user.png'; }}
+                              />
+                            ) : (
+                              <Icon icon='solar:user-circle-bold' className='text-secondary-light' style={{ fontSize: 48 }} />
+                            )}
+                          </div>
+                          <div className='flex-grow-1'>
+                            <input
+                              type='file'
+                              ref={fileInputRef}
+                              className='form-control radius-8'
+                              accept='image/*'
+                              onChange={handleImageChange}
+                              disabled={uploadingImage}
+                            />
+                            <small className='text-muted d-block mt-1'>Max 5MB. JPG, PNG, GIF.</small>
+                          </div>
+                        </div>
+                        {selectedImageFile && (
+                          <button
+                            type='button'
+                            className='btn btn-sm btn-outline-primary radius-8'
+                            onClick={handleImageUpload}
+                            disabled={uploadingImage}
+                          >
+                            {uploadingImage ? (
+                              <>
+                                <span className='spinner-border spinner-border-sm me-1' role='status' aria-hidden='true'></span>
+                                Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <Icon icon='solar:upload-linear' className='me-1' />
+                                Upload Profile Image
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Business Logo */}
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                          Business Logo
+                        </label>
+                        <div className='d-flex align-items-center gap-3 mb-12'>
+                          <div
+                            style={{
+                              width: 80,
+                              height: 80,
+                              borderRadius: 8,
+                              overflow: 'hidden',
+                              border: '2px solid #e0e0e0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#f5f5f5',
+                            }}
+                          >
+                            {logoPreview ? (
+                              <img
+                                src={logoPreview}
+                                alt='Logo'
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                onError={(e) => { e.currentTarget.src = 'assets/images/logo-icon.png'; }}
+                              />
+                            ) : (
+                              <Icon icon='solar:gallery-bold' className='text-secondary-light' style={{ fontSize: 48 }} />
+                            )}
+                          </div>
+                          <div className='flex-grow-1'>
+                            <input
+                              type='file'
+                              ref={logoInputRef}
+                              className='form-control radius-8'
+                              accept='image/*'
+                              onChange={handleLogoChange}
+                              disabled={uploadingLogo}
+                            />
+                            <small className='text-muted d-block mt-1'>Max 5MB. JPG, PNG, GIF.</small>
+                          </div>
+                        </div>
+                        {selectedLogoFile && (
+                          <button
+                            type='button'
+                            className='btn btn-sm btn-outline-primary radius-8'
+                            onClick={handleLogoUpload}
+                            disabled={uploadingLogo}
+                          >
+                            {uploadingLogo ? (
+                              <>
+                                <span className='spinner-border spinner-border-sm me-1' role='status' aria-hidden='true'></span>
+                                Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <Icon icon='solar:upload-linear' className='me-1' />
+                                Upload Logo
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className='mb-24'>
                     <div className='form-check'>
                       <input
@@ -685,9 +1072,8 @@ const EditResellerLayer = () => {
                       </label>
                     </div>
                   </div>
-
-                  <h6 className='text-sm text-primary-light mb-16 mt-24'>Validity Information</h6>
-                  <div className='mb-20'>
+<hr className='my-24' />
+                   <div className='mb-20'>
                     <label
                       htmlFor='validity_date'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
@@ -707,9 +1093,8 @@ const EditResellerLayer = () => {
                       Update the reseller's validity expiry date. This will update the validity record and create a history entry.
                     </small>
                   </div>
-
-                  <h6 className='text-sm text-primary-light mb-16 mt-24'>Custom Domain</h6>
-                  <div className='mb-20'>
+                  <hr className='my-24' />
+                   <div className='mb-20'>
                     <label
                       htmlFor='custom_domain'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
@@ -770,6 +1155,17 @@ const EditResellerLayer = () => {
           </div>
         </div>
       </div>
+      
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => {
+          setShowSuccessModal(false);
+          navigate("/reseller-list");
+        }}
+        title="Domain Change Submitted"
+        message={successMessage}
+      />
     </div>
   );
 };

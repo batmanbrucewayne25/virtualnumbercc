@@ -25,6 +25,8 @@ const InvoiceListLayer = () => {
     reference: "",
     validity_date: "",
   });
+  const [resellerSearchTerm, setResellerSearchTerm] = useState("");
+  const [resellerDropdownOpen, setResellerDropdownOpen] = useState(false);
 
   useEffect(() => {
     fetchResellers();
@@ -38,6 +40,23 @@ const InvoiceListLayer = () => {
   useEffect(() => {
     setCurrentPage(1); // Reset to first page when filters change
   }, [searchTerm, transactionTypeFilter, resellerFilter, itemsPerPage]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (resellerDropdownOpen && !event.target.closest('.position-relative')) {
+        setResellerDropdownOpen(false);
+        setResellerSearchTerm("");
+      }
+    };
+
+    if (resellerDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [resellerDropdownOpen]);
 
   const fetchResellers = async () => {
     setLoadingResellers(true);
@@ -82,6 +101,32 @@ const InvoiceListLayer = () => {
     }));
     setError("");
   };
+
+  const handleResellerSelect = (resellerId) => {
+    setFormData((prev) => ({
+      ...prev,
+      reseller_id: resellerId,
+    }));
+    setResellerDropdownOpen(false);
+    setResellerSearchTerm("");
+    setError("");
+  };
+
+  // Filter resellers based on search term
+  const filteredResellers = resellers.filter((reseller) => {
+    if (!resellerSearchTerm) return true;
+    const searchLower = resellerSearchTerm.toLowerCase();
+    return (
+      reseller.business_name?.toLowerCase().includes(searchLower) ||
+      reseller.email?.toLowerCase().includes(searchLower) ||
+      reseller.first_name?.toLowerCase().includes(searchLower) ||
+      reseller.last_name?.toLowerCase().includes(searchLower) ||
+      `${reseller.first_name} ${reseller.last_name}`.toLowerCase().includes(searchLower) ||
+      reseller.phone?.includes(resellerSearchTerm)
+    );
+  });
+
+  const selectedReseller = resellers.find(r => r.id === formData.reseller_id);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -475,6 +520,8 @@ const InvoiceListLayer = () => {
                       reference: "",
                       validity_date: "",
                     });
+                    setResellerSearchTerm("");
+                    setResellerDropdownOpen(false);
                     setError("");
                     setSuccess("");
                   }}
@@ -504,24 +551,100 @@ const InvoiceListLayer = () => {
                     >
                       Reseller <span className='text-danger-600'>*</span>
                     </label>
-                    <select
-                      className='form-select radius-8'
-                      id='reseller_id'
-                      name='reseller_id'
-                      value={formData.reseller_id}
-                      onChange={handleChange}
-                      required
-                      disabled={loadingResellers || actionLoading}
-                    >
-                      <option value=''>Select Reseller</option>
-                      {resellers.map((reseller) => (
-                        <option key={reseller.id} value={reseller.id}>
-                          {reseller.business_name || reseller.email} ({reseller.first_name} {reseller.last_name})
-                        </option>
-                      ))}
-                    </select>
-                    {loadingResellers && (
-                      <small className='text-muted'>Loading resellers...</small>
+                    <div className="position-relative">
+                      <div
+                        className={`form-control radius-8 d-flex align-items-center justify-content-between ${loadingResellers || actionLoading ? 'opacity-50' : ''}`}
+                        style={{ cursor: loadingResellers || actionLoading ? 'not-allowed' : 'pointer', minHeight: '38px' }}
+                        onClick={() => {
+                          if (!loadingResellers && !actionLoading) {
+                            setResellerDropdownOpen(!resellerDropdownOpen);
+                          }
+                        }}
+                      >
+                        <span className={formData.reseller_id ? 'text-primary-light' : 'text-muted'}>
+                          {selectedReseller 
+                            ? `${selectedReseller.business_name || selectedReseller.email} (${selectedReseller.first_name} ${selectedReseller.last_name})`
+                            : 'Select Reseller'}
+                        </span>
+                        <Icon 
+                          icon={resellerDropdownOpen ? 'ep:arrow-up' : 'ep:arrow-down'} 
+                          className='icon text-secondary-light' 
+                        />
+                      </div>
+                      
+                      {resellerDropdownOpen && (
+                        <div 
+                          className="position-absolute w-100 bg-base border border-secondary-200 radius-8 shadow-lg mt-2"
+                          style={{ zIndex: 1050, maxHeight: '300px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+                        >
+                          {/* Search Input */}
+                          <div className="p-12 border-bottom">
+                            <div className="position-relative">
+                              <input
+                                type="text"
+                                className="form-control form-control-sm radius-8 pe-32"
+                                placeholder="Search reseller..."
+                                value={resellerSearchTerm}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setResellerSearchTerm(e.target.value);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                autoFocus
+                              />
+                              <Icon 
+                                icon='ion:search-outline' 
+                                className='icon position-absolute end-0 top-50 translate-middle-y me-12 text-secondary-light'
+                                style={{ pointerEvents: 'none' }}
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Reseller List */}
+                          <div className="overflow-y-auto" style={{ maxHeight: '250px' }}>
+                            {loadingResellers ? (
+                              <div className="p-16 text-center">
+                                <div className="spinner-border spinner-border-sm text-primary" role="status">
+                                  <span className="visually-hidden">Loading...</span>
+                                </div>
+                                <small className="text-muted d-block mt-2">Loading resellers...</small>
+                              </div>
+                            ) : filteredResellers.length === 0 ? (
+                              <div className="p-16 text-center">
+                                <small className="text-muted">No resellers found</small>
+                              </div>
+                            ) : (
+                              filteredResellers.map((reseller) => (
+                                <div
+                                  key={reseller.id}
+                                  className={`px-16 py-12 hover-bg-primary-50 cursor-pointer ${formData.reseller_id === reseller.id ? 'bg-primary-50' : ''}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResellerSelect(reseller.id);
+                                  }}
+                                >
+                                  <div className="d-flex align-items-center gap-2">
+                                    <div className="flex-grow-1">
+                                      <div className="text-sm fw-medium text-primary-light">
+                                        {reseller.business_name || reseller.email}
+                                      </div>
+                                      <div className="text-xs text-secondary-light">
+                                        {reseller.first_name} {reseller.last_name} • {reseller.email}
+                                      </div>
+                                    </div>
+                                    {formData.reseller_id === reseller.id && (
+                                      <Icon icon='material-symbols:check-circle' className='icon text-success-600' />
+                                    )}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {formData.reseller_id && !selectedReseller && (
+                      <small className='text-danger'>Selected reseller not found</small>
                     )}
                   </div>
 
@@ -618,7 +741,10 @@ const InvoiceListLayer = () => {
                         amount: "",
                         description: "",
                         reference: "",
+                        validity_date: "",
                       });
+                      setResellerSearchTerm("");
+                      setResellerDropdownOpen(false);
                       setError("");
                       setSuccess("");
                     }}

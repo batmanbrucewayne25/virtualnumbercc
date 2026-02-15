@@ -5,6 +5,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggleButton from "../helper/ThemeToggleButton";
 import { clearAuth, getAuthToken, getUserData } from "@/utils/auth";
 import PermissionGuard from "@/components/PermissionGuard";
+import { getMstWalletByResellerId } from "@/hasura/mutations/wallet";
 
 const MasterLayout = ({ children }) => {
   let [sidebarActive, seSidebarActive] = useState(false);
@@ -12,6 +13,8 @@ const MasterLayout = ({ children }) => {
   const [userRole, setUserRole] = useState(null);
   const [userName, setUserName] = useState("");
   const [userDisplayName, setUserDisplayName] = useState("");
+  const [walletBalance, setWalletBalance] = useState(null);
+  const [walletLoading, setWalletLoading] = useState(false);
   const location = useLocation(); // Hook to get the current route
 
   // Get user role and name from JWT token and localStorage
@@ -56,6 +59,35 @@ const MasterLayout = ({ children }) => {
       }
     }
   }, []);
+
+  // Fetch wallet balance for resellers
+  useEffect(() => {
+    const fetchWalletBalance = async () => {
+      if (userRole === 'reseller') {
+        const userData = getUserData();
+        if (userData?.id) {
+          setWalletLoading(true);
+          try {
+            const result = await getMstWalletByResellerId(userData.id);
+            if (result.success && result.data) {
+              setWalletBalance(result.data.balance || 0);
+            } else {
+              setWalletBalance(0);
+            }
+          } catch (error) {
+            console.error("Error fetching wallet balance:", error);
+            setWalletBalance(0);
+          } finally {
+            setWalletLoading(false);
+          }
+        }
+      }
+    };
+
+    if (userRole) {
+      fetchWalletBalance();
+    }
+  }, [userRole]);
 
   useEffect(() => {
     // Function to handle dropdown clicks
@@ -688,6 +720,17 @@ const MasterLayout = ({ children }) => {
                     >
                       <i className='ri-circle-fill circle-icon text-danger-main w-auto' />{" "}
                       Whatsapp Integration
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to='/custom-domain'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <i className='ri-circle-fill circle-icon text-info-main w-auto' />{" "}
+                      Custom Domain
                     </NavLink>
                   </li>
                   {/* <li>
@@ -1647,6 +1690,23 @@ const MasterLayout = ({ children }) => {
             </div>
             <div className='col-auto'>
               <div className='d-flex flex-wrap align-items-center gap-3'>
+                {/* Wallet Balance - Show for Resellers */}
+                {userRole === 'reseller' && (
+                  <div className=''>
+                   
+                    <div className='d-flex flex-column'>
+                      
+                       {walletLoading ? (
+                         <span className='text-sm  fw-semibold'>Loading...</span>
+                       ) : (
+                         <span className='text-md   fw-semibold d-flex align-items-center gap-2'>
+                           <Icon icon='solar:wallet-money-bold' className='icon  text-xl' />
+                           ₹{walletBalance !== null ? Number(walletBalance).toFixed(2) : '0.00'}
+                         </span>
+                       )}
+                    </div>
+                  </div>
+                )}
                 {/* ThemeToggleButton - Hidden */}
                 {/* <ThemeToggleButton /> */}
                 {/* <div className='dropdown d-none d-sm-inline-block'>

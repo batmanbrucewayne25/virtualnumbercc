@@ -88,6 +88,7 @@ import ViewCustomerPage from "./pages/ViewCustomerPage";
 import TransactionListPage from "./pages/TransactionListPage";
 import ViewUserPage from "./pages/ViewUserPage";
 import ResellerDashboardPage from "./pages/ResellerDashboardPage";
+import CustomDomainSettingsPage from "./pages/CustomDomainSettingsPage";
 import { PermissionProvider } from "@/contexts/PermissionContext";
 
 
@@ -231,6 +232,7 @@ function App() {
           <Route exact path='/video-generator' element={<VideoGeneratorPage />} />
           {/* <Route exact path='/videos' element={<VideosPage />} /> */}
           <Route exact path='/view-profile' element={<ViewProfilePage />} />
+          <Route exact path='/custom-domain' element={<CustomDomainSettingsPage />} />
           <Route exact path='/voice-generator' element={<VoiceGeneratorPage />} />
           <Route exact path='/wallet' element={<WalletPage />} />
           <Route exact path='/change-password' element={<ChangePasswordPage />} />

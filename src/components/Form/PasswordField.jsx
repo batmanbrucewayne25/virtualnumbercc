@@ -9,6 +9,7 @@ const PasswordField = ({
   required = false,
   name,
   disableToggle = false,
+  disabled = false,
 }) => {
   const [visible, setVisible] = useState(false);
 
@@ -23,6 +24,7 @@ const PasswordField = ({
         value={value}
         onChange={onChange}
         required={required}
+        disabled={disabled}
         autoComplete="off"
       />
 

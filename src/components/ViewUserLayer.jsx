@@ -5,6 +5,8 @@ import {
   getCustomerWithTransactions,
   suspendCustomer,
 } from "@/hasura/mutations/user";
+import { getUserData, getAuthToken } from "@/utils/auth";
+import ApproveCustomerModal from "./ApproveCustomerModal";
 
 const ViewUserLayer = () => {
   const { id } = useParams();
@@ -14,9 +16,24 @@ const ViewUserLayer = () => {
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [showTransactions, setShowTransactions] = useState(false);
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
     fetchCustomer();
+    
+    // Get user role
+    const token = getAuthToken();
+    const userData = getUserData();
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const role = payload.role || userData?.role;
+        setUserRole(role);
+      } catch (err) {
+        console.error("Error decoding token:", err);
+      }
+    }
   }, [id]);
 
   const fetchCustomer = async () => {
@@ -64,6 +81,53 @@ const ViewUserLayer = () => {
     } catch (err) {
       console.error("Error suspending customer:", err);
       setError(err.message || "An error occurred while suspending customer");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleApproveClick = () => {
+    setApproveModalOpen(true);
+  };
+
+  const handleApprove = async (approvalData) => {
+    if (!customer) return;
+
+    setActionLoading(true);
+    setError("");
+
+    try {
+      // Call backend API to approve customer
+      const { getApiBaseUrl } = await import("@/utils/apiUrl");
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/customer/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+        body: JSON.stringify({
+          customer_id: customer.id,
+          payment_method: approvalData.payment_method,
+          ...approvalData,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Refresh customer data
+        await fetchCustomer();
+        setApproveModalOpen(false);
+        alert(
+          "Customer approved successfully! Virtual number generated and emails sent."
+        );
+      } else {
+        setError(result.message || "Failed to approve customer");
+      }
+    } catch (err) {
+      console.error("Error approving customer:", err);
+      setError(err.message || "An error occurred while approving customer");
     } finally {
       setActionLoading(false);
     }
@@ -196,7 +260,7 @@ const ViewUserLayer = () => {
     );
   }
 
-  const virtualNumber = customer.mst_virtual_numbers?.[0];
+  const virtualNumbers = customer.mst_virtual_numbers || [];
   const transactions = customer.mst_transactions || [];
   const failedTransactions = transactions.filter(
     (txn) => txn.status?.toLowerCase() === "failure"
@@ -304,67 +368,6 @@ const ViewUserLayer = () => {
             </div>
           </div>
 
-          <div className="col-md-6">
-            <div className="card bg-base border p-16 radius-8">
-              <h6 className="text-sm text-secondary-light mb-12">
-                Virtual Number Details
-              </h6>
-              <div className="d-flex flex-column gap-2">
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Virtual Number:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {virtualNumber?.virtual_number || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Call Forward Number:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {virtualNumber?.call_forwarding_number || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Purchase Date:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {formatDate(virtualNumber?.purchase_date) || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Expiry Date:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {formatDate(virtualNumber?.expiry_date) || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Days Left:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {virtualNumber?.days_left || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Auto Renew:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {virtualNumber?.is_auto_renew ? (
-                      <span className="badge bg-success">Enabled</span>
-                    ) : (
-                      <span className="badge bg-secondary">Disabled</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* KYC Details */}
           <div className="col-md-6">
@@ -435,6 +438,127 @@ const ViewUserLayer = () => {
             </div>
           </div>
         </div>
+
+        {/* Virtual Numbers List */}
+        <div className="mb-24">
+          <div className="d-flex justify-content-between align-items-center mb-16">
+            <h6 className="text-sm text-secondary-light mb-0">
+              Virtual Numbers List
+            </h6>
+            {(userRole === 'admin' || userRole === 'super_admin' || userRole === 'reseller') && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleApproveClick}
+                disabled={actionLoading}
+              >
+                <Icon icon="ic:baseline-plus" className="icon me-2" />
+                Add Virtual Number
+              </button>
+            )}
+          </div>
+          
+          {virtualNumbers.length > 0 ? (
+            <div className="table-responsive scroll-sm">
+              <table className="table bordered-table sm-table mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">S.L</th>
+                    <th scope="col">Virtual Number</th>
+                    <th scope="col">Call Forward Number</th>
+                    <th scope="col">Purchase Date</th>
+                    <th scope="col">Expiry Date</th>
+                    <th scope="col">Days Left</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" className="text-center">Auto Renew</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {virtualNumbers.map((vn, index) => {
+                    const calculateDaysLeft = (expiryDate) => {
+                      if (!expiryDate) return "-";
+                      const expiry = new Date(expiryDate);
+                      const today = new Date();
+                      const diffTime = expiry - today;
+                      const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                      return daysLeft > 0 ? daysLeft : 0;
+                    };
+
+                    const daysLeft = vn.days_left !== null && vn.days_left !== undefined 
+                      ? vn.days_left 
+                      : calculateDaysLeft(vn.expiry_date);
+
+                    return (
+                      <tr key={vn.id}>
+                        <td>{index + 1}</td>
+                        <td>
+                          <span className="text-sm fw-medium text-primary-600">
+                            {vn.virtual_number || "-"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="text-sm">
+                            {vn.call_forwarding_number || "-"}
+                          </span>
+                        </td>
+                        <td>{formatDate(vn.purchase_date) || "-"}</td>
+                        <td>
+                          <span className={vn.expiry_date && new Date(vn.expiry_date) < new Date() ? "text-danger-600" : ""}>
+                            {formatDate(vn.expiry_date) || "-"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={daysLeft !== "-" && daysLeft <= 30 && daysLeft > 0 ? "text-warning-600 fw-medium" : daysLeft === 0 || (typeof daysLeft === "number" && daysLeft < 0) ? "text-danger-600 fw-medium" : ""}>
+                            {daysLeft !== "-" ? `${daysLeft} days` : "-"}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              vn.status === "active"
+                                ? "bg-success"
+                                : vn.status === "expired"
+                                ? "bg-danger"
+                                : vn.status === "suspended"
+                                ? "bg-secondary"
+                                : "bg-warning"
+                            }`}
+                          >
+                            {vn.status || "N/A"}
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          {vn.is_auto_renew ? (
+                            <span className="badge bg-success">Enabled</span>
+                          ) : (
+                            <span className="badge bg-secondary">Disabled</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-20">
+              <Icon icon="mdi:phone-off" className="icon text-4xl text-muted mb-3" />
+              <p className="text-muted mb-0">No virtual numbers found</p>
+            </div>
+          )}
+        </div>
+
+        {/* Approve Customer Modal (for adding virtual number) */}
+        <ApproveCustomerModal
+          isOpen={approveModalOpen}
+          onClose={() => {
+            setApproveModalOpen(false);
+          }}
+          customer={customer}
+          onApprove={handleApprove}
+          loading={actionLoading}
+          title="Add Virtual Number"
+        />
 
         {/* Transactions Section */}
         <div className="mb-24">

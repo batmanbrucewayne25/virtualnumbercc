@@ -208,6 +208,7 @@ export const getMstCustomerById = async (id: string) => {
       address
       status
       kyc_status
+      approval
       rejection_reason
       pan_number
       pan_full_name
@@ -221,6 +222,19 @@ export const getMstCustomerById = async (id: string) => {
       max_virtual_numbers
       created_at
       updated_at
+      mst_virtual_numbers {
+        id
+        virtual_number
+        call_forwarding_number
+        purchase_date
+        expiry_date
+        days_left
+        status
+        is_auto_renew
+        subscription_plan_id
+        created_at
+        updated_at
+      }
     }
   }`;
 
@@ -254,12 +268,76 @@ export const getMstCustomerById = async (id: string) => {
 };
 
 /**
+ * Get all customers (for admins)
+ */
+export const getAllMstCustomers = async () => {
+  const QUERY = `query GetAllMstCustomers {
+    mst_customer(
+      where: { approval: { _eq: "pending" } }
+      order_by: { created_at: desc }
+    ) {
+      id
+      reseller_id
+      email
+      phone
+      business_email
+      profile_name
+      status
+      kyc_status
+      approval
+      created_at
+      updated_at
+      pan_number
+      pan_full_name
+      aadhaar_number
+      gstin
+      business_name
+      mst_reseller {
+        id
+        first_name
+        last_name
+        business_name
+        brand_name
+        email
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY, {});
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch customers",
+        data: [],
+      };
+    }
+    if (result?.data?.mst_customer) {
+      return {
+        success: true,
+        data: result.data.mst_customer,
+      };
+    }
+    return {
+      success: false,
+      data: [],
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch customers",
+      data: [],
+    };
+  }
+};
+
+/**
  * Get all customers for a reseller
  */
 export const getMstCustomersByReseller = async (resellerId: string) => {
   const QUERY = `query GetMstCustomersByReseller($reseller_id: uuid!) {
     mst_customer(
-      where: { reseller_id: { _eq: $reseller_id } }
+      where: { reseller_id: { _eq: $reseller_id }, approval: { _eq: "pending" } }
       order_by: { created_at: desc }
     ) {
       id
@@ -269,6 +347,7 @@ export const getMstCustomersByReseller = async (resellerId: string) => {
       profile_name
       status
       kyc_status
+      approval
       created_at
       updated_at
       pan_number
@@ -276,6 +355,14 @@ export const getMstCustomersByReseller = async (resellerId: string) => {
       aadhaar_number
       gstin
       business_name
+      mst_reseller {
+        id
+        first_name
+        last_name
+        business_name
+        brand_name
+        email
+      }
     }
   }`;
 
@@ -321,6 +408,7 @@ export const updateMstCustomerStatus = async (
     $status: String
     $kyc_status: String
     $rejection_reason: String
+    $approval: String
   ) {
     update_mst_customer_by_pk(
       pk_columns: { id: $id }
@@ -328,22 +416,33 @@ export const updateMstCustomerStatus = async (
         status: $status
         kyc_status: $kyc_status
         rejection_reason: $rejection_reason
+        approval: $approval
       }
     ) {
       id
       status
       kyc_status
       rejection_reason
+      approval
       updated_at
     }
   }`;
 
   try {
+    // Set approval field based on status
+    let approvalValue = null;
+    if (status === "approved" || status === "active") {
+      approvalValue = "approved";
+    } else if (status === "rejected") {
+      approvalValue = "rejected";
+    }
+
     const result = await graphqlRequest(MUTATION, {
       id,
       status,
       kyc_status: kyc_status || null,
       rejection_reason: rejection_reason || null,
+      approval: approvalValue,
     });
 
     if (result?.errors) {

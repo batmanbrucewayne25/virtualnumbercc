@@ -6,6 +6,7 @@ import { getUserData } from "@/utils/auth";
 import ApproveResellerModal from "./ApproveResellerModal";
 import RejectResellerModal from "./RejectResellerModal";
 import SuspendResellerModal from "./SuspendResellerModal";
+import ConfirmToggleStatusModal from "./ConfirmToggleStatusModal";
 import PermissionGuard from "@/components/PermissionGuard";
 
 const ResellerListLayer = () => {
@@ -18,7 +19,9 @@ const ResellerListLayer = () => {
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [suspendModalOpen, setSuspendModalOpen] = useState(false);
+  const [toggleStatusModalOpen, setToggleStatusModalOpen] = useState(false);
   const [selectedReseller, setSelectedReseller] = useState(null);
+  const [pendingToggleAction, setPendingToggleAction] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
@@ -227,7 +230,7 @@ const ResellerListLayer = () => {
     }
   };
 
-  const handleToggleStatus = async (reseller) => {
+  const handleToggleStatusClick = (reseller) => {
     // Don't allow toggling if suspended
     if (reseller.suspended_at) {
       setError("Cannot change status of a suspended reseller. Please reactivate first.");
@@ -238,9 +241,15 @@ const ResellerListLayer = () => {
     const newStatus = !reseller.status;
     const action = newStatus ? "activate" : "deactivate";
     
-    if (!window.confirm(`Are you sure you want to ${action} reseller "${reseller.first_name} ${reseller.last_name}"?`)) {
-      return;
-    }
+    setSelectedReseller(reseller);
+    setPendingToggleAction({ reseller, newStatus, action });
+    setToggleStatusModalOpen(true);
+  };
+
+  const handleToggleStatusConfirm = async () => {
+    if (!pendingToggleAction) return;
+
+    const { reseller, newStatus, action } = pendingToggleAction;
 
     setActionLoading(true);
     setError("");
@@ -253,15 +262,18 @@ const ResellerListLayer = () => {
         setSuccess(`Reseller ${action}d successfully!`);
         setTimeout(() => {
           setSuccess("");
+          setToggleStatusModalOpen(false);
+          setSelectedReseller(null);
+          setPendingToggleAction(null);
           fetchResellers();
         }, 2000);
       } else {
         setError(result.message || `Failed to ${action} reseller`);
+        setActionLoading(false);
       }
     } catch (err) {
       console.error(`Error ${action}ing reseller:`, err);
       setError(err.message || `An error occurred while ${action}ing reseller`);
-    } finally {
       setActionLoading(false);
     }
   };
@@ -509,7 +521,7 @@ const ResellerListLayer = () => {
                                 role="switch"
                                 id={`status-toggle-${reseller.id}`}
                                 checked={reseller.status || false}
-                                onChange={() => handleToggleStatus(reseller)}
+                                onChange={() => handleToggleStatusClick(reseller)}
                                 disabled={actionLoading || reseller.suspended_at}
                                 style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer', width: '3rem', height: '1.5rem' }}
                               />
@@ -643,6 +655,20 @@ const ResellerListLayer = () => {
         }}
         reseller={selectedReseller}
         onSuspend={handleSuspend}
+        loading={actionLoading}
+      />
+
+      {/* Toggle Status Confirmation Modal */}
+      <ConfirmToggleStatusModal
+        isOpen={toggleStatusModalOpen}
+        onClose={() => {
+          setToggleStatusModalOpen(false);
+          setSelectedReseller(null);
+          setPendingToggleAction(null);
+        }}
+        reseller={selectedReseller}
+        action={pendingToggleAction?.action || ""}
+        onConfirm={handleToggleStatusConfirm}
         loading={actionLoading}
       />
     </div>

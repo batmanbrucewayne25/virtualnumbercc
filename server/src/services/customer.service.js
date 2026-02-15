@@ -139,18 +139,28 @@ export class CustomerService {
    * @param {string} customerId
    * @param {string} virtualNumber
    * @param {string} resellerId - Optional reseller ID
+   * @param {string} callForwardingNumber - Customer's mobile number for call forwarding
+   * @param {string} subscriptionPlanId - Optional subscription plan ID
    * @returns {Promise<object>}
    */
   static async createVirtualNumber(
     customerId,
     virtualNumber,
-    resellerId = null
+    resellerId = null,
+    callForwardingNumber = null,
+    subscriptionPlanId = null
   ) {
     try {
       const client = getHasuraClient();
 
       // Get today's date in YYYY-MM-DD format
       const purchaseDate = new Date().toISOString().split("T")[0];
+      
+      // Calculate expiry_date as 360 days from purchase_date
+      const purchaseDateObj = new Date(purchaseDate);
+      const expiryDateObj = new Date(purchaseDateObj);
+      expiryDateObj.setDate(expiryDateObj.getDate() + 360);
+      const expiryDate = expiryDateObj.toISOString().split("T")[0];
 
       const mutation = `
         mutation CreateVirtualNumber(
@@ -158,6 +168,9 @@ export class CustomerService {
           $virtual_number: String!
           $reseller_id: uuid
           $purchase_date: date!
+          $expiry_date: date!
+          $call_forwarding_number: String
+          $subscription_plan_id: uuid
         ) {
           insert_mst_virtual_number_one(object: {
             customer_id: $customer_id
@@ -165,11 +178,15 @@ export class CustomerService {
             reseller_id: $reseller_id
             status: "active"
             purchase_date: $purchase_date
+            expiry_date: $expiry_date
+            call_forwarding_number: $call_forwarding_number
+            subscription_plan_id: $subscription_plan_id
           }) {
             id
             customer_id
             reseller_id
             virtual_number
+            call_forwarding_number
             status
             purchase_date
             expiry_date
@@ -183,6 +200,9 @@ export class CustomerService {
         virtual_number: virtualNumber,
         reseller_id: resellerId || null,
         purchase_date: purchaseDate,
+        expiry_date: expiryDate,
+        call_forwarding_number: callForwardingNumber || null,
+        subscription_plan_id: subscriptionPlanId || null,
       });
 
       if (result.insert_mst_virtual_number_one) {
@@ -296,6 +316,7 @@ export class CustomerService {
             business_email
             status
             kyc_status
+            approval
             mst_reseller {
               id
               first_name
@@ -363,25 +384,37 @@ export class CustomerService {
           $id: uuid!
           $status: String!
           $kyc_status: String!
+          $approval: String
         ) {
           update_mst_customer_by_pk(
             pk_columns: { id: $id }
             _set: {
               status: $status
               kyc_status: $kyc_status
+              approval: $approval
             }
           ) {
             id
             status
             kyc_status
+            approval
           }
         }
       `;
+
+      // Set approval field based on status
+      let approvalValue = null;
+      if (status === "approved" || status === "active") {
+        approvalValue = "approved";
+      } else if (status === "rejected") {
+        approvalValue = "rejected";
+      }
 
       const data = await client.client.request(mutation, {
         id: customerId,
         status,
         kyc_status: kycStatus,
+        approval: approvalValue,
       });
 
       return data.update_mst_customer_by_pk;
@@ -429,11 +462,13 @@ export class CustomerService {
         // 2. Generate virtual number
         const virtualNumber = await this.generateVirtualNumber();
 
-        // 3. Create virtual number record (pass reseller_id if available)
+        // 3. Create virtual number record (pass reseller_id, customer phone for call forwarding, and optional subscription_plan_id)
         const virtualNumberRecord = await this.createVirtualNumber(
           customer_id,
           virtualNumber,
-          reseller_id
+          reseller_id,
+          customer.phone, // Set call forwarding number to customer's mobile number
+          subscription_plan_id || null // Optional subscription plan ID
         );
 
         // 4. Create transaction record

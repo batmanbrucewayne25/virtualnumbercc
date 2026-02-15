@@ -6,23 +6,6 @@ interface Step2Props {
   onSuccess: (data: { email: string; phone: string; password: string }) => void;
 }
 
-// Common personal email domains to check
-const PERSONAL_EMAIL_DOMAINS = [
-  "gmail.com",
-  "yahoo.com",
-  "hotmail.com",
-  "outlook.com",
-  "aol.com",
-  "icloud.com",
-  "mail.com",
-  "protonmail.com",
-  "yandex.com",
-  "zoho.com",
-  "rediffmail.com",
-  "live.com",
-  "msn.com",
-];
-
 const Step2 = ({ onBack, onSuccess }: Step2Props) => {
   const [email, setEmail] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
@@ -42,13 +25,6 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em);
   };
 
-  const isBusinessEmail = (em: string): boolean => {
-    if (!validateEmail(em)) return false;
-    const domain = em.split("@")[1]?.toLowerCase();
-    if (!domain) return false;
-    return !PERSONAL_EMAIL_DOMAINS.includes(domain);
-  };
-
   const handleEmailBlur = () => {
     setEmailError("");
     if (!email) {
@@ -57,12 +33,6 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
     }
     if (!validateEmail(email)) {
       setEmailError("Enter a valid email address.");
-      return;
-    }
-    if (!isBusinessEmail(email)) {
-      setEmailError(
-        "Please use a business email address. Personal email addresses (Gmail, Yahoo, etc.) are not allowed."
-      );
       return;
     }
   };
@@ -81,14 +51,6 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
     if (!validateEmail(email)) {
       setEmailError("Enter a valid email address.");
       setError("Please fix the errors above before continuing.");
-      return;
-    }
-
-    if (!isBusinessEmail(email)) {
-      setEmailError(
-        "Please use a business email address. Personal email addresses are not allowed."
-      );
-      setError("Please use a business email address.");
       return;
     }
 
@@ -133,12 +95,12 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
 
       <div className="mb-16">
         <label className="form-label text-sm mb-8">
-          Business Email <span className="text-danger">*</span>
+          Email <span className="text-danger">*</span>
         </label>
         <input
           className={`form-control h-56-px ${emailError ? "is-invalid" : ""}`}
           type="email"
-          placeholder="business@company.com"
+          placeholder="Enter your email address"
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
@@ -147,9 +109,6 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
           onBlur={handleEmailBlur}
         />
         {emailError && <div className="text-danger small mt-4">{emailError}</div>}
-        <small className="text-secondary-light">
-          Personal email addresses (Gmail, Yahoo, etc.) are not allowed.
-        </small>
       </div>
 
       <div className="mb-16">
@@ -181,6 +140,7 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
         </label>
         <PasswordField
           id="clienthub-password"
+          name="password"
           placeholder="Enter password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -196,6 +156,7 @@ const Step2 = ({ onBack, onSuccess }: Step2Props) => {
         </label>
         <PasswordField
           id="clienthub-confirm-password"
+          name="confirmPassword"
           placeholder="Confirm password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}

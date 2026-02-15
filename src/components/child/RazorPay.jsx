@@ -114,7 +114,7 @@ const RazorPay = () => {
                 type='password'
                 className='form-control radius-8'
                 id='razorpayKeySecret'
-                placeholder='Enter Razorpay key secret'
+                placeholder=''
               />
             </div>
 

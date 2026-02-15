@@ -268,10 +268,32 @@ const ClientHubLayer = ({
       {/* RIGHT */}
       <div className="auth-right py-32 px-24 d-flex flex-column justify-content-center">
         <div className="max-w-464-px mx-auto w-100">
-          {/* LOGO */}
-          <Link to="/index" className="mb-40 max-w-290-px d-block">
-            <img src="assets/images/own/dlogo.png" alt="Logo" />
-          </Link>
+          {/* LOGO & BRAND */}
+          <div className="mb-40">
+            <Link to="/index" className="max-w-290-px d-block">
+              {resellerData?.logo ? (
+                <img
+                  src={
+                    resellerData.logo.startsWith('http')
+                      ? resellerData.logo
+                      : `${(import.meta as any).env?.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads'}/logos/${resellerData.logo}`
+                  }
+                  alt={resellerData?.brand_name || resellerData?.business_name || "Logo"}
+                  style={{ maxHeight: '60px', objectFit: 'contain' }}
+                  onError={(e: any) => {
+                    e.target.src = 'assets/images/own/dlogo.png';
+                  }}
+                />
+              ) : (
+                <img src="assets/images/own/dlogo.png" alt="Logo" />
+              )}
+            </Link>
+            {resellerData?.brand_name && (
+              <h5 className="mt-12 text-primary-light fw-bold">
+                {resellerData.brand_name}
+              </h5>
+            )}
+          </div>
 
           {/* STEP INDICATOR */}
           <p className="text-sm text-secondary-light mb-16">
@@ -282,6 +304,7 @@ const ClientHubLayer = ({
           {step === 1 && resellerId && (
             <Step1
               resellerId={resellerId}
+              brandName={resellerData?.brand_name || resellerData?.business_name}
               onSignUp={() => handleStepChange(2)}
               onLogin={() => {
                 // Login handled in Step1 component
@@ -382,6 +405,7 @@ const ClientHubLayer = ({
           {step === 11 && (
             <Step11
               resellerName={
+                resellerData?.brand_name ||
                 resellerData?.business_name ||
                 `${resellerData?.first_name || ""} ${
                   resellerData?.last_name || ""
@@ -392,12 +416,11 @@ const ClientHubLayer = ({
           )}
 
           {/* FOOTER */}
-          {step !== 11 && !skipOtpVerification && (
+          {step === 1 && !skipOtpVerification && (
             <div className="mt-32 text-center text-sm">
-              <p>
-                Already have an account?{" "}
+              <p> 
                 <Link to="/sign-in" className="text-primary-600 fw-semibold">
-                  Sign In
+                  Login as Admin
                 </Link>
               </p>
             </div>

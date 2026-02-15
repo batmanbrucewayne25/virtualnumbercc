@@ -15,6 +15,7 @@ export const getMstResellerByEmail = async ({ email }: any) => {
     current_step
     aadhaar_number
     business_name
+    brand_name
     constitution_of_business
     dob
     email
@@ -32,6 +33,7 @@ export const getMstResellerByEmail = async ({ email }: any) => {
     password_hash
     phone
     profile_image
+    logo
     created_at
     updated_at
   }
@@ -58,6 +60,7 @@ export const loginMstReseller = async ({ email }: any) => {
       gstin
       gst_pan_number
       business_name
+      brand_name
       legal_name
       gstin_status
       constitution_of_business
@@ -171,14 +174,14 @@ export const updateGstStep = async ({ email, gstin, gst_pan_number, business_nam
   return graphqlRequest(UPDATE_GST, { email, gstin, gst_pan_number, business_name, legal_name, gstin_status, constitution_of_business, nature_bus_activities });
 };
 
-export const completeSignupStep = async ({ email, profile_image, address }: any) => {
-  const COMPLETE = `mutation CompleteSignupStep($email: String!, $profile_image: String, $address: [String!]) {
-  update_mst_reseller(where: { email: { _eq: $email } }, _set: { profile_image: $profile_image, address: $address, signup_completed: true, status: true, current_step: 7 }) {
+export const completeSignupStep = async ({ email, profile_image, address, brand_name }: any) => {
+  const COMPLETE = `mutation CompleteSignupStep($email: String!, $profile_image: String, $address: [String!], $brand_name: String) {
+  update_mst_reseller(where: { email: { _eq: $email } }, _set: { profile_image: $profile_image, address: $address, brand_name: $brand_name, signup_completed: true, status: true, current_step: 7 }) {
     affected_rows
   }
 }`;
 
-  return graphqlRequest(COMPLETE, { email, profile_image, address });
+  return graphqlRequest(COMPLETE, { email, profile_image, address, brand_name });
 };
 
 export default {

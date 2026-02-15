@@ -36,10 +36,12 @@ class HasuraClient {
           current_step
           signup_completed
           status
+          brand_name
           is_email_verified
           is_phone_verified
           approval_date
           approved_by
+          approval
           rejection_reason
           suspended_at
           suspended_reason
@@ -134,6 +136,7 @@ class HasuraClient {
           current_step
           signup_completed
           status
+          brand_name
           is_email_verified
           is_phone_verified
           created_at

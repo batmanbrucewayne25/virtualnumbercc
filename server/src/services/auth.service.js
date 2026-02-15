@@ -45,14 +45,18 @@ export class AuthService {
           console.log("✅ Reseller user found:", user.email);
           console.log("📊 Reseller status:", {
             approval_date: user.approval_date,
+            approval: user.approval,
             suspended_at: user.suspended_at,
             rejection_reason: user.rejection_reason,
             status: user.status,
+            status_type: typeof user.status,
           });
           userType = "reseller";
 
           // Check if reseller is approved before allowing login
-          if (!user.approval_date) {
+          // Check both approval_date and approval field for backward compatibility
+          const isApproved = user.approval === "approved" || user.approval_date;
+          if (!isApproved) {
             // If reseller is not approved, check if they have been rejected
             if (user.rejection_reason) {
               console.log(
@@ -80,6 +84,27 @@ export class AuthService {
               "Your account has been suspended. Please contact admin for more information."
             );
           }
+
+          // Check if reseller status is active
+          // Status must be explicitly true (boolean) or 1 (number) to be considered active
+          console.log("🔍 [NEW AuthService] Checking reseller status BEFORE password verification:", {
+            email: user.email,
+            status: user.status,
+            status_type: typeof user.status,
+            status_strict_check: user.status === true,
+            status_number_check: user.status === 1,
+            status_string_check: user.status === "true"
+          });
+          
+          const isStatusActive = user.status === true || user.status === 1 || user.status === "true";
+          if (!isStatusActive) {
+            console.log("🚫 [NEW AuthService] BLOCKING LOGIN - Reseller account is inactive. Status value:", user.status, "Type:", typeof user.status);
+            const errorMsg = "Your account is inactive. Please contact admin to activate your account.";
+            console.log("🚫 [NEW AuthService] Throwing error:", errorMsg);
+            throw new Error(errorMsg);
+          }
+          
+          console.log("✅ [NEW AuthService] Status check passed - reseller is active");
 
           // Check reseller validity expiry (only for resellers, not admins)
           if (user.approval_date) {

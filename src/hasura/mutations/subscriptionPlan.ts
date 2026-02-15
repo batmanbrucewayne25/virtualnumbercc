@@ -2,10 +2,17 @@ import { graphqlRequest } from "@/hasura";
 
 /**
  * Get all subscription plans (excluding soft-deleted records if applicable)
+ * @param resellerId - Optional reseller ID to filter plans. If provided, only returns plans created by that reseller.
  */
-export const getMstSubscriptionPlans = async () => {
-  const QUERY = `query GetMstSubscriptionPlans {
+export const getMstSubscriptionPlans = async (resellerId?: string) => {
+  // Build where clause conditionally
+  const whereClause = resellerId 
+    ? `where: { reseller_id: { _eq: $reseller_id } }`
+    : "";
+
+  const QUERY = `query GetMstSubscriptionPlans(${resellerId ? "$reseller_id: uuid!" : ""}) {
     mst_subscription_plan(
+      ${whereClause}
       order_by: { created_at: desc }
     ) {
       id
@@ -31,7 +38,8 @@ export const getMstSubscriptionPlans = async () => {
   }`;
 
   try {
-    const result = await graphqlRequest(QUERY);
+    const variables = resellerId ? { reseller_id: resellerId } : {};
+    const result = await graphqlRequest(QUERY, variables);
     if (result?.errors) {
       return {
         success: false,

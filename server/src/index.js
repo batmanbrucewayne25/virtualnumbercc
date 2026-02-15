@@ -22,6 +22,7 @@ import virtualNumbersRoutes from "./routes/virtualNumbers.routes.js";
 import otpRoutes from "./routes/otp.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import resellerRoutes from "./routes/reseller.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { corsOriginHandler } from "./middleware/cors.middleware.js";
 
@@ -60,9 +61,15 @@ app.use("/api/kyc", kycRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reseller", resellerRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // External API Routes (Virtual Numbers API)
 app.use("/virtualnumbers", virtualNumbersRoutes);
+
+// Serve uploaded images
+const uploadsPath = path.join(__dirname, "../uploads");
+console.log(`📂 Uploads path: ${path.resolve(uploadsPath)}`);
+app.use("/uploads", express.static(uploadsPath));
 
 // Serve static files from dist folder (React build)
 // This should be after API routes so API routes take precedence
@@ -71,8 +78,8 @@ app.use(express.static(distPath));
 
 // For React Router - serve index.html for all non-API routes
 app.get("*", (req, res, next) => {
-  // Skip API routes and virtualnumbers routes
-  if (req.path.startsWith("/api") || req.path.startsWith("/virtualnumbers")) {
+  // Skip API routes, virtualnumbers routes, and static uploads
+  if (req.path.startsWith("/api") || req.path.startsWith("/virtualnumbers") || req.path.startsWith("/uploads")) {
     return next();
   }
 

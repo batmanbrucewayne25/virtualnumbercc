@@ -8,11 +8,12 @@ import { saveAuthToken } from "@/utils/auth";
 
 interface Step1Props {
   resellerId: string;
+  brandName?: string;
   onSignUp: () => void;
   onLogin: () => void;
 }
 
-const Step1 = ({ resellerId, onSignUp, onLogin }: Step1Props) => {
+const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -75,7 +76,7 @@ const Step1 = ({ resellerId, onSignUp, onLogin }: Step1Props) => {
   if (showLogin) {
     return (
       <>
-        <h4 className="mb-12">Login to Client Hub</h4>
+        <h4 className="mb-12">Login to {brandName || "Client Hub"}</h4>
         <p className="text-sm text-secondary-light mb-24">
           Enter your credentials to access your account.
         </p>
@@ -102,6 +103,8 @@ const Step1 = ({ resellerId, onSignUp, onLogin }: Step1Props) => {
           <div className="mb-24">
             <label className="form-label text-sm mb-8">Password</label>
             <PasswordField
+              id="clienthub-login-password"
+              name="password"
               placeholder="Enter your password"
               value={password}
               onChange={(e) => {
@@ -142,10 +145,9 @@ const Step1 = ({ resellerId, onSignUp, onLogin }: Step1Props) => {
 
   return (
     <>
-      <h4 className="mb-12">Welcome to Client Hub</h4>
+      <h4 className="mb-12">Welcome to {brandName || "Client Hub"}</h4>
       <p className="text-sm text-secondary-light mb-24">
-        Get started by creating your account or logging in if you already have
-        one.
+        Get started by creating your account 
       </p>
 
       <button
@@ -156,19 +158,9 @@ const Step1 = ({ resellerId, onSignUp, onLogin }: Step1Props) => {
           onSignUp();
         }}
       >
-        Sign Up
+        Get My Virtual Number
       </button>
-
-      <button
-        type="button"
-        className="btn btn-outline-primary w-100 radius-12"
-        onClick={(e) => {
-          e.preventDefault();
-          setShowLogin(true);
-        }}
-      >
-        Login
-      </button>
+ 
     </>
   );
 };

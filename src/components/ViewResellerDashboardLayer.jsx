@@ -10,6 +10,12 @@ import {
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
+
+const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
+  const apiUrl = getApiBaseUrl();
+  return apiUrl.replace('/api', '/uploads');
+})();
 
 // Helper function to format address object into readable string
 const formatCustomerAddress = (address) => {
@@ -77,7 +83,7 @@ const ViewResellerDashboardLayer = () => {
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [validity, setValidity] = useState(null);
-  const [domainData, setDomainData] = useState < any > null;
+  const [domainData, setDomainData] = useState(null);
 
   useEffect(() => {
     // Get current user role
@@ -457,7 +463,7 @@ const ViewResellerDashboardLayer = () => {
                                 reseller.profile_image.startsWith("data:") ||
                                 reseller.profile_image.startsWith("http")
                                   ? reseller.profile_image
-                                  : `data:image/jpeg;base64,${reseller.profile_image}`
+                                  : `${IMAGE_BASE_PATH}/profile-images/${reseller.profile_image}`
                               }
                               alt="Profile"
                               className="rounded"
@@ -467,12 +473,15 @@ const ViewResellerDashboardLayer = () => {
                                 objectFit: "cover",
                                 cursor: "pointer",
                               }}
+                              onError={(e) => {
+                                e.currentTarget.src = 'assets/images/user.png';
+                              }}
                               onClick={() => {
                                 const img =
                                   reseller.profile_image.startsWith("data:") ||
                                   reseller.profile_image.startsWith("http")
                                     ? reseller.profile_image
-                                    : `data:image/jpeg;base64,${reseller.profile_image}`;
+                                    : `${IMAGE_BASE_PATH}/profile-images/${reseller.profile_image}`;
                                 const newWindow = window.open();
                                 if (newWindow) {
                                   newWindow.document.write(
@@ -498,6 +507,49 @@ const ViewResellerDashboardLayer = () => {
                     Business Information
                   </h6>
 
+                  {reseller?.logo && (
+                    <div className="mb-16">
+                      <label className="form-label text-xs text-secondary-light mb-4">
+                        Business Logo
+                      </label>
+                      <div>
+                        <img
+                          src={
+                            reseller.logo.startsWith("data:") ||
+                            reseller.logo.startsWith("http")
+                              ? reseller.logo
+                              : `${IMAGE_BASE_PATH}/logos/${reseller.logo}`
+                          }
+                          alt="Logo"
+                          className="rounded"
+                          style={{
+                            maxWidth: "200px",
+                            maxHeight: "100px",
+                            objectFit: "contain",
+                            cursor: "pointer",
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.src = 'assets/images/logo-icon.png';
+                          }}
+                          onClick={() => {
+                            const img =
+                              reseller.logo.startsWith("data:") ||
+                              reseller.logo.startsWith("http")
+                                ? reseller.logo
+                                : `${IMAGE_BASE_PATH}/logos/${reseller.logo}`;
+                            const newWindow = window.open();
+                            if (newWindow) {
+                              newWindow.document.write(
+                                `<img src="${img}" style="max-width: 100%; height: auto;" />`,
+                              );
+                            }
+                          }}
+                          title="Click to view full size"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mb-16">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       Business Name
@@ -506,6 +558,17 @@ const ViewResellerDashboardLayer = () => {
                       {reseller?.business_name || "-"}
                     </p>
                   </div>
+
+                  {reseller?.brand_name && (
+                    <div className="mb-16">
+                      <label className="form-label text-xs text-secondary-light mb-4">
+                        Brand Name
+                      </label>
+                      <p className="text-md fw-medium text-primary-light mb-0">
+                        {reseller.brand_name}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mb-16">
                     <label className="form-label text-xs text-secondary-light mb-4">
@@ -587,7 +650,7 @@ const ViewResellerDashboardLayer = () => {
                     </div>
                   </div>
 
-                  <div className="mb-16">
+                  {/* <div className="mb-16">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       Signup Completed
                     </label>
@@ -602,7 +665,7 @@ const ViewResellerDashboardLayer = () => {
                         {reseller?.signup_completed ? "Yes" : "No"}
                       </span>
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               </div>
             </div>
@@ -734,7 +797,7 @@ const ViewResellerDashboardLayer = () => {
                       </div>
                     )}
 
-                  {reseller?.current_step !== null &&
+                  {/* {reseller?.current_step !== null &&
                     reseller?.current_step !== undefined && (
                       <div className="mb-16">
                         <label className="form-label text-xs text-secondary-light mb-4">
@@ -744,7 +807,7 @@ const ViewResellerDashboardLayer = () => {
                           {reseller.current_step}
                         </p>
                       </div>
-                    )}
+                    )} */}
                 </div>
               </div>
             </div>

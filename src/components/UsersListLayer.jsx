@@ -185,6 +185,10 @@ const UsersListLayer = () => {
     return calculateDaysLeft(expiryDate);
   };
 
+  const getVirtualNumberCount = (customer) => {
+    return customer.mst_virtual_numbers?.length || 0;
+  };
+
   // Filter customers based on search term and reseller filter
   const filteredCustomers = customers.filter((customer) => {
     // Filter by reseller (for admins)
@@ -245,9 +249,9 @@ const UsersListLayer = () => {
         <div className="row g-3 mb-24">
           {(userRole === "admin" || userRole === "super_admin") && (
             <div className="col-md-2">
-              <label className="form-label text-sm fw-semibold mb-8">
+              {/* <label className="form-label text-sm fw-semibold mb-8">
                 Reseller
-              </label>
+              </label> */}
               <select
                 className="form-select form-select-sm"
                 value={selectedResellerId}
@@ -270,18 +274,18 @@ const UsersListLayer = () => {
           <div
             className={
               userRole === "admin" || userRole === "super_admin"
-                ? "col-md-2"
-                : "col-md-3"
+                ? "col-md-4"
+                : "col-md-4"
             }
           >
-            <label className="form-label text-sm fw-semibold mb-8">
+            {/* <label className="form-label text-sm fw-semibold mb-8">
               Search
-            </label>
+            </label> */}
             <div className="d-flex gap-2">
               <input
                 type="text"
                 className="form-control form-control-sm"
-                placeholder="Name, virtual number, alternate number..."
+                placeholder="Search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSearch()}
@@ -296,7 +300,7 @@ const UsersListLayer = () => {
             </div>
           </div>
 
-          <div className="col-md-2">
+          {/* <div className="col-md-2">
             <label className="form-label text-sm fw-semibold mb-8">
               Start Date
             </label>
@@ -332,7 +336,7 @@ const UsersListLayer = () => {
                 onChange={(e) => setExpiringSoon(e.target.checked)}
               />
             </div>
-          </div>
+          </div> */}
 
           <div className="col-md-2 d-flex align-items-end">
             <button
@@ -379,18 +383,21 @@ const UsersListLayer = () => {
                       <th scope="col">Reseller</th>
                     )}
                     <th scope="col">Customer Name</th>
-                    <th scope="col">Virtual Number</th>
+                    <th scope="col" className="text-center">
+                      Virtual Numbers
+                    </th>
+                    {/* <th scope="col">Virtual Number</th>
                     <th scope="col">Call Forward Number</th>
                     <th scope="col">Purchase Date</th>
                     <th scope="col">Expiry Date</th>
-                    <th scope="col">Payment Mode</th>
+                    <th scope="col">Payment Mode</th> */}
                     <th scope="col" className="text-end">
-                      Amount
+                      WalletAmount
                     </th>
-                    <th scope="col">Days Left</th>
-                    <th scope="col" className="text-center">
+                    {/* <th scope="col">Days Left</th> */}
+                    {/* <th scope="col" className="text-center">
                       Renew
-                    </th>
+                    </th> */}
                     <th scope="col" className="text-center">
                       Action
                     </th>
@@ -416,7 +423,12 @@ const UsersListLayer = () => {
                           {getCustomerName(customer)}
                         </span>
                       </td>
-                      <td>
+                      <td className="text-center">
+                        <span className="text-sm fw-medium text-primary-600">
+                          {getVirtualNumberCount(customer)}
+                        </span>
+                      </td>
+                      {/* <td>
                         <span className="text-sm">
                           {getVirtualNumber(customer)}
                         </span>
@@ -432,13 +444,13 @@ const UsersListLayer = () => {
                         <span className="text-sm">
                           {getPaymentMode(customer)}
                         </span>
-                      </td>
+                      </td> */}
                       <td className="text-end">
                         <span className="text-sm fw-medium text-success-600">
                           {formatCurrency(getAmount(customer))}
                         </span>
                       </td>
-                      <td>
+                      {/* <td>
                         <span
                           className={`text-sm fw-medium ${
                             getDaysLeft(customer) < 30 &&
@@ -449,8 +461,8 @@ const UsersListLayer = () => {
                         >
                           {getDaysLeft(customer)}
                         </span>
-                      </td>
-                      <td className="text-center">
+                      </td> */}
+                      {/* <td className="text-center">
                         <button
                           type="button"
                           className="btn btn-sm btn-outline-secondary"
@@ -459,7 +471,7 @@ const UsersListLayer = () => {
                         >
                           <Icon icon="mdi:refresh" className="icon" />
                         </button>
-                      </td>
+                      </td> */}
                       <td className="text-center">
                         <Link
                           to={`/view-user/${customer.id}`}
