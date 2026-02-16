@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSubscriptionPlans, deleteMstSubscriptionPlan } from "@/hasura/mutations/subscriptionPlan";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import AlertModal from "./AlertModal";
 
 const SubscriptionPlanListLayer = () => {
   const [plans, setPlans] = useState([]);
@@ -12,6 +13,7 @@ const SubscriptionPlanListLayer = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [userRole, setUserRole] = useState(null);
   const [resellerId, setResellerId] = useState(null);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     // Get user role and reseller ID
@@ -77,11 +79,21 @@ const SubscriptionPlanListLayer = () => {
         // Refresh the list
         fetchPlans();
       } else {
-        alert(result.message || "Failed to delete subscription plan");
+        setAlertModal({
+          isOpen: true,
+          title: "Error",
+          message: result.message || "Failed to delete subscription plan",
+          type: "error"
+        });
       }
     } catch (err) {
       console.error("Error deleting subscription plan:", err);
-      alert("An error occurred while deleting subscription plan");
+      setAlertModal({
+        isOpen: true,
+        title: "Error",
+        message: "An error occurred while deleting subscription plan",
+        type: "error"
+      });
     }
   };
 
@@ -306,6 +318,15 @@ const SubscriptionPlanListLayer = () => {
           </>
         )}
       </div>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 };

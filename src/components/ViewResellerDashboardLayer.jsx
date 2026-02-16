@@ -11,6 +11,7 @@ import { getUserData, getAuthToken } from "@/utils/auth";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import AlertModal from "./AlertModal";
 
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
   const apiUrl = getApiBaseUrl();
@@ -84,6 +85,7 @@ const ViewResellerDashboardLayer = () => {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [validity, setValidity] = useState(null);
   const [domainData, setDomainData] = useState(null);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     // Get current user role
@@ -193,7 +195,12 @@ const ViewResellerDashboardLayer = () => {
     try {
       const result = await suspendCustomer(selectedCustomer.id);
       if (result.success) {
-        alert("Customer account suspended successfully!");
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Customer account suspended successfully!",
+          type: "success"
+        });
         await handleCustomerClick(selectedCustomer.id);
         await fetchCustomers();
       } else {
@@ -1374,6 +1381,15 @@ const ViewResellerDashboardLayer = () => {
           Back to Reseller List
         </button>
       </div>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 };

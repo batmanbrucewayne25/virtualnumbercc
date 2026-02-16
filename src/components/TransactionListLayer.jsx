@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { getMstTransactionsByReseller } from "@/hasura/mutations/transaction";
 import { getUserData } from "@/utils/auth";
 import * as XLSX from "xlsx";
+import AlertModal from "./AlertModal";
 
 const TransactionListLayer = () => {
   const [transactions, setTransactions] = useState([]);
@@ -13,6 +14,7 @@ const TransactionListLayer = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     fetchTransactions();
@@ -119,10 +121,20 @@ const TransactionListLayer = () => {
       // Write file
       XLSX.writeFile(wb, filename);
 
-      alert("Transactions exported to Excel successfully!");
+      setAlertModal({
+        isOpen: true,
+        title: "Success",
+        message: "Transactions exported to Excel successfully!",
+        type: "success"
+      });
     } catch (err) {
       console.error("Error exporting to Excel:", err);
-      alert("Failed to export transactions. Please try again.");
+      setAlertModal({
+        isOpen: true,
+        title: "Error",
+        message: "Failed to export transactions. Please try again.",
+        type: "error"
+      });
     } finally {
       setExporting(false);
     }
@@ -419,6 +431,15 @@ const TransactionListLayer = () => {
           </>
         )}
       </div>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 };

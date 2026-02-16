@@ -1,6 +1,7 @@
 // src/components/AddEditTaskModal.js
 import { useState, useEffect } from "react";
 import { Modal, Button, Form } from "react-bootstrap";
+import AlertModal from "../AlertModal";
 
 const AddEditTaskModal = ({ show, handleClose, handleSave, task }) => {
   const isEdit = Boolean(task);
@@ -9,6 +10,7 @@ const AddEditTaskModal = ({ show, handleClose, handleSave, task }) => {
   const [date, setDate] = useState("");
   const [description, setDescription] = useState("");
   const [imagePreview, setImagePreview] = useState("");
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     if (isEdit && task) {
@@ -41,7 +43,12 @@ const AddEditTaskModal = ({ show, handleClose, handleSave, task }) => {
 
   const onSave = () => {
     if (!title || !description || !tag || !date) {
-      alert("Please fill in all required fields.");
+      setAlertModal({
+        isOpen: true,
+        title: "Validation Error",
+        message: "Please fill in all required fields.",
+        type: "error"
+      });
       return;
     }
 
@@ -145,6 +152,15 @@ const AddEditTaskModal = ({ show, handleClose, handleSave, task }) => {
           Save Changes
         </Button>
       </Modal.Footer>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </Modal>
   );
 };

@@ -1,12 +1,14 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getCustomerWithTransactions,
   suspendCustomer,
 } from "@/hasura/mutations/user";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import ApproveCustomerModal from "./ApproveCustomerModal";
+import AlertModal from "./AlertModal";
+import { updateMstVirtualNumberCallForwarding } from "@/hasura/mutations/virtualNumber";
 
 const ViewUserLayer = () => {
   const { id } = useParams();
@@ -18,6 +20,10 @@ const ViewUserLayer = () => {
   const [showTransactions, setShowTransactions] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
+  const [editingVirtualNumber, setEditingVirtualNumber] = useState(null);
+  const [editCallForwardNumber, setEditCallForwardNumber] = useState("");
+  const [updatingCallForward, setUpdatingCallForward] = useState(false);
 
   useEffect(() => {
     fetchCustomer();
@@ -35,6 +41,34 @@ const ViewUserLayer = () => {
       }
     }
   }, [id]);
+
+  // Initialize Bootstrap tooltips for edit buttons
+  useEffect(() => {
+    const initTooltips = async () => {
+      try {
+        const { Tooltip } = await import("bootstrap");
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = Array.from(tooltipTriggerList).map((tooltipTriggerEl) => {
+          return new Tooltip(tooltipTriggerEl);
+        });
+
+        return () => {
+          tooltipList.forEach((tooltip) => tooltip.dispose());
+        };
+      } catch (err) {
+        console.error("Error initializing tooltips:", err);
+      }
+    };
+
+    if (customer?.mst_virtual_numbers?.length > 0) {
+      // Small delay to ensure DOM is updated
+      const timer = setTimeout(() => {
+        initTooltips();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [customer?.mst_virtual_numbers, editingVirtualNumber]);
 
   const fetchCustomer = async () => {
     setLoading(true);
@@ -73,7 +107,12 @@ const ViewUserLayer = () => {
     try {
       const result = await suspendCustomer(customer.id);
       if (result.success) {
-        alert("Customer account suspended successfully!");
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Customer account suspended successfully!",
+          type: "success"
+        });
         await fetchCustomer();
       } else {
         setError(result.message || "Failed to suspend customer");
@@ -119,9 +158,12 @@ const ViewUserLayer = () => {
         // Refresh customer data
         await fetchCustomer();
         setApproveModalOpen(false);
-        alert(
-          "Customer approved successfully! Virtual number generated and emails sent."
-        );
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Customer approved successfully! Virtual number generated and emails sent.",
+          type: "success"
+        });
       } else {
         setError(result.message || "Failed to approve customer");
       }
@@ -158,6 +200,84 @@ const ViewUserLayer = () => {
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
     return `₹${Number(amount).toFixed(2)}`;
+  };
+
+  // Check if virtual number can be edited (within 24 hours)
+  const canEditCallForwarding = (virtualNumber) => {
+    if (!virtualNumber.created_at && !virtualNumber.purchase_date) return false;
+    const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
+    const now = new Date();
+    const diffHours = (now - createdDate) / (1000 * 60 * 60);
+    return diffHours <= 24;
+  };
+
+  // Get tooltip message for edit button
+  const getEditTooltipMessage = (virtualNumber) => {
+    if (canEditCallForwarding(virtualNumber)) {
+      const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
+      const now = new Date();
+      const diffHours = (now - createdDate) / (1000 * 60 * 60);
+      const hoursLeft = Math.floor(24 - diffHours);
+      return `Edit call forwarding number (${hoursLeft} hours remaining)`;
+    } else {
+      const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
+      const now = new Date();
+      const diffHours = (now - createdDate) / (1000 * 60 * 60);
+      const hoursElapsed = Math.floor(diffHours - 24);
+      return `Edit disabled: 24-hour edit window has passed (${hoursElapsed} hours ago)`;
+    }
+  };
+
+  const handleEditCallForwarding = (virtualNumber) => {
+    setEditingVirtualNumber(virtualNumber);
+    setEditCallForwardNumber(virtualNumber.call_forwarding_number || "");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingVirtualNumber(null);
+    setEditCallForwardNumber("");
+  };
+
+  const handleSaveCallForwarding = async () => {
+    if (!editingVirtualNumber) return;
+
+    if (!editCallForwardNumber.trim()) {
+      setAlertModal({
+        isOpen: true,
+        title: "Validation Error",
+        message: "Call forwarding number is required",
+        type: "error"
+      });
+      return;
+    }
+
+    setUpdatingCallForward(true);
+    setError("");
+
+    try {
+      const result = await updateMstVirtualNumberCallForwarding({
+        id: editingVirtualNumber.id,
+        call_forwarding_number: editCallForwardNumber.trim(),
+      });
+
+      if (result.success) {
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Call forwarding number updated successfully",
+          type: "success"
+        });
+        await fetchCustomer();
+        handleCancelEdit();
+      } else {
+        setError(result.message || "Failed to update call forwarding number");
+      }
+    } catch (err) {
+      console.error("Error updating call forwarding number:", err);
+      setError(err.message || "An error occurred while updating call forwarding number");
+    } finally {
+      setUpdatingCallForward(false);
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -470,7 +590,7 @@ const ViewUserLayer = () => {
                     <th scope="col">Expiry Date</th>
                     <th scope="col">Days Left</th>
                     <th scope="col">Status</th>
-                    <th scope="col" className="text-center">Auto Renew</th>
+                    <th scope="col" className="text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -497,9 +617,42 @@ const ViewUserLayer = () => {
                           </span>
                         </td>
                         <td>
-                          <span className="text-sm">
-                            {vn.call_forwarding_number || "-"}
-                          </span>
+                          {editingVirtualNumber?.id === vn.id ? (
+                            <div className="d-flex gap-2 align-items-center">
+                              <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                value={editCallForwardNumber}
+                                onChange={(e) => setEditCallForwardNumber(e.target.value)}
+                                placeholder="Enter call forwarding number"
+                                style={{ maxWidth: "200px" }}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-success"
+                                onClick={handleSaveCallForwarding}
+                                disabled={updatingCallForward}
+                              >
+                                {updatingCallForward ? (
+                                  <span className="spinner-border spinner-border-sm" role="status"></span>
+                                ) : (
+                                  <Icon icon="material-symbols:check" className="icon" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-secondary"
+                                onClick={handleCancelEdit}
+                                disabled={updatingCallForward}
+                              >
+                                <Icon icon="material-symbols:close" className="icon" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-sm">
+                              {vn.call_forwarding_number || "-"}
+                            </span>
+                          )}
                         </td>
                         <td>{formatDate(vn.purchase_date) || "-"}</td>
                         <td>
@@ -528,10 +681,23 @@ const ViewUserLayer = () => {
                           </span>
                         </td>
                         <td className="text-center">
-                          {vn.is_auto_renew ? (
-                            <span className="badge bg-success">Enabled</span>
-                          ) : (
-                            <span className="badge bg-secondary">Disabled</span>
+                          {editingVirtualNumber?.id === vn.id ? null : (
+                            <span
+                              data-bs-toggle="tooltip"
+                              data-bs-placement="top"
+                              data-bs-title={getEditTooltipMessage(vn)}
+                              style={{ cursor: canEditCallForwarding(vn) ? 'pointer' : 'not-allowed' }}
+                            >
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={() => handleEditCallForwarding(vn)}
+                                disabled={!canEditCallForwarding(vn)}
+                                style={{ pointerEvents: canEditCallForwarding(vn) ? 'auto' : 'none' }}
+                              >
+                                <Icon icon="material-symbols:edit" className="icon" />
+                              </button>
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -558,6 +724,15 @@ const ViewUserLayer = () => {
           onApprove={handleApprove}
           loading={actionLoading}
           title="Add Virtual Number"
+        />
+
+        {/* Alert Modal */}
+        <AlertModal
+          isOpen={alertModal.isOpen}
+          onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+          title={alertModal.title}
+          message={alertModal.message}
+          type={alertModal.type}
         />
 
         {/* Transactions Section */}

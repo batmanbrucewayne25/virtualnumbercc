@@ -8,7 +8,7 @@ const ViewUserPage = () => {
       {/* MasterLayout */}
       <MasterLayout>
         {/* Breadcrumb */}
-        <Breadcrumb title='View User' />
+        {/* <Breadcrumb title='View User' /> */}
 
         {/* ViewUserLayer */}
         <ViewUserLayer />

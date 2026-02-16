@@ -102,3 +102,61 @@ export const createMstVirtualNumber = async (data: {
   }
 };
 
+/**
+ * Update call forwarding number for a virtual number
+ */
+export const updateMstVirtualNumberCallForwarding = async (data: {
+  id: string;
+  call_forwarding_number: string;
+}) => {
+  const MUTATION = `mutation UpdateMstVirtualNumberCallForwarding(
+    $id: uuid!
+    $call_forwarding_number: String!
+  ) {
+    update_mst_virtual_number_by_pk(
+      pk_columns: { id: $id }
+      _set: { call_forwarding_number: $call_forwarding_number }
+    ) {
+      id
+      virtual_number
+      call_forwarding_number
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, {
+      id: data.id,
+      call_forwarding_number: data.call_forwarding_number,
+    });
+
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update call forwarding number",
+        data: null,
+      };
+    }
+
+    if (result?.data?.update_mst_virtual_number_by_pk) {
+      return {
+        success: true,
+        data: result.data.update_mst_virtual_number_by_pk,
+        message: "Call forwarding number updated successfully",
+      };
+    }
+
+    return {
+      success: false,
+      message: "Failed to update call forwarding number",
+      data: null,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update call forwarding number",
+      data: null,
+    };
+  }
+};
+

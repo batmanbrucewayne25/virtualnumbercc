@@ -9,6 +9,7 @@ import {
   upsertMstRolePermission,
 } from "@/hasura/mutations/role";
 import { getMstPermissions } from "@/hasura/mutations/permission";
+import AlertModal from "./AlertModal";
 
 const RoleAccessLayer = () => {
   const [roles, setRoles] = useState([]);
@@ -27,6 +28,7 @@ const RoleAccessLayer = () => {
   const [permissions, setPermissions] = useState([]);
   const [rolePermissions, setRolePermissions] = useState({}); // { permission_id: { can_view, can_create, can_update, can_delete } }
   const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   const modalRef = useRef(null);
 
@@ -169,12 +171,22 @@ const RoleAccessLayer = () => {
     e.preventDefault();
 
     if (!formData.role_name.trim()) {
-      alert("Role name is required");
+      setAlertModal({
+        isOpen: true,
+        title: "Validation Error",
+        message: "Role name is required",
+        type: "error"
+      });
       return;
     }
 
     if (!formData.role_type.trim()) {
-      alert("Role type is required");
+      setAlertModal({
+        isOpen: true,
+        title: "Validation Error",
+        message: "Role type is required",
+        type: "error"
+      });
       return;
     }
 
@@ -192,7 +204,12 @@ const RoleAccessLayer = () => {
       }
 
       if (!roleResult.success || !roleId) {
-        alert(roleResult.message || "Failed to save role");
+        setAlertModal({
+          isOpen: true,
+          title: "Error",
+          message: roleResult.message || "Failed to save role",
+          type: "error"
+        });
         return;
       }
 
@@ -223,7 +240,12 @@ const RoleAccessLayer = () => {
       resetForm();
     } catch (err) {
       console.error("Error saving role:", err);
-      alert("An error occurred while saving role");
+      setAlertModal({
+        isOpen: true,
+        title: "Error",
+        message: "An error occurred while saving role",
+        type: "error"
+      });
     }
   };
 
@@ -237,11 +259,21 @@ const RoleAccessLayer = () => {
       if (result.success) {
         fetchRoles();
       } else {
-        alert(result.message || "Failed to delete role");
+        setAlertModal({
+          isOpen: true,
+          title: "Error",
+          message: result.message || "Failed to delete role",
+          type: "error"
+        });
       }
     } catch (err) {
       console.error("Error deleting role:", err);
-      alert("An error occurred while deleting role");
+      setAlertModal({
+        isOpen: true,
+        title: "Error",
+        message: "An error occurred while deleting role",
+        type: "error"
+      });
     }
   };
 
@@ -675,6 +707,15 @@ const RoleAccessLayer = () => {
       </div>
       )}
       {/* Modal End */}
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </>
   );
 };

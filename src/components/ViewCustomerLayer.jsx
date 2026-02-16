@@ -9,6 +9,7 @@ import ApproveCustomerModal from "./ApproveCustomerModal";
 import RejectCustomerModal from "./RejectCustomerModal";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import AddVirtualNumberModal from "./AddVirtualNumberModal";
+import AlertModal from "./AlertModal";
 
 // Helper function to format address object into readable string
 const formatAddress = (address) => {
@@ -75,6 +76,7 @@ const ViewCustomerLayer = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [showAddVirtualNumberModal, setShowAddVirtualNumberModal] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     fetchCustomer();
@@ -148,9 +150,12 @@ const ViewCustomerLayer = () => {
         // Refresh customer data
         await fetchCustomer();
         setApproveModalOpen(false);
-        alert(
-          "Customer approved successfully! Virtual number generated and emails sent."
-        );
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Customer approved successfully! Virtual number generated and emails sent.",
+          type: "success"
+        });
       } else {
         setError(result.message || "Failed to approve customer");
       }
@@ -179,7 +184,12 @@ const ViewCustomerLayer = () => {
       if (result.success) {
         await fetchCustomer();
         setRejectModalOpen(false);
-        alert("Customer rejected successfully!");
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Customer rejected successfully!",
+          type: "success"
+        });
       } else {
         setError(result.message || "Failed to reject customer");
       }
@@ -695,6 +705,15 @@ const ViewCustomerLayer = () => {
         customer={customer}
         onReject={handleReject}
         loading={actionLoading}
+      />
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
       />
     </div>
   );

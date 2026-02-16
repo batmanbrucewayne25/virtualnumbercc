@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getMstSuperAdmins, updateMstSuperAdmin } from "@/hasura/mutations/admin";
 import { getMstRoles } from "@/hasura/mutations/role";
+import AlertModal from "./AlertModal";
 
 const AssignRoleLayer = () => {
   const [admins, setAdmins] = useState([]);
@@ -11,6 +12,7 @@ const AssignRoleLayer = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [updatingRoleId, setUpdatingRoleId] = useState(null);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     fetchData();
@@ -58,13 +60,28 @@ const AssignRoleLayer = () => {
       if (result.success) {
         // Refresh the list
         await fetchData();
-        alert("Role assigned successfully");
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Role assigned successfully",
+          type: "success"
+        });
       } else {
-        alert(result.message || "Failed to assign role");
+        setAlertModal({
+          isOpen: true,
+          title: "Error",
+          message: result.message || "Failed to assign role",
+          type: "error"
+        });
       }
     } catch (err) {
       console.error("Error assigning role:", err);
-      alert("An error occurred while assigning role");
+      setAlertModal({
+        isOpen: true,
+        title: "Error",
+        message: "An error occurred while assigning role",
+        type: "error"
+      });
     } finally {
       setUpdatingRoleId(null);
     }
@@ -268,6 +285,15 @@ const AssignRoleLayer = () => {
           </>
         )}
       </div>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 };

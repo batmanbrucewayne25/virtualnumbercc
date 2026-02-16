@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSuperAdmins, deleteMstSuperAdmin } from "@/hasura/mutations/admin";
 import PermissionGuard from "@/components/PermissionGuard";
+import AlertModal from "./AlertModal";
 
 const AdminListLayer = () => {
   const [admins, setAdmins] = useState([]);
@@ -10,6 +11,7 @@ const AdminListLayer = () => {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   useEffect(() => {
     fetchAdmins();
@@ -44,11 +46,21 @@ const AdminListLayer = () => {
         // Refresh the list
         fetchAdmins();
       } else {
-        alert(result.message || "Failed to delete admin");
+        setAlertModal({
+          isOpen: true,
+          title: "Error",
+          message: result.message || "Failed to delete admin",
+          type: "error"
+        });
       }
     } catch (err) {
       console.error("Error deleting admin:", err);
-      alert("An error occurred while deleting admin");
+      setAlertModal({
+        isOpen: true,
+        title: "Error",
+        message: "An error occurred while deleting admin",
+        type: "error"
+      });
     }
   };
 
@@ -252,6 +264,15 @@ const AdminListLayer = () => {
           </>
         )}
       </div>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 };
