@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading }) => {
   const [formData, setFormData] = useState({
@@ -10,6 +10,44 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
     validity_date: "",
   });
   const [error, setError] = useState("");
+  const isSubmittingRef = useRef(false);
+
+  // Reset submitting flag when modal closes and set default validity date
+  useEffect(() => {
+    if (!isOpen) {
+      isSubmittingRef.current = false;
+      // Reset form when modal closes
+      setFormData({
+        wallet_balance: "",
+        grace_period_days: "",
+        virtual_numbers_count: "3",
+        price_per_number: "",
+        validity_date: "",
+      });
+    } else {
+      // When modal opens, set default validity date to 360 days from today
+      const today = new Date();
+      const validityDate = new Date(today);
+      validityDate.setDate(today.getDate() + 360);
+      const formattedDate = validityDate.toISOString().split('T')[0];
+      
+      setFormData(prev => ({
+        ...prev,
+        validity_date: formattedDate,
+      }));
+    }
+  }, [isOpen]);
+
+  // Reset submitting flag when loading completes (after a delay to ensure state is updated)
+  useEffect(() => {
+    if (!loading && isSubmittingRef.current) {
+      // Small delay to ensure the parent component has finished processing
+      const timer = setTimeout(() => {
+        isSubmittingRef.current = false;
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -22,6 +60,14 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent double submission - check multiple conditions
+    if (loading || isSubmittingRef.current) {
+      console.log("Submission blocked - already submitting", { loading, isSubmitting: isSubmittingRef.current });
+      return;
+    }
+    
     setError("");
 
     // Validation
@@ -55,6 +101,11 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
       return;
     }
 
+    // Set submitting flag IMMEDIATELY to prevent double submission
+    isSubmittingRef.current = true;
+    console.log("Starting approval submission", { walletBalance, gracePeriodDays, virtualNumbersCount, pricePerNumber });
+    
+    // Call onApprove - this should only happen once
     onApprove({
       wallet_balance: walletBalance,
       grace_period_days: gracePeriodDays,
@@ -80,7 +131,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
               aria-label="Close"
             />
           </div>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} noValidate>
             <div className="modal-body p-24">
               <div className="mb-20">
                 <p className="text-sm text-secondary-light mb-0">
@@ -215,7 +266,14 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
               <button
                 type="submit"
                 className="btn btn-primary radius-8"
-                disabled={loading}
+                disabled={loading || isSubmittingRef.current}
+                onClick={(e) => {
+                  // Prevent any potential double-click issues
+                  if (loading || isSubmittingRef.current) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
               >
                 {loading ? (
                   <>

@@ -50,20 +50,29 @@ const CustomerListLayer = () => {
         const userData = getUserData();
         if (!userData || !userData.id) {
           setError("Unable to determine reseller ID. Please log in again.");
+          setCustomers([]);
           setLoading(false);
           return;
         }
         result = await getMstCustomersByReseller(userData.id);
       }
 
-      if (result.success) {
-        setCustomers(result.data || []);
+      if (result && result.success) {
+        // Always set an array, even if data is undefined or null
+        setCustomers(Array.isArray(result.data) ? result.data : []);
       } else {
-        setError("Failed to load customers");
+        // If result is falsy or success is false, set empty array
+        setCustomers([]);
+        if (result && result.message) {
+          setError(result.message);
+        } else {
+          setError("Failed to load customers");
+        }
       }
     } catch (err) {
       console.error("Error fetching customers:", err);
       setError("An error occurred while loading customers");
+      setCustomers([]); // Ensure empty array on error
     } finally {
       setLoading(false);
     }

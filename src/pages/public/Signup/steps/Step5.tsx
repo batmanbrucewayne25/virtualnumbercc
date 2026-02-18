@@ -69,6 +69,7 @@ const Step5 = ({
           dob: null,
           gender: null,
           aadhar_photo: null,
+          address: null,
         });
         onSubmit();
       } catch (err) {
@@ -171,8 +172,14 @@ const Step5 = ({
       const result = await submitAadhaarOTP(requestId, aadhaarOtp);
 
       // Check multiple possible response structures
+      // Response structure: { success: true, data: { data: {...}, status: "success" } }
       const data = result.data?.data || result.data || result;
-      const status = data?.status || result.status;
+      const status = result.data?.status || data?.status || result.status;
+
+      console.log("Aadhaar OTP Submit Response:", result);
+      console.log("Extracted data:", data);
+      console.log("Status:", status);
+      console.log("Result success:", result.success);
 
       if (
         result.success &&
@@ -186,6 +193,18 @@ const Step5 = ({
           return;
         }
 
+        // Format profile_image as base64 data URL if it's a base64 string
+        let profileImageBase64 = data.profile_image || "";
+        if (profileImageBase64 && !profileImageBase64.startsWith('data:')) {
+          // If it starts with /9j/ it's a JPEG base64, add the prefix
+          if (profileImageBase64.startsWith('/9j/')) {
+            profileImageBase64 = `data:image/jpeg;base64,${profileImageBase64}`;
+          } else if (profileImageBase64.startsWith('iVBORw0KGgo')) {
+            // PNG base64
+            profileImageBase64 = `data:image/png;base64,${profileImageBase64}`;
+          }
+        }
+
         setAadhaarData({
           full_name: data.full_name || "",
           aadhaar_number: data.aadhaar_number || aadhaarNumber,
@@ -193,16 +212,36 @@ const Step5 = ({
           gender: data.gender,
           address: data.address || null,
           zip: data.zip || "",
-          profile_image: data.profile_image || "",
+          profile_image: profileImageBase64,
         });
 
         try {
-          await updateAadhaarStep({
+          // Handle address - convert object to array or keep as is
+          let addressToSave = data.address || null;
+          if (addressToSave && typeof addressToSave === 'object' && !Array.isArray(addressToSave)) {
+            // Convert address object to array of strings
+            addressToSave = Object.values(addressToSave).filter(v => v && typeof v === 'string');
+          }
+
+          // Clean aadhaar number - remove spaces and dashes
+          const cleanedAadhaar = (data.aadhaar_number || aadhaarNumber).replace(/[\s-]/g, "");
+
+          console.log("Saving Aadhaar data:", {
             email,
-            aadhaar_number: aadhaarNumber,
+            aadhaar_number: cleanedAadhaar,
             dob: data.dob,
             gender: data.gender,
-            aadhar_photo: data.profile_image || null,
+            aadhar_photo: profileImageBase64 ? "present" : "missing",
+            address: addressToSave,
+          });
+
+          await updateAadhaarStep({
+            email,
+            aadhaar_number: cleanedAadhaar,
+            dob: data.dob,
+            gender: data.gender,
+            aadhar_photo: profileImageBase64 || null,
+            address: addressToSave,
           });
 
           onSubmit();

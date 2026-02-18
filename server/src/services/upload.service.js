@@ -6,14 +6,21 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Get upload directory from environment variable or use default
+const IMAGE_UPLOAD_BASE_DIR = process.env.IMAGE_UPLOAD_PATH || path.join(__dirname, '../../uploads');
+
 // Create uploads directories if they don't exist
-const profileImagesDir = path.join(__dirname, '../../uploads/profile-images');
+const profileImagesDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'profile-images');
 const logosDir = path.join(__dirname, '../../uploads/logos');
+const signaturesDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'signatures');
 if (!fs.existsSync(profileImagesDir)) {
   fs.mkdirSync(profileImagesDir, { recursive: true });
 }
 if (!fs.existsSync(logosDir)) {
   fs.mkdirSync(logosDir, { recursive: true });
+}
+if (!fs.existsSync(signaturesDir)) {
+  fs.mkdirSync(signaturesDir, { recursive: true });
 }
 
 // Configure storage for profile images
@@ -63,11 +70,34 @@ export const uploadProfileImage = multer({
   fileFilter: fileFilter
 });
 
+// Configure storage for signatures
+const signatureStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, signaturesDir);
+  },
+  filename: (req, file, cb) => {
+    // Generate unique filename: timestamp-resellerId-originalname
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname) || '.png';
+    const filename = `signature-${uniqueSuffix}${ext}`;
+    cb(null, filename);
+  }
+});
+
 // Configure multer for logos
 export const uploadLogo = multer({
   storage: logoStorage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: fileFilter
+});
+
+// Configure multer for signatures
+export const uploadSignature = multer({
+  storage: signatureStorage,
+  limits: {
+    fileSize: 2 * 1024 * 1024 // 2MB limit for signatures
   },
   fileFilter: fileFilter
 });
@@ -93,6 +123,16 @@ export const getLogoUrl = (filename) => {
 };
 
 /**
+ * Get the relative URL path for the uploaded signature
+ * @param {string} filename - The filename of the uploaded signature
+ * @returns {string} Relative URL path
+ */
+export const getSignatureUrl = (filename) => {
+  if (!filename) return null;
+  return filename;
+};
+
+/**
  * Get the full file path for the uploaded profile image
  * @param {string} filename - The filename of the uploaded image
  * @returns {string} Full file path
@@ -110,6 +150,16 @@ export const getProfileImagePath = (filename) => {
 export const getLogoPath = (filename) => {
   if (!filename) return null;
   return path.join(logosDir, filename);
+};
+
+/**
+ * Get the full file path for the uploaded signature
+ * @param {string} filename - The filename of the uploaded signature
+ * @returns {string} Full file path
+ */
+export const getSignaturePath = (filename) => {
+  if (!filename) return null;
+  return path.join(signaturesDir, filename);
 };
 
 /**
@@ -150,6 +200,27 @@ export const deleteLogo = async (filename) => {
     return true; // File doesn't exist, consider it deleted
   } catch (error) {
     console.error('Error deleting logo:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete a signature file
+ * @param {string} filename - The filename to delete
+ * @returns {Promise<boolean>} Success status
+ */
+export const deleteSignature = async (filename) => {
+  try {
+    if (!filename) return true;
+    
+    const filePath = getSignaturePath(filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return true;
+    }
+    return true; // File doesn't exist, consider it deleted
+  } catch (error) {
+    console.error('Error deleting signature:', error);
     return false;
   }
 };

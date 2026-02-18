@@ -17,6 +17,10 @@ const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
   const apiUrl = getApiBaseUrl();
   return apiUrl.replace('/api', '/uploads');
 })();
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
+  const apiUrl = getApiBaseUrl();
+  return apiUrl.replace('/api', '/uploads');
+})();
 
 // Helper function to format address object into readable string
 const formatCustomerAddress = (address) => {
@@ -470,7 +474,7 @@ const ViewResellerDashboardLayer = () => {
                                 reseller.profile_image.startsWith("data:") ||
                                 reseller.profile_image.startsWith("http")
                                   ? reseller.profile_image
-                                  : `${IMAGE_BASE_PATH}/profile-images/${reseller.profile_image}`
+                                  : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`
                               }
                               alt="Profile"
                               className="rounded"
@@ -488,7 +492,7 @@ const ViewResellerDashboardLayer = () => {
                                   reseller.profile_image.startsWith("data:") ||
                                   reseller.profile_image.startsWith("http")
                                     ? reseller.profile_image
-                                    : `${IMAGE_BASE_PATH}/profile-images/${reseller.profile_image}`;
+                                    : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`;
                                 const newWindow = window.open();
                                 if (newWindow) {
                                   newWindow.document.write(

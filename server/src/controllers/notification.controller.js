@@ -67,7 +67,9 @@ export const sendResellerApprovalNotifications = asyncHandler(async (req, res) =
     }
   }
 
-  const allSuccess = (!email || results.email?.success) && (!phone || results.whatsapp?.success);
+  // Consider it successful if email succeeded and WhatsApp either succeeded or template is not configured
+  const whatsappSuccess = !phone || results.whatsapp?.success || results.whatsapp?.templateNotConfigured;
+  const allSuccess = (!email || results.email?.success) && whatsappSuccess;
 
   res.status(allSuccess ? 200 : 207).json({
     success: allSuccess,

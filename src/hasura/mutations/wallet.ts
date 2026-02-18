@@ -663,13 +663,15 @@ export const creditWallet = async (
     let walletResult = await getMstWalletByResellerId(resellerId);
     let walletId: string;
     let currentBalance = 0;
+    let existingCreditAmount = 0;
 
     if (!walletResult.success || !walletResult.data) {
-      // Create wallet if it doesn't exist
+      // Create wallet if it doesn't exist with 0 balance initially
+      // The balance will be updated after the transaction is created
       const createResult = await createMstWallet({
         reseller_id: resellerId,
-        balance: amount,
-        credit_amount: amount,
+        balance: 0, // Start with 0, will be updated after transaction
+        credit_amount: 0, // Will be updated after transaction
       });
       if (!createResult.success) {
         return {
@@ -678,10 +680,12 @@ export const creditWallet = async (
         };
       }
       walletId = createResult.data.id;
-      currentBalance = amount;
+      currentBalance = 0; // Start with 0 balance for new wallet
+      existingCreditAmount = 0; // New wallet has 0 credit_amount
     } else {
       walletId = walletResult.data.id;
       currentBalance = Number(walletResult.data.balance) || 0;
+      existingCreditAmount = Number(walletResult.data.credit_amount) || 0;
     }
 
     const balanceBefore = currentBalance;
@@ -708,7 +712,7 @@ export const creditWallet = async (
     // Update wallet balance
     const updateResult = await updateMstWallet(walletId, {
       balance: balanceAfter,
-      credit_amount: (Number(walletResult.data?.credit_amount) || 0) + amount,
+      credit_amount: existingCreditAmount + amount,
       last_transaction_at: new Date().toISOString(),
     });
 

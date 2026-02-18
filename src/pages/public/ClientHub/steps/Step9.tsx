@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
+import SignaturePad from "@/components/SignaturePad";
 
 interface Step9Props {
   email: string;
@@ -8,31 +9,8 @@ interface Step9Props {
 
 const Step9 = ({ email, onBack, onSubmit }: Step9Props) => {
   const [signature, setSignature] = useState<string>("");
-  const [signatureFile, setSignatureFile] = useState<File | null>(null);
-  const signatureInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith("image/")) {
-        setError("Please upload a valid signature image file.");
-        return;
-      }
-      if (file.size > 2 * 1024 * 1024) {
-        setError("Signature image size should be less than 2MB.");
-        return;
-      }
-      setSignatureFile(file);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setSignature(event.target?.result as string);
-        setError("");
-      };
-      reader.readAsDataURL(file);
-    }
-  };
 
   const generateHash = async (data: string): Promise<string> => {
     const encoder = new TextEncoder();
@@ -46,27 +24,21 @@ const Step9 = ({ email, onBack, onSubmit }: Step9Props) => {
     setError("");
 
     if (!signature) {
-      setError("Please upload your digital signature.");
-      return;
-    }
-
-    if (!signatureFile) {
-      setError("Signature file is required.");
+      setError("Please draw your digital signature.");
       return;
     }
 
     setLoading(true);
     try {
-      // Generate hash from signature data
+      // Generate hash from signature data URL
       const signatureHash = await generateHash(signature);
 
       // Create metadata
       const signatureMetadata = {
-        fileName: signatureFile.name,
-        fileSize: signatureFile.size,
-        fileType: signatureFile.type,
-        uploadedAt: new Date().toISOString(),
+        source: "signature_pad",
+        createdAt: new Date().toISOString(),
         email: email,
+        format: "image/png",
       };
 
       onSubmit({
@@ -88,45 +60,25 @@ const Step9 = ({ email, onBack, onSubmit }: Step9Props) => {
       {error && <div className="alert alert-danger mb-12">{error}</div>}
 
       <p className="text-sm text-secondary-light mb-16">
-        Please upload your digital signature. This will be stored securely as a hash with metadata.
+        Please sign in the box below using your mouse or touch screen. This will be stored securely as a hash with metadata.
       </p>
 
       <div className="mb-24">
-        <div className="d-flex align-items-center gap-12">
-          {signature ? (
-            <div
-              className="border radius-8 overflow-hidden"
-              style={{ width: "200px", height: "80px", flexShrink: 0 }}
-            >
-              <img
-                src={signature}
-                alt="Signature Preview"
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-              />
-            </div>
-          ) : (
-            <div
-              className="border border-secondary-light radius-8 bg-light d-flex align-items-center justify-content-center"
-              style={{ width: "200px", height: "80px", flexShrink: 0 }}
-            >
-              <span className="text-secondary-light text-xs">No signature</span>
-            </div>
-          )}
-          <button
-            type="button"
-            className="btn btn-outline-primary"
-            onClick={() => signatureInputRef.current?.click()}
-          >
-            {signature ? "Change" : "Upload"} Signature
-          </button>
-          <input
-            ref={signatureInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleSignatureUpload}
-            style={{ display: "none" }}
-          />
-        </div>
+        <SignaturePad
+          onSignatureChange={(signatureDataUrl) => {
+            setSignature(signatureDataUrl || "");
+            setError("");
+          }}
+          width={600}
+          height={200}
+          penColor="#000000"
+          backgroundColor="#ffffff"
+        />
+        {signature && (
+          <div className="mt-12">
+            <small className="text-success">✓ Signature captured successfully</small>
+          </div>
+        )}
       </div>
 
       <button

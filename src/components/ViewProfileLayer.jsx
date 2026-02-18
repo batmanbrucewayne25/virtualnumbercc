@@ -4,6 +4,7 @@ import { getMstResellerById, updateMstResellerProfileImage, updateMstResellerLog
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads';
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
 
 const ViewProfileLayer = () => {
   const [fetching, setFetching] = useState(true);
@@ -115,7 +116,7 @@ const ViewProfileLayer = () => {
         if (result.data.profile_image) {
           const imageUrl = result.data.profile_image.startsWith('http') 
             ? result.data.profile_image 
-            : `${IMAGE_BASE_PATH}/profile-images/${result.data.profile_image}`;
+            : `${IMAGE_UPLOAD_PATH}/${result.data.profile_image}`;
         
             setImagePreview(imageUrl);
           setOriginalImageUrl(imageUrl);
@@ -225,7 +226,7 @@ const ViewProfileLayer = () => {
         setSuccessMessage("Profile image updated successfully!");
         setError("");
         // Update image preview with the new URL (filename only from backend)
-        const imageUrl = `${IMAGE_BASE_PATH}/profile-images/${result.data.filename}`;
+        const imageUrl = `${IMAGE_UPLOAD_PATH}/${result.data.filename}`;
         setImagePreview(imageUrl);
         
         // Refresh reseller data
@@ -670,7 +671,7 @@ const ViewProfileLayer = () => {
         <div className='card h-100'>
           <div className='card-body p-24'>
             <div className='d-flex justify-content-between align-items-center mb-20'>
-              <h5 className='mb-0'>Profile Information</h5>
+              <h5 className='mb-0'>Business Information</h5>
               <div className='alert alert-info mb-0 py-8 px-16'>
                 <Icon icon='solar:info-circle-outline' className='icon me-2' />
                 <small>Only Super Admin can edit reseller profiles. Please contact admin for any changes.</small>
@@ -689,47 +690,31 @@ const ViewProfileLayer = () => {
               </div>
             )}
 
-            {/* View mode only - resellers cannot edit their profile */}
+            {/* Business Information View */}
             <div>
                 <div className='row'>
-                  <div className='col-sm-6 mb-20'>
-                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                      First Name
-                    </label>
-                    <p className='text-secondary-light mb-0'>{formData.first_name || 'N/A'}</p>
-                  </div>
-                  <div className='col-sm-6 mb-20'>
-                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                      Last Name
-                    </label>
-                    <p className='text-secondary-light mb-0'>{formData.last_name || 'N/A'}</p>
-                  </div>
-                  <div className='col-sm-6 mb-20'>
-                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                      Email
-                    </label>
-                    <p className='text-secondary-light mb-0'>{formData.email || 'N/A'}</p>
-                  </div>
-                  <div className='col-sm-6 mb-20'>
-                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                      Phone
-                    </label>
-                    <p className='text-secondary-light mb-0'>{formData.phone || 'N/A'}</p>
-                  </div>
-                  {formData.brand_name && (
-                    <div className='col-sm-6 mb-20'>
-                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                        Brand Name
-                      </label>
-                      <p className='text-secondary-light mb-0'>{formData.brand_name}</p>
-                    </div>
-                  )}
                   {formData.business_name && (
                     <div className='col-sm-6 mb-20'>
                       <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
                         Business Name
                       </label>
                       <p className='text-secondary-light mb-0'>{formData.business_name}</p>
+                    </div>
+                  )}
+                  {formData.legal_name && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Legal Name
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.legal_name}</p>
+                    </div>
+                  )}
+                  {formData.brand_name && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Brand Name
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.brand_name}</p>
                     </div>
                   )}
                   {formData.business_email && (
@@ -748,29 +733,43 @@ const ViewProfileLayer = () => {
                       <p className='text-secondary-light mb-0'>{formData.gstin}</p>
                     </div>
                   )}
-                  {formData.dob && (
+                  {formData.gstin_status && (
                     <div className='col-sm-6 mb-20'>
                       <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                        Date of Birth
-                      </label>
-                      <p className='text-secondary-light mb-0'>{formData.dob}</p>
-                    </div>
-                  )}
-                  {formData.gender && (
-                    <div className='col-sm-6 mb-20'>
-                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                        Gender
-                      </label>
-                      <p className='text-secondary-light mb-0'>{formData.gender}</p>
-                    </div>
-                  )}
-                  {formData.address && (
-                    <div className='col-sm-12 mb-20'>
-                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                        Address
+                        GSTIN Status
                       </label>
                       <p className='text-secondary-light mb-0'>
-                        {Array.isArray(formData.address) ? formData.address.join(', ') : formData.address}
+                        <span className={`badge ${formData.gstin_status === 'Active' ? 'bg-success' : 'bg-warning'}`}>
+                          {formData.gstin_status}
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                  {formData.gst_pan_number && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        GST PAN Number
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.gst_pan_number}</p>
+                    </div>
+                  )}
+                  {formData.constitution_of_business && (
+                    <div className='col-sm-6 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Constitution of Business
+                      </label>
+                      <p className='text-secondary-light mb-0'>{formData.constitution_of_business}</p>
+                    </div>
+                  )}
+                  {formData.nature_bus_activities && (
+                    <div className='col-sm-12 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Nature of Business Activities
+                      </label>
+                      <p className='text-secondary-light mb-0'>
+                        {Array.isArray(formData.nature_bus_activities) 
+                          ? formData.nature_bus_activities.join(', ') 
+                          : formData.nature_bus_activities}
                       </p>
                     </div>
                   )}
@@ -780,6 +779,27 @@ const ViewProfileLayer = () => {
                         Business Address
                       </label>
                       <p className='text-secondary-light mb-0'>{formData.business_address}</p>
+                    </div>
+                  )}
+                  {formData.custom_domain && (
+                    <div className='col-sm-12 mb-20'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Custom Domain
+                      </label>
+                      <p className='text-secondary-light mb-0'>
+                        <a href={`https://${formData.custom_domain}`} target='_blank' rel='noopener noreferrer' className='text-primary-600'>
+                          {formData.custom_domain}
+                          <Icon icon='solar:link-external-outline' className='icon ms-2' style={{ fontSize: '14px' }} />
+                        </a>
+                      </p>
+                    </div>
+                  )}
+                  {!formData.business_name && !formData.gstin && !formData.business_email && (
+                    <div className='col-sm-12'>
+                      <div className='alert alert-info mb-0'>
+                        <Icon icon='solar:info-circle-outline' className='icon me-2' />
+                        <small>No business information available. Please complete your business verification.</small>
+                      </div>
                     </div>
                   )}
                 </div>

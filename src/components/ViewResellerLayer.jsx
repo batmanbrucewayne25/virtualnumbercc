@@ -10,6 +10,10 @@ const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
   const apiUrl = getApiBaseUrl();
   return apiUrl.replace('/api', '/uploads');
 })();
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
+  const apiUrl = getApiBaseUrl();
+  return apiUrl.replace('/api', '/uploads');
+})();
 
 const ViewResellerLayer = () => {
   const { id } = useParams();
@@ -299,7 +303,7 @@ const ViewResellerLayer = () => {
                       <img 
                         src={reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') 
                           ? reseller.profile_image 
-                          : `${IMAGE_BASE_PATH}/profile-images/${reseller.profile_image}`} 
+                          : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`} 
                         alt="Profile" 
                         className="rounded"
                         style={{ maxWidth: '150px', maxHeight: '150px', objectFit: 'cover', cursor: 'pointer' }}
@@ -309,7 +313,7 @@ const ViewResellerLayer = () => {
                         onClick={() => {
                           const img = reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') 
                             ? reseller.profile_image 
-                            : `${IMAGE_BASE_PATH}/profile-images/${reseller.profile_image}`;
+                            : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`;
                           const newWindow = window.open();
                           if (newWindow) {
                             newWindow.document.write(`<img src="${img}" style="max-width: 100%; height: auto;" />`);

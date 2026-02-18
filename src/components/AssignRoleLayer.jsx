@@ -103,6 +103,36 @@ const AssignRoleLayer = () => {
     return matchesSearch && matchesStatus;
   });
 
+  // Initialize dropdowns with proper positioning to escape table overflow
+  useEffect(() => {
+    const initDropdowns = async () => {
+      try {
+        const { Dropdown } = await import("bootstrap");
+        const dropdownElements = document.querySelectorAll('[data-bs-toggle="dropdown"]');
+        
+        dropdownElements.forEach((element) => {
+          const dropdown = Dropdown.getOrCreateInstance(element, {
+            boundary: 'viewport',
+            popperConfig: {
+              strategy: 'fixed',
+            },
+          });
+        });
+      } catch (err) {
+        console.error("Error initializing dropdowns:", err);
+      }
+    };
+
+    if (!loading && filteredAdmins.length > 0) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        initDropdowns();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [loading, filteredAdmins]);
+
   const getRoleName = (roleId) => {
     if (!roleId) return "No Role";
     const role = roles.find((r) => r.id === roleId);
@@ -221,6 +251,8 @@ const AssignRoleLayer = () => {
                               className='btn btn-outline-primary-600 not-active px-18 py-11 dropdown-toggle toggle-icon'
                               type='button'
                               data-bs-toggle='dropdown'
+                              data-bs-boundary='viewport'
+                              data-bs-auto-close='true'
                               aria-expanded='false'
                               disabled={isUpdating || roles.length === 0}
                             >
@@ -237,7 +269,7 @@ const AssignRoleLayer = () => {
                                 "Assign Role"
                               )}
                             </button>
-                            <ul className='dropdown-menu'>
+                            <ul className='dropdown-menu dropdown-menu-end'>
                               <li>
                                 <button
                                   className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900 w-100 text-start border-0'

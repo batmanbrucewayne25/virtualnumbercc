@@ -1,10 +1,13 @@
-import getMstResellerByEmail, { completeSignupStep } from "@/hasura/mutations";
+import { getMstResellerByEmail, completeSignupStep } from "@/hasura/mutations";
 import { Step6Props } from "@/types/auth/signup";
 import { useEffect, useRef, useState } from "react";
+import SignaturePad from "@/components/SignaturePad";
+import { getAuthToken } from "@/utils/auth";
 
 interface UserData {
-  address?: string;
+  address?: string | string[];
   business_address?: string;
+  business_email?: string;
   is_aadhaar_verified?: boolean;
   is_email_verified?: boolean;
   is_gst_verified?: boolean;
@@ -14,6 +17,7 @@ interface UserData {
   status?: string;
   current_step?: number;
   aadhaar_number?: string;
+  aadhar_photo?: string;
   business_name?: string;
   constitution_of_business?: string;
   dob?: string;
@@ -37,33 +41,14 @@ interface UserData {
 const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   const [profileImage, setProfileImage] = useState<string>("");
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
+  const [profileImageUploaded, setProfileImageUploaded] = useState<boolean>(false);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState<boolean>(false);
   const [brandName, setBrandName] = useState<string>("");
-  const [addressLines, setAddressLines] = useState<string[]>(["", "", ""]);
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [signature, setSignature] = useState<string>("");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
-  const signatureInputRef = useRef<HTMLInputElement>(null);
-    // Handle signature upload
-    const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        if (!file.type.startsWith("image/")) {
-          setError("Please upload a valid signature image file.");
-          return;
-        }
-        if (file.size > 2 * 1024 * 1024) {
-          setError("Signature image size should be less than 2MB.");
-          return;
-        }
-        setSignatureFile(file);
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setSignature(event.target?.result as string);
-        };
-        reader.readAsDataURL(file);
-        setError("");
-      }
-    };
+  const [signatureUploaded, setSignatureUploaded] = useState<boolean>(false);
+  const [uploadingSignature, setUploadingSignature] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -76,6 +61,23 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         const result = await getMstResellerByEmail({ email });
         if (result?.mst_reseller?.[0]) {
           setUserData(result.mst_reseller[0]);
+          // Check if profile image and signature are already uploaded
+          if (result.mst_reseller[0].profile_image) {
+            setProfileImageUploaded(true);
+            const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+            const imageUrl = result.mst_reseller[0].profile_image.startsWith('http') 
+              ? result.mst_reseller[0].profile_image 
+              : `${IMAGE_UPLOAD_PATH}/${result.mst_reseller[0].profile_image}`;
+            setProfileImage(imageUrl);
+          }
+          if (result.mst_reseller[0].signatureImage) {
+            setSignatureUploaded(true);
+            const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+            const signatureUrl = result.mst_reseller[0].signatureImage.startsWith('http') 
+              ? result.mst_reseller[0].signatureImage 
+              : `${IMAGE_UPLOAD_PATH}/${result.mst_reseller[0].signatureImage}`;
+            setSignature(signatureUrl);
+          }
         }
       } catch (err) {
         console.error("Error fetching user data:", err);
@@ -105,6 +107,7 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       }
 
       setProfileImageFile(file);
+      setProfileImageUploaded(false); // Reset upload status when file changes
 
       // Create preview
       const reader = new FileReader();
@@ -116,44 +119,262 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
     }
   };
 
-  const handleAddressChange = (index: number, value: string) => {
-    const updatedAddress = [...addressLines];
-    updatedAddress[index] = value;
-    setAddressLines(updatedAddress);
+  // Upload profile image function
+  const handleUploadProfileImage = async () => {
+    console.log("handleUploadProfileImage called");
+    if (!profileImageFile) {
+      setError("Please select a profile image first.");
+      console.error("No profile image file selected");
+      return;
+    }
+
+    setError("");
+    setUploadingProfileImage(true);
+    console.log("Starting profile image upload...");
+
+    try {
+      const token = getAuthToken();
+      const { getApiBaseUrl } = await import("@/utils/apiUrl");
+      const API_BASE_URL = getApiBaseUrl();
+      const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+
+      // Create FormData
+      const uploadFormData = new FormData();
+      uploadFormData.append('profile_image', profileImageFile);
+
+      // Prepare headers
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const uploadUrl = `${API_BASE_URL}/upload/profile-image`;
+      console.log("=== PROFILE IMAGE UPLOAD START ===");
+      console.log("Upload URL:", uploadUrl);
+      console.log("File:", {
+        name: profileImageFile.name,
+        size: profileImageFile.size,
+        type: profileImageFile.type
+      });
+      console.log("Headers:", headers);
+
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: headers,
+        body: uploadFormData,
+      });
+
+      console.log("Response status:", response.status);
+      console.log("Response ok:", response.ok);
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Response data:", result);
+        
+        if (result.success && result.data?.filename) {
+          const imageUrl = `${IMAGE_UPLOAD_PATH}/profile-images/${result.data.filename}`;
+          console.log("✅ Profile image uploaded successfully");
+          console.log("Filename from server:", result.data.filename);
+          console.log("Full image URL:", imageUrl);
+          setProfileImage(imageUrl);
+          setProfileImageUploaded(true);
+          setError("");
+        } else {
+          console.error("❌ Upload response missing filename:", result);
+          setError(result.message || "Failed to upload profile image - no filename returned");
+        }
+      } else {
+        const errorText = await response.text();
+        console.error("❌ Upload failed - Status:", response.status);
+        console.error("Error response:", errorText);
+        setError(`Failed to upload profile image: ${response.status} - ${errorText}`);
+      }
+      
+      console.log("=== PROFILE IMAGE UPLOAD END ===");
+    } catch (uploadErr: any) {
+      console.error("Profile image upload error:", uploadErr);
+      setError(uploadErr.message || "Failed to upload profile image");
+    } finally {
+      setUploadingProfileImage(false);
+    }
   };
 
-  const getFullAddress = (): string => {
-    return addressLines.filter((line) => line.trim()).join(", ");
+  // Upload signature function
+  const handleUploadSignature = async () => {
+    console.log("handleUploadSignature called");
+    if (!signatureFile) {
+      setError("Please draw your signature first.");
+      console.error("No signature file available");
+      return;
+    }
+
+    setError("");
+    setUploadingSignature(true);
+    console.log("Starting signature upload...");
+
+    try {
+      const token = getAuthToken();
+      const { getApiBaseUrl } = await import("@/utils/apiUrl");
+      const API_BASE_URL = getApiBaseUrl();
+      const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+
+      // Create FormData
+      const signatureFormData = new FormData();
+      signatureFormData.append('signature', signatureFile);
+
+      // Prepare headers
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const uploadUrl = `${API_BASE_URL}/upload/signature`;
+      console.log("Uploading signature:", uploadUrl);
+
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: headers,
+        body: signatureFormData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data?.filename) {
+          const signatureUrl = `${IMAGE_UPLOAD_PATH}/signatures/${result.data.filename}`;
+          setSignature(signatureUrl);
+          setSignatureUploaded(true);
+          setError("");
+          console.log("✅ Signature uploaded successfully");
+        } else {
+          setError(result.message || "Failed to upload signature");
+        }
+      } else {
+        const errorText = await response.text();
+        setError(`Failed to upload signature: ${response.status}`);
+        console.error("Upload failed:", errorText);
+      }
+    } catch (uploadErr: any) {
+      console.error("Signature upload error:", uploadErr);
+      setError(uploadErr.message || "Failed to upload signature");
+    } finally {
+      setUploadingSignature(false);
+    }
+  };
+
+  // Get address from Aadhaar, GST, or PAN (in priority order)
+  const getAddressFromKYC = (): string => {
+    if (!userData) return "";
+    
+    // Priority: Aadhaar address > GST business address > PAN address (if available)
+    if (userData.address) {
+      // If address is an array, join it
+      if (Array.isArray(userData.address)) {
+        return userData.address.filter((line: string) => line?.trim()).join(", ");
+      }
+      return userData.address;
+    }
+    
+    if (userData.business_address) {
+      return userData.business_address;
+    }
+    
+    return "";
   };
 
   const handleSubmit = async () => {
     setError("");
-    if (!profileImage) {
-      setError("Please upload a profile image.");
+    
+    // Check if both are uploaded
+    if (!profileImageUploaded) {
+      setError("Please upload your profile image first.");
       return;
     }
-    if (!signature) {
-      setError("Please upload your signature.");
+    if (!signatureUploaded) {
+      setError("Please upload your signature first.");
       return;
     }
-    if (!getFullAddress()) {
-      setError("Please enter your full address.");
-      return;
-    }
+    
     if (!acceptedTerms) {
       setError("Please accept Terms & Conditions.");
       return;
     }
+    
     setLoading(true);
     try {
-      // You may need to update the mutation to accept signature and status
+      // Fetch latest userData to ensure we have all fields
+      let latestUserData = userData;
+      if (email) {
+        try {
+          const fetchedData = await getMstResellerByEmail({ email });
+          if (fetchedData?.mst_reseller?.[0]) {
+            latestUserData = fetchedData.mst_reseller[0];
+          }
+        } catch (err) {
+          console.warn("Failed to fetch reseller data:", err);
+        }
+      }
+      
+      // Get address from KYC data (Aadhaar/GST/PAN) - optional
+      const address = getAddressFromKYC();
+      
+      // Prepare address - convert string to array if needed
+      let addressArray: string[] = [];
+      if (typeof address === 'string') {
+        addressArray = address.split(',').map(a => a.trim()).filter(a => a);
+      } else if (Array.isArray(address)) {
+        addressArray = address;
+      }
+
+      // Determine DOB - prioritize Aadhaar DOB, fallback to PAN DOB
+      let dobToSave = latestUserData?.dob || latestUserData?.pan_dob || null;
+      
+      // Extract filename from URL if it's a full URL, otherwise use as is
+      let profileImageUrl = profileImage;
+      if (profileImage) {
+        // Extract filename from URL (last part after last slash)
+        if (profileImage.includes('/')) {
+          profileImageUrl = profileImage.split('/').pop() || profileImage;
+        } else {
+          profileImageUrl = profileImage;
+        }
+      }
+      
+      let signatureUrl = signature;
+      if (signature) {
+        // Extract filename from URL (last part after last slash)
+        if (signature.includes('/')) {
+          signatureUrl = signature.split('/').pop() || signature;
+        } else {
+          signatureUrl = signature;
+        }
+      }
+      
+      console.log("Submitting signup with data:", {
+        email,
+        profile_image: profileImageUrl?.substring(0, 50),
+        signature: signatureUrl?.substring(0, 50),
+        aadhaar_number: latestUserData?.aadhaar_number,
+        dob: dobToSave,
+        aadhar_photo: latestUserData?.aadhar_photo ? "present" : "missing",
+      });
+      
       await completeSignupStep({
         email,
-        profile_image: profileImage,
-        address: getFullAddress(),
-        signature,
+        profile_image: profileImageUrl,
+        address: addressArray.length > 0 ? addressArray : null,
+        signatureImage: signatureUrl,
         brand_name: brandName || null,
-        status: false,
+        // Preserve existing data from latestUserData
+        aadhaar_number: latestUserData?.aadhaar_number || null,
+        dob: dobToSave, // Use Aadhaar DOB if available, otherwise PAN DOB
+        pan_number: latestUserData?.pan_number || null,
+        pan_dob: latestUserData?.pan_dob || null,
+        pan_full_name: latestUserData?.pan_full_name || null,
+        is_pan_verified: latestUserData?.is_pan_verified !== undefined ? latestUserData.is_pan_verified : true,
+        is_aadhaar_verified: latestUserData?.is_aadhaar_verified !== undefined ? latestUserData.is_aadhaar_verified : true,
+        business_address: latestUserData?.business_address || null,
+        business_email: latestUserData?.business_email || null,
+        aadhar_photo: latestUserData?.aadhar_photo || null,
       });
       onSubmit();
     } catch (err) {
@@ -234,7 +455,7 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       {/* Brand Name */}
       <div className="mb-24">
         <label className="form-label fw-semibold text-primary-light text-sm mb-8">
-          Brand Name <span className="text-secondary-light">(Optional - displayed to your customers)</span>
+          Brand Name 
         </label>
         <input
           className="form-control h-56-px"
@@ -244,44 +465,60 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         />
       </div>
 
-      {/* Signature Upload */}
+      {/* Digital Signature Pad */}
       <div className="mb-24">
-        <strong className="d-block mb-12">Signature</strong>
-        <div className="d-flex align-items-center gap-12">
-          {signature ? (
-            <div
-              className="border radius-8 overflow-hidden"
-              style={{ width: "100px", height: "40px", flexShrink: 0 }}
-            >
-              <img
-                src={signature}
-                alt="Signature Preview"
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-              />
-            </div>
-          ) : (
-            <div
-              className="border border-secondary-light radius-8 bg-light d-flex align-items-center justify-content-center"
-              style={{ width: "100px", height: "40px", flexShrink: 0 }}
-            >
-              <span className="text-secondary-light text-xs">No signature</span>
-            </div>
-          )}
-          <button
-            type="button"
-            className="btn btn-outline-primary"
-            onClick={() => signatureInputRef.current?.click()}
-          >
-            {signature ? "Change" : "Upload"} Signature
-          </button>
-          <input
-            ref={signatureInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleSignatureUpload}
-            style={{ display: "none" }}
-          />
-        </div>
+        <strong className="d-block mb-12">Digital Signature</strong>
+        <p className="text-sm text-secondary-light mb-12">
+          Please sign in the box below using your mouse or touch screen
+        </p>
+        <SignaturePad
+          onSignatureChange={(signatureDataUrl, signatureFile) => {
+            setSignature(signatureDataUrl || "");
+            setSignatureFile(signatureFile || null);
+            setSignatureUploaded(false); // Reset upload status when signature changes
+            setError("");
+          }}
+          width={600}
+          height={200}
+          penColor="#000000"
+          backgroundColor="#ffffff"
+        />
+        {signature && (
+          <div className="mt-12">
+            {signatureUploaded ? (
+              <small className="text-success d-block mb-8">✓ Signature uploaded successfully</small>
+            ) : (
+              <>
+                <small className="text-info d-block mb-8">✓ Signature captured - Please upload it</small>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Upload Signature button clicked");
+                    handleUploadSignature();
+                  }}
+                  disabled={uploadingSignature || signatureUploaded}
+                >
+                  {uploadingSignature ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Uploading...
+                    </>
+                  ) : signatureUploaded ? (
+                    <>
+                      <span className="text-success me-2">✓</span>
+                      Uploaded
+                    </>
+                  ) : (
+                    "Upload Signature"
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Profile Photo Upload */}
@@ -315,42 +552,63 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
               <span className="text-secondary-light text-xs">No image</span>
             </div>
           )}
-          <button
-            type="button"
-            className="btn btn-outline-primary"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {profileImage ? "Change" : "Upload"} Photo
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            style={{ display: "none" }}
-          />
+          <div className="flex-grow-1">
+            <button
+              type="button"
+              className="btn btn-outline-primary mb-8"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingProfileImage}
+            >
+              {profileImage ? "Change" : "Select"} Photo
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              style={{ display: "none" }}
+            />
+            {profileImageFile && (
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Upload Profile Image button clicked");
+                    handleUploadProfileImage();
+                  }}
+                  disabled={uploadingProfileImage || profileImageUploaded}
+                >
+                  {uploadingProfileImage ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Uploading...
+                    </>
+                  ) : profileImageUploaded ? (
+                    <>
+                      <span className="text-success me-2">✓</span>
+                      Uploaded
+                    </>
+                  ) : (
+                    "Upload Profile Image"
+                  )}
+                </button>
+                {profileImageUploaded && (
+                  <small className="text-success ms-2 d-block mt-4">Profile image uploaded successfully</small>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Address Input */}
-      <div className="mb-24">
-        <strong className="d-block mb-12">Full Address</strong>
-        <p className="text-xs text-secondary-light mb-8">Enter your complete address across multiple lines</p>
-        {addressLines.map((line, index) => (
-          <input
-            key={index}
-            className="form-control h-40-px mb-8"
-            placeholder={`Address Line ${index + 1}`}
-            value={line}
-            onChange={(e) => handleAddressChange(index, e.target.value)}
-          />
-        ))}
-      </div>
-
-      {getFullAddress() && (
+      {/* Address Display (from KYC) */}
+      {getAddressFromKYC() && (
         <div className="alert alert-info mb-24">
-          <strong className="d-block mb-8">Address Preview:</strong>
-          <p className="text-sm">{getFullAddress()}</p>
+          <strong className="d-block mb-8">Address (from KYC verification):</strong>
+          <p className="text-sm mb-0">{getAddressFromKYC()}</p>
         </div>
       )}
 
@@ -379,11 +637,20 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
 
       <button
         className="btn btn-success w-100 radius-12"
-        disabled={!profileImage || !signature || !getFullAddress() || !acceptedTerms || loading}
+        disabled={!profileImageUploaded || !signatureUploaded || !acceptedTerms || loading}
         onClick={handleSubmit}
       >
         {loading ? "Submitting..." : "Confirm & Complete Signup"}
       </button>
+      {(!profileImageUploaded || !signatureUploaded) && (
+        <div className="mt-8">
+          <small className="text-warning d-block">
+            {!profileImageUploaded && !signatureUploaded && "Please upload both profile image and signature to continue"}
+            {!profileImageUploaded && signatureUploaded && "Please upload profile image to continue"}
+            {profileImageUploaded && !signatureUploaded && "Please upload signature to continue"}
+          </small>
+        </div>
+      )}
     </>
   );
 };

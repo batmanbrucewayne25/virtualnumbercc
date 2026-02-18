@@ -72,6 +72,8 @@ const Step5 = ({ email, onBack, onContinue }: Step5Props) => {
           gstin_status: data.gstin_status || null,
           constitution_of_business: data.constitution_of_business || null,
           nature_bus_activities: data.nature_bus_activities?.join(", ") || null,
+          business_address: data.address || null,
+          business_email: data.email_id || null,
         });
       } else {
         setError("GST not found or inactive.");

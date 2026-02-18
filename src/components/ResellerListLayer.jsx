@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getMstResellers, deleteMstReseller, approveMstReseller, rejectMstReseller, suspendMstReseller, reactivateMstReseller, updateMstResellerStatus } from "@/hasura/mutations/reseller";
 import { getUserData } from "@/utils/auth";
 import ApproveResellerModal from "./ApproveResellerModal";
@@ -23,6 +23,7 @@ const ResellerListLayer = () => {
   const [selectedReseller, setSelectedReseller] = useState(null);
   const [pendingToggleAction, setPendingToggleAction] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const isApprovingRef = useRef(false);
 
   useEffect(() => {
     fetchResellers();
@@ -69,6 +70,9 @@ const ResellerListLayer = () => {
   };
 
   const handleApproveClick = (reseller) => {
+    // Reset approval state when opening modal
+    isApprovingRef.current = false;
+    setActionLoading(false);
     setSelectedReseller(reseller);
     setApproveModalOpen(true);
   };
@@ -84,21 +88,40 @@ const ResellerListLayer = () => {
   };
 
   const handleApprove = async (approvalData) => {
-    if (!selectedReseller) return;
+    if (!selectedReseller) {
+      console.log("handleApprove: No selected reseller");
+      return;
+    }
+    
+    // Prevent double submission - check both state and ref
+    if (actionLoading || isApprovingRef.current) {
+      console.log("handleApprove: Already approving - blocked", { actionLoading, isApproving: isApprovingRef.current });
+      return;
+    }
 
+    // Set flags IMMEDIATELY to prevent any race conditions
+    isApprovingRef.current = true;
     setActionLoading(true);
     setError("");
     setSuccess("");
+
+    console.log("handleApprove: Starting approval", { 
+      resellerId: selectedReseller.id, 
+      approvalData 
+    });
 
     try {
       const userData = getUserData();
       if (!userData || !userData.id) {
         setError("Unable to determine admin ID. Please log in again.");
         setActionLoading(false);
+        isApprovingRef.current = false;
         return;
       }
 
       const result = await approveMstReseller(selectedReseller.id, userData.id, approvalData);
+      
+      console.log("handleApprove: Approval result", { success: result.success, message: result.message });
       
       if (result.success) {
         setSuccess("Reseller approved successfully! Email and WhatsApp notifications sent.");
@@ -106,16 +129,20 @@ const ResellerListLayer = () => {
           setSuccess("");
           setApproveModalOpen(false);
           setSelectedReseller(null);
+          setActionLoading(false);
+          isApprovingRef.current = false;
           fetchResellers();
         }, 2000);
       } else {
         setError(result.message || "Failed to approve reseller");
+        setActionLoading(false);
+        isApprovingRef.current = false;
       }
     } catch (err) {
       console.error("Error approving reseller:", err);
       setError(err.message || "An error occurred while approving reseller");
-    } finally {
       setActionLoading(false);
+      isApprovingRef.current = false;
     }
   };
 
@@ -450,7 +477,7 @@ const ResellerListLayer = () => {
                           <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm" title={reseller.suspended_reason || 'SUSPEND'}>
                             SUSPEND
                           </span>
-                        ) : reseller.approval_date ? (
+                        ) : reseller.approval.toUpperCase() === "APPROVED" ? (
                           <span className="bg-success-focus text-success-600 border border-success-main px-24 py-4 radius-4 fw-medium text-sm">
                             Approved
                           </span>

@@ -273,7 +273,6 @@ export const getMstCustomerById = async (id: string) => {
 export const getAllMstCustomers = async () => {
   const QUERY = `query GetAllMstCustomers {
     mst_customer(
-      where: { approval: { _eq: "pending" } }
       order_by: { created_at: desc }
     ) {
       id
@@ -337,7 +336,7 @@ export const getAllMstCustomers = async () => {
 export const getMstCustomersByReseller = async (resellerId: string) => {
   const QUERY = `query GetMstCustomersByReseller($reseller_id: uuid!) {
     mst_customer(
-      where: { reseller_id: { _eq: $reseller_id }, approval: { _eq: "pending" } }
+      where: { reseller_id: { _eq: $reseller_id } }
       order_by: { created_at: desc }
     ) {
       id

@@ -746,11 +746,13 @@ export const approveMstReseller = async (
     // Create wallet and credit initial balance if provided
     let walletId: string | null = null;
     if (data.wallet_balance !== undefined && data.wallet_balance > 0) {
+      // Use timestamp to make reference unique and prevent duplicates
+      const uniqueReference = `APPROVAL_${id}_${Date.now()}`;
       const walletResult = await creditWallet(
         id,
         data.wallet_balance,
         `Initial wallet balance upon approval`,
-        `APPROVAL_${id}`
+        uniqueReference
       );
 
       if (!walletResult.success) {

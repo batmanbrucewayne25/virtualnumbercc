@@ -14,8 +14,11 @@ export const getMstResellerByEmail = async ({ email }: any) => {
     status
     current_step
     aadhaar_number
+    aadhar_photo
     business_name
     brand_name
+    business_address
+    business_email
     constitution_of_business
     dob
     email
@@ -34,6 +37,7 @@ export const getMstResellerByEmail = async ({ email }: any) => {
     phone
     profile_image
     logo
+    signature
     created_at
     updated_at
   }
@@ -149,39 +153,224 @@ export const updatePanStep = async ({ email, pan_number, pan_dob, pan_full_name 
   return graphqlRequest(UPDATE_PAN, { email, pan_number, pan_dob, pan_full_name });
 };
 
-export const updateAadhaarStep = async ({ email, aadhaar_number, dob, gender, aadhar_photo }: any) => {
-  const UPDATE_AADHAAR = `mutation UpdateAadhaarStep($email: String!, $aadhaar_number: String, $dob: String, $gender: String, $aadhar_photo: String) {
-  update_mst_reseller(where: { email: { _eq: $email } }, _set: { aadhaar_number: $aadhaar_number, dob: $dob, gender: $gender, aadhar_photo: $aadhar_photo, is_aadhaar_verified: true, current_step: 5 }) {
-    affected_rows
-  }
-}`;
+export const updateAadhaarStep = async ({ email, aadhaar_number, dob, gender, aadhar_photo, address }: any) => {
+  // Build dynamic mutation - only include fields that have values
+  const setFields: string[] = [];
+  const variables: any = { email };
+  const variableDefs: string[] = ['$email: String!'];
 
-  const variables: any = { email, aadhaar_number, dob, gender };
+  // Always update these fields
+  setFields.push('is_aadhaar_verified: true');
+  setFields.push('current_step: 5');
+
+  // Add fields only if they have values
+  if (aadhaar_number !== undefined && aadhaar_number !== null && aadhaar_number !== '') {
+    setFields.push('aadhaar_number: $aadhaar_number');
+    variables.aadhaar_number = aadhaar_number;
+    variableDefs.push('$aadhaar_number: String');
+  }
+  if (dob !== undefined && dob !== null && dob !== '') {
+    setFields.push('dob: $dob');
+    variables.dob = dob;
+    variableDefs.push('$dob: String');
+  }
+  if (gender) {
+    setFields.push('gender: $gender');
+    variables.gender = gender;
+    variableDefs.push('$gender: String');
+  }
   if (aadhar_photo) {
+    setFields.push('aadhar_photo: $aadhar_photo');
     variables.aadhar_photo = aadhar_photo;
+    variableDefs.push('$aadhar_photo: String');
+  }
+  if (address) {
+    setFields.push('address: $address');
+    variables.address = address;
+    variableDefs.push('$address: [String!]');
   }
 
-  return graphqlRequest(UPDATE_AADHAAR, variables);
+  const UPDATE_AADHAAR = `mutation UpdateAadhaarStep(
+    ${variableDefs.join('\n    ')}
+  ) {
+    update_mst_reseller(
+      where: { email: { _eq: $email } }
+      _set: {
+        ${setFields.join('\n        ')}
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        aadhaar_number
+        dob
+        aadhar_photo
+      }
+    }
+  }`;
+
+  console.log("UpdateAadhaarStep mutation:", {
+    variables: { ...variables, aadhar_photo: variables.aadhar_photo?.substring(0, 50) },
+    setFields,
+  });
+
+  const result = await graphqlRequest(UPDATE_AADHAAR, variables);
+  
+  console.log("UpdateAadhaarStep result:", result);
+  
+  return result;
 };
 
-export const updateGstStep = async ({ email, gstin, gst_pan_number, business_name, legal_name, gstin_status, constitution_of_business, nature_bus_activities }: any) => {
-  const UPDATE_GST = `mutation UpdateGstStep($email: String!, $gstin: String, $gst_pan_number: String, $business_name: String, $legal_name: String, $gstin_status: String, $constitution_of_business: String, $nature_bus_activities: String) {
-  update_mst_reseller(where: { email: { _eq: $email } }, _set: { gstin: $gstin, gst_pan_number: $gst_pan_number, business_name: $business_name, legal_name: $legal_name, gstin_status: $gstin_status, constitution_of_business: $constitution_of_business, nature_bus_activities: $nature_bus_activities, is_gst_verified: true, current_step: 6 }) {
+export const updateGstStep = async ({ email, gstin, gst_pan_number, business_name, legal_name, gstin_status, constitution_of_business, nature_bus_activities, business_address, business_email }: any) => {
+  const UPDATE_GST = `mutation UpdateGstStep($email: String!, $gstin: String, $gst_pan_number: String, $business_name: String, $legal_name: String, $gstin_status: String, $constitution_of_business: String, $nature_bus_activities: String, $business_address: String, $business_email: String) {
+  update_mst_reseller(where: { email: { _eq: $email } }, _set: { gstin: $gstin, gst_pan_number: $gst_pan_number, business_name: $business_name, legal_name: $legal_name, gstin_status: $gstin_status, constitution_of_business: $constitution_of_business, nature_bus_activities: $nature_bus_activities, business_address: $business_address, business_email: $business_email, is_gst_verified: true, current_step: 6 }) {
     affected_rows
   }
 }`;
 
-  return graphqlRequest(UPDATE_GST, { email, gstin, gst_pan_number, business_name, legal_name, gstin_status, constitution_of_business, nature_bus_activities });
+  const variables: any = { email, gstin, gst_pan_number, business_name, legal_name, gstin_status, constitution_of_business, nature_bus_activities };
+  if (business_address) {
+    variables.business_address = business_address;
+  }
+  if (business_email) {
+    variables.business_email = business_email;
+  }
+
+  return graphqlRequest(UPDATE_GST, variables);
 };
 
-export const completeSignupStep = async ({ email, profile_image, address, brand_name }: any) => {
-  const COMPLETE = `mutation CompleteSignupStep($email: String!, $profile_image: String, $address: [String!], $brand_name: String) {
-  update_mst_reseller(where: { email: { _eq: $email } }, _set: { profile_image: $profile_image, address: $address, brand_name: $brand_name, signup_completed: true, status: true, current_step: 7 }) {
-    affected_rows
-  }
-}`;
+export const completeSignupStep = async ({ 
+  email, 
+  profile_image, 
+  address, 
+  brand_name, 
+  signature,
+  // Preserve existing data
+  aadhaar_number,
+  dob,
+  pan_number,
+  pan_dob,
+  pan_full_name,
+  is_pan_verified,
+  is_aadhaar_verified,
+  business_address,
+  business_email,
+  aadhar_photo
+}: any) => {
+  // Build dynamic mutation - only include fields that have values
+  const setFields: string[] = [];
+  const variables: any = { email };
+  const variableDefs: string[] = ['$email: String!'];
 
-  return graphqlRequest(COMPLETE, { email, profile_image, address, brand_name });
+  // Always update these fields
+  setFields.push('signup_completed: true');
+  setFields.push('status: true');
+  setFields.push('current_step: 7');
+
+  // Add fields only if they have values
+  if (profile_image) {
+    setFields.push('profile_image: $profile_image');
+    variables.profile_image = profile_image;
+    variableDefs.push('$profile_image: String');
+  }
+  if (address && Array.isArray(address) && address.length > 0) {
+    setFields.push('address: $address');
+    variables.address = address;
+    variableDefs.push('$address: [String!]');
+  }
+  if (brand_name) {
+    setFields.push('brand_name: $brand_name');
+    variables.brand_name = brand_name;
+    variableDefs.push('$brand_name: String');
+  }
+  if (signature) {
+    setFields.push('signature: $signature');
+    variables.signature = signature;
+    variableDefs.push('$signature: String');
+  }
+  if (aadhaar_number !== undefined && aadhaar_number !== null && aadhaar_number !== '') {
+    setFields.push('aadhaar_number: $aadhaar_number');
+    variables.aadhaar_number = aadhaar_number;
+    variableDefs.push('$aadhaar_number: String');
+  }
+  if (dob !== undefined && dob !== null && dob !== '') {
+    setFields.push('dob: $dob');
+    variables.dob = dob;
+    variableDefs.push('$dob: String');
+  }
+  if (pan_number) {
+    setFields.push('pan_number: $pan_number');
+    variables.pan_number = pan_number;
+    variableDefs.push('$pan_number: String');
+  }
+  if (pan_dob) {
+    setFields.push('pan_dob: $pan_dob');
+    variables.pan_dob = pan_dob;
+    variableDefs.push('$pan_dob: String');
+  }
+  if (pan_full_name) {
+    setFields.push('pan_full_name: $pan_full_name');
+    variables.pan_full_name = pan_full_name;
+    variableDefs.push('$pan_full_name: String');
+  }
+  if (is_pan_verified !== undefined) {
+    setFields.push('is_pan_verified: $is_pan_verified');
+    variables.is_pan_verified = is_pan_verified;
+    variableDefs.push('$is_pan_verified: Boolean');
+  }
+  if (is_aadhaar_verified !== undefined) {
+    setFields.push('is_aadhaar_verified: $is_aadhaar_verified');
+    variables.is_aadhaar_verified = is_aadhaar_verified;
+    variableDefs.push('$is_aadhaar_verified: Boolean');
+  }
+  if (business_address) {
+    setFields.push('business_address: $business_address');
+    variables.business_address = business_address;
+    variableDefs.push('$business_address: String');
+  }
+  if (business_email) {
+    setFields.push('business_email: $business_email');
+    variables.business_email = business_email;
+    variableDefs.push('$business_email: String');
+  }
+  if (aadhar_photo) {
+    setFields.push('aadhar_photo: $aadhar_photo');
+    variables.aadhar_photo = aadhar_photo;
+    variableDefs.push('$aadhar_photo: String');
+  }
+
+  const COMPLETE = `mutation CompleteSignupStep(
+    ${variableDefs.join('\n    ')}
+  ) {
+    update_mst_reseller(
+      where: { email: { _eq: $email } }
+      _set: {
+        ${setFields.join('\n        ')}
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        aadhaar_number
+        dob
+        profile_image
+        signature
+        signup_completed
+        aadhar_photo
+      }
+    }
+  }`;
+
+  console.log("CompleteSignupStep mutation:", {
+    variables: { ...variables, profile_image: variables.profile_image?.substring(0, 50), signature: variables.signature?.substring(0, 50) },
+    setFields,
+  });
+
+  const result = await graphqlRequest(COMPLETE, variables);
+  
+  console.log("CompleteSignupStep result:", result);
+  
+  return result;
 };
 
 export default {

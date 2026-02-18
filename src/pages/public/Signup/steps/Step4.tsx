@@ -8,6 +8,8 @@ interface PanVerificationData {
   category: string;
   dob: string;
   gender: string;
+  address?: string;
+  photo?: string;
 }
 
 interface Step4PropsWithSkip extends Step3Props {
@@ -46,6 +48,8 @@ const Step4 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step4Pr
           category: data.category || "",
           dob: data.dob || "",
           gender: data.gender || "",
+          address: data.address || data.full_address || "",
+          photo: data.photo || data.profile_image || "",
         });
         setIsPanVerified(true);
       } else {
@@ -152,8 +156,65 @@ const Step4 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step4Pr
 
       {/* PAN DETAILS */}
       {showDetails && panData && (
-        <div className="alert alert-info ">
-          <p className="mb-0"><strong>Name:</strong> {panData.full_name || "N/A"}</p>
+        <div className="card border radius-8 p-16 mb-16">
+          <h6 className="mb-12 fw-semibold">PAN Card Details</h6>
+          <div className="d-flex flex-column gap-12">
+            {/* Photo if available */}
+            {panData.photo && (
+              <div>
+                <label className="form-label text-sm mb-8 fw-medium">Photo</label>
+                <div className="border radius-8 overflow-hidden" style={{ width: "120px", height: "120px" }}>
+                  <img
+                    src={panData.photo}
+                    alt="PAN Photo"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                </div>
+              </div>
+            )}
+            
+            {/* Name */}
+            <div>
+              <label className="form-label text-sm mb-8 fw-medium">Name</label>
+              <p className="text-sm mb-0">{panData.full_name || "N/A"}</p>
+            </div>
+
+            {/* DOB */}
+            <div>
+              <label className="form-label text-sm mb-8 fw-medium">Date of Birth</label>
+              <p className="text-sm mb-0">{panData.dob || "N/A"}</p>
+            </div>
+
+            {/* Address */}
+            {panData.address && (
+              <div>
+                <label className="form-label text-sm mb-8 fw-medium">Address</label>
+                <p className="text-sm mb-0">{panData.address}</p>
+              </div>
+            )}
+
+            {/* Category */}
+            {panData.category && (
+              <div>
+                <label className="form-label text-sm mb-8 fw-medium">Category</label>
+                <p className="text-sm mb-0">{panData.category}</p>
+              </div>
+            )}
+
+            {/* Gender */}
+            {panData.gender && (
+              <div>
+                <label className="form-label text-sm mb-8 fw-medium">Gender</label>
+                <p className="text-sm mb-0">{panData.gender}</p>
+              </div>
+            )}
+
+            {/* PAN Number */}
+            <div>
+              <label className="form-label text-sm mb-8 fw-medium">PAN Number</label>
+              <p className="text-sm mb-0">{panData.pan_number}</p>
+            </div>
+          </div>
         </div>
       )}
 

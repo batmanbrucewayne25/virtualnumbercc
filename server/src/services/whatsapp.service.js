@@ -118,10 +118,42 @@ export const sendWhatsAppTemplateMessage = async (phone, templateName, languageC
       data: response.data,
     };
   } catch (error) {
+    // WhatsApp API error structure: error.response.data.error
+    const errorData = error.response?.data?.error || error.response?.data;
+    const errorCode = errorData?.code;
+    const errorType = errorData?.type;
+    const errorDetails = errorData?.error_data?.details || errorData?.message || error.message || 'Failed to send WhatsApp message';
+    
+    // Check if it's a template not found error (code 132001 with OAuthException type)
+    // Error structure from WhatsApp API:
+    // {
+    //   type: 'OAuthException',
+    //   code: 132001,
+    //   error_data: {
+    //     messaging_product: 'whatsapp',
+    //     details: 'template name (reseller_approval) does not exist in en'
+    //   }
+    // }
+    const isTemplateNotFound = 
+      (errorType === 'OAuthException' && errorCode === 132001) ||
+      (errorCode === 132001) ||
+      (typeof errorDetails === 'string' && errorDetails.includes('template name') && errorDetails.includes('does not exist'));
+    
+    if (isTemplateNotFound) {
+      // Don't log as error - this is expected if template is not created
+      // Return silently without logging to prevent error spam in logs
+      return {
+        success: false,
+        message: `WhatsApp template "${templateName}" not found. Please create it in Meta Business Manager.`,
+        templateNotFound: true,
+      };
+    }
+    
+    // Only log as error if it's not a template not found issue
     console.error('Error sending WhatsApp message:', error.response?.data || error.message);
     return {
       success: false,
-      message: error.response?.data?.error?.message || error.message || 'Failed to send WhatsApp message',
+      message: errorDetails,
     };
   }
 };
@@ -210,8 +242,29 @@ export const sendResellerApprovalWhatsApp = async (phone, resellerName, walletBa
       if (result.success) {
         return result;
       }
+      
+      // If template not found, return gracefully without failing
+      if (result.templateNotFound) {
+        // Silently handle - template not configured is not an error
+        // Uncomment below if you want to see a warning
+        // console.warn('WhatsApp template not configured. Skipping WhatsApp notification.');
+        return {
+          success: true,
+          message: 'Reseller approved (WhatsApp template not configured)',
+          note: `Please create a WhatsApp template named "${templateName}" in Meta Business Manager for automated messages`,
+          templateNotConfigured: true,
+        };
+      }
     } catch (templateError) {
-      console.warn('Template message failed, trying alternative method:', templateError);
+      // Check if it's a template error - don't log it
+      const errorData = templateError.response?.data?.error || templateError.response?.data;
+      const isTemplateError = errorData?.code === 132001 || 
+                             (errorData?.error_data?.details?.includes('template name') && 
+                              errorData?.error_data?.details?.includes('does not exist'));
+      
+      if (!isTemplateError) {
+        console.warn('Template message failed:', templateError.message);
+      }
     }
 
     // Fallback: If template doesn't exist, log the message (you can implement SMS or other notification here)
@@ -223,10 +276,25 @@ export const sendResellerApprovalWhatsApp = async (phone, resellerName, walletBa
       note: 'Please create a WhatsApp template named "reseller_approval" in Meta Business Manager for automated messages',
     };
   } catch (error) {
-    console.error('Error sending reseller approval WhatsApp:', error);
+    // Check if it's a template error that was already handled in sendWhatsAppTemplateMessage
+    const errorData = error.response?.data?.error || error.response?.data;
+    const errorCode = errorData?.code;
+    const errorType = errorData?.type;
+    const errorDetails = errorData?.error_data?.details || errorData?.message || error.message || '';
+    const isTemplateError = 
+      (errorType === 'OAuthException' && errorCode === 132001) ||
+      (errorCode === 132001) ||
+      (errorDetails.includes('template name') && errorDetails.includes('does not exist'));
+    
+    // Don't log template errors - they're expected if template doesn't exist
+    if (!isTemplateError) {
+      console.error('Error sending reseller approval WhatsApp:', error);
+    }
+    
     return {
       success: false,
       message: error.message || 'Failed to send WhatsApp message',
+      templateNotFound: isTemplateError,
     };
   }
 };

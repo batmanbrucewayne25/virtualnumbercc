@@ -48,6 +48,7 @@ const EditResellerLayer = () => {
 
   // Image/Logo upload state
   const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads';
+  const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
   const [imagePreview, setImagePreview] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
@@ -183,7 +184,7 @@ const EditResellerLayer = () => {
 
           // Set image/logo previews from existing data
           if (result.data.profile_image) {
-            setImagePreview(`${IMAGE_BASE_PATH}/profile-images/${result.data.profile_image}`);
+            setImagePreview(`${IMAGE_UPLOAD_PATH}/${result.data.profile_image}`);
           }
           if (result.data.logo) {
             setLogoPreview(`${IMAGE_BASE_PATH}/logos/${result.data.logo}`);
@@ -402,7 +403,7 @@ const EditResellerLayer = () => {
       const result = await response.json();
       if (result.success) {
         const filename = result.data.filename;
-        const imageUrl = `${IMAGE_BASE_PATH}/profile-images/${filename}`;
+        const imageUrl = `${IMAGE_UPLOAD_PATH}/${filename}`;
         setImagePreview(imageUrl);
         // Save filename to formData so it's included in the form submission
         setFormData((prev) => ({
