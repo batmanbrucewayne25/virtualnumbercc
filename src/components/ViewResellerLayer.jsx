@@ -1,19 +1,17 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getMstResellerById } from "@/hasura/mutations/reseller";
+import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import { getAuthToken, getUserData } from "@/utils/auth";
 
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
   const apiUrl = getApiBaseUrl();
   return apiUrl.replace('/api', '/uploads');
 })();
-const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
-  const apiUrl = getApiBaseUrl();
-  return apiUrl.replace('/api', '/uploads');
-})();
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH;
 
 const ViewResellerLayer = () => {
   const { id } = useParams();
@@ -23,8 +21,28 @@ const ViewResellerLayer = () => {
   const [error, setError] = useState("");
   const [validity, setValidity] = useState(null);
   const [domainData, setDomainData] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
+    // Check if user is admin
+    const token = getAuthToken();
+    const userData = getUserData();
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const role = payload.role || userData?.role;
+        if (role === "admin" || role === "super_admin") {
+          setIsAdmin(true);
+        }
+      } catch (err) {
+        console.error("Error decoding token:", err);
+      }
+    }
+
     const currentId = id;
     console.log("useParams id:", currentId, typeof currentId);
     
@@ -123,6 +141,63 @@ const ViewResellerLayer = () => {
     return diffDays;
   };
 
+  const handleEditField = (field: string, currentValue: any) => {
+    setEditingField(field);
+    setEditValues({ [field]: currentValue || "" });
+    setSuccessMessage("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingField(null);
+    setEditValues({});
+  };
+
+  const handleSaveField = async (field: string) => {
+    if (!reseller || !id) return;
+
+    setSaving(true);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      const updateData: any = {};
+      const value = editValues[field];
+
+      if (field === "dob") {
+        updateData.dob = value || null;
+      } else if (field === "gender") {
+        updateData.gender = value || null;
+      } else if (field === "pan_number") {
+        updateData.pan_number = value || null;
+      } else if (field === "brand_name") {
+        updateData.brand_name = value || null;
+      }
+
+      const result = await updateMstReseller(id, updateData);
+
+      if (result.success) {
+        setSuccessMessage(`${field === "dob" ? "Date of Birth" : field === "pan_number" ? "PAN Number" : field === "brand_name" ? "Brand Name" : "Gender"} updated successfully!`);
+        setEditingField(null);
+        setEditValues({});
+        
+        // Refresh reseller data
+        const resellerResult = await getMstResellerById(id);
+        if (resellerResult.success && resellerResult.data) {
+          setReseller(resellerResult.data);
+        }
+        
+        setTimeout(() => setSuccessMessage(""), 3000);
+      } else {
+        setError(result.message || "Failed to update field");
+      }
+    } catch (err: any) {
+      console.error("Error updating field:", err);
+      setError(err.message || "An error occurred while updating");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className='card h-100 p-0 radius-12'>
@@ -168,6 +243,20 @@ const ViewResellerLayer = () => {
           </Link>
         </div>
 
+        {successMessage && (
+          <div className='alert alert-success radius-8 mb-24' role='alert'>
+            <Icon icon='material-symbols:check-circle-outline' className='icon me-2' />
+            {successMessage}
+          </div>
+        )}
+
+        {error && (
+          <div className='alert alert-danger radius-8 mb-24' role='alert'>
+            <Icon icon='material-symbols:error-outline' className='icon me-2' />
+            {error}
+          </div>
+        )}
+
         <div className='row'>
           <div className='col-md-6'>
             <div className='card border mb-20'>
@@ -203,17 +292,95 @@ const ViewResellerLayer = () => {
                 </div>
 
                 <div className='mb-16'>
-                  <label className='form-label text-xs text-secondary-light mb-4'>Date of Birth</label>
-                  <p className='text-md fw-medium text-primary-light mb-0'>
-                    {reseller.dob ? formatDate(reseller.dob) : "-"}
-                  </p>
+                  <label className='form-label text-xs text-secondary-light mb-4 d-flex align-items-center gap-2'>
+                    Date of Birth
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("dob", reseller.dob)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Date of Birth"
+                      />
+                    )}
+                  </label>
+                  {editingField === "dob" ? (
+                    <div className="d-flex align-items-center gap-2">
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={editValues.dob || ""}
+                        onChange={(e) => setEditValues({ dob: e.target.value })}
+                        disabled={saving}
+                      />
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("dob")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller.dob ? formatDate(reseller.dob) : "-"}
+                    </p>
+                  )}
                 </div>
 
                 <div className='mb-16'>
-                  <label className='form-label text-xs text-secondary-light mb-4'>Gender</label>
-                  <p className='text-md fw-medium text-primary-light mb-0'>
-                    {reseller.gender || "-"}
-                  </p>
+                  <label className='form-label text-xs text-secondary-light mb-4 d-flex align-items-center gap-2'>
+                    Gender
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("gender", reseller.gender)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Gender"
+                      />
+                    )}
+                  </label>
+                  {editingField === "gender" ? (
+                    <div className="d-flex align-items-center gap-2">
+                      <select
+                        className="form-control form-control-sm"
+                        value={editValues.gender || ""}
+                        onChange={(e) => setEditValues({ gender: e.target.value })}
+                        disabled={saving}
+                      >
+                        <option value="">Select gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("gender")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller.gender || "-"}
+                    </p>
+                  )}
                 </div>
 
                 <div className='mb-16'>
@@ -224,10 +391,49 @@ const ViewResellerLayer = () => {
                 </div>
 
                 <div className='mb-16'>
-                  <label className='form-label text-xs text-secondary-light mb-4'>PAN Number</label>
-                  <p className='text-md fw-medium text-primary-light mb-0'>
-                    {reseller.pan_number || "-"}
-                  </p>
+                  <label className='form-label text-xs text-secondary-light mb-4 d-flex align-items-center gap-2'>
+                    PAN Number
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("pan_number", reseller.pan_number)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit PAN Number"
+                      />
+                    )}
+                  </label>
+                  {editingField === "pan_number" ? (
+                    <div className="d-flex align-items-center gap-2">
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        value={editValues.pan_number || ""}
+                        onChange={(e) => setEditValues({ pan_number: e.target.value.toUpperCase() })}
+                        disabled={saving}
+                        maxLength={10}
+                        placeholder="Enter PAN number"
+                      />
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("pan_number")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className='text-md fw-medium text-primary-light mb-0'>
+                      {reseller.pan_number || "-"}
+                    </p>
+                  )}
                 </div>
 
                 <div className='mb-16'>
@@ -295,15 +501,13 @@ const ViewResellerLayer = () => {
                     </div>
                   </div>
                 )}
-
+ 
                 {reseller.profile_image && (
                   <div className='mb-16'>
                     <label className='form-label text-xs text-secondary-light mb-4'>Profile Image</label>
                     <div>
                       <img 
-                        src={reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') 
-                          ? reseller.profile_image 
-                          : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`} 
+                        src={ `${IMAGE_UPLOAD_PATH}/profile-images/${reseller.profile_image}`} 
                         alt="Profile" 
                         className="rounded"
                         style={{ maxWidth: '150px', maxHeight: '150px', objectFit: 'cover', cursor: 'pointer' }}
@@ -313,7 +517,7 @@ const ViewResellerLayer = () => {
                         onClick={() => {
                           const img = reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') 
                             ? reseller.profile_image 
-                            : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`;
+                            : `${IMAGE_UPLOAD_PATH}/profile-images/${reseller.profile_image}`;
                           const newWindow = window.open();
                           if (newWindow) {
                             newWindow.document.write(`<img src="${img}" style="max-width: 100%; height: auto;" />`);
@@ -321,6 +525,48 @@ const ViewResellerLayer = () => {
                         }}
                         title="Click to view full size"
                       />
+                    </div>
+                  </div>
+                )}
+
+                {reseller.signatureImage && (
+                  <div className='mb-16'>
+                    <label className='form-label text-xs text-secondary-light mb-4'>Digital Signature</label>
+                    <div>
+                      {(() => {
+                        const signature = reseller.signatureImage || '';
+                        if (!signature) return <p className='text-sm text-secondary-light'>No signature available</p>;
+                        
+                        const imageSrc = signature.startsWith('data:') 
+                          ? signature 
+                          : (signature.startsWith('http://') || signature.startsWith('https://'))
+                            ? signature
+                            : `${IMAGE_UPLOAD_PATH}/signatures/${signature}`;
+                        
+                        return (
+                          <img 
+                            src={imageSrc}
+                            alt="Digital Signature" 
+                            className="rounded border"
+                            style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
+                            onError={(e) => {
+                              console.error('Error loading signature image:', e);
+                              e.target.style.display = 'none';
+                              const errorDiv = document.createElement('div');
+                              errorDiv.className = 'alert alert-warning';
+                              errorDiv.textContent = 'Failed to load signature image';
+                              e.target.parentNode?.appendChild(errorDiv);
+                            }}
+                            onClick={() => {
+                              const newWindow = window.open();
+                              if (newWindow) {
+                                newWindow.document.write(`<img src="${imageSrc}" style="max-width: 100%; height: auto; background: white;" />`);
+                              }
+                            }}
+                            title="Click to view full size"
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -369,14 +615,50 @@ const ViewResellerLayer = () => {
                   </p>
                 </div>
 
-                {reseller.brand_name && (
-                  <div className='mb-16'>
-                    <label className='form-label text-xs text-secondary-light mb-4'>Brand Name</label>
+                <div className='mb-16'>
+                  <label className='form-label text-xs text-secondary-light mb-4 d-flex align-items-center gap-2'>
+                    Brand Name
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("brand_name", reseller.brand_name)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Brand Name"
+                      />
+                    )}
+                  </label>
+                  {editingField === "brand_name" ? (
+                    <div className="d-flex align-items-center gap-2">
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        value={editValues.brand_name || ""}
+                        onChange={(e) => setEditValues({ brand_name: e.target.value })}
+                        disabled={saving}
+                        placeholder="Enter brand name"
+                      />
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("brand_name")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
                     <p className='text-md fw-medium text-primary-light mb-0'>
-                      {reseller.brand_name}
+                      {reseller.brand_name || "-"}
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 <div className='mb-16'>
                   <label className='form-label text-xs text-secondary-light mb-4'>Legal Name</label>

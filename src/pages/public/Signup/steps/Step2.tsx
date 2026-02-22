@@ -2,12 +2,16 @@ import { updateOtpVerificationStep } from "@/hasura/mutations";
 import { Step2Props } from "@/types/auth/signup";
 import OtpVerify from "./Components/OtpVerify";
 import { useEffect } from "react";
+import { useStepValidation } from "@/hooks/useStepValidation";
 
 interface Step2PropsWithSkip extends Step2Props {
   skipOtpVerification?: boolean;
 }
 
 const Step2 = ({ email, onBack, onVerify, skipOtpVerification = false }: Step2PropsWithSkip) => {
+  // Validate step access
+  const { isValid, loading } = useStepValidation({ email, currentStep: 2 });
+
   // Auto-verify if skipOtpVerification is true
   useEffect(() => {
     if (skipOtpVerification && email) {
@@ -22,6 +26,20 @@ const Step2 = ({ email, onBack, onVerify, skipOtpVerification = false }: Step2Pr
       autoVerify();
     }
   }, [skipOtpVerification, email, onVerify]);
+
+  // Show loading while validating
+  if (loading) {
+    return (
+      <div className="text-center py-24">
+        <p>Validating access...</p>
+      </div>
+    );
+  }
+
+  // If step is not valid, the hook will handle redirect
+  if (!isValid) {
+    return null;
+  }
 
   // If skipping OTP, show a message and auto-verify
   if (skipOtpVerification) {

@@ -47,7 +47,7 @@ export const generateAadhaarOTP = asyncHandler(async (req, res) => {
 
     res.status(statusCode).json({
       success: false,
-      message: errorMessage,
+      message: "KYC API validation may have failed. Please try again later. If the problem persists, please contact support.",
       error: process.env.NODE_ENV === "production" ? {} : error.error,
       request_id: error.request_id || null, // Include request_id if available for debugging
     });

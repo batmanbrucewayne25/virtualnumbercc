@@ -3,6 +3,7 @@ import { Step6Props } from "@/types/auth/signup";
 import { useEffect, useRef, useState } from "react";
 import SignaturePad from "@/components/SignaturePad";
 import { getAuthToken } from "@/utils/auth";
+import { useStepValidation } from "@/hooks/useStepValidation";
 
 interface UserData {
   address?: string | string[];
@@ -39,6 +40,8 @@ interface UserData {
 }
 
 const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
+  // Validate step access
+  const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 7 });
   const [profileImage, setProfileImage] = useState<string>("");
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
   const [profileImageUploaded, setProfileImageUploaded] = useState<boolean>(false);
@@ -56,27 +59,31 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    console.log("Step7 useEffect called");
     const fetchUserData = async () => {
       try {
         const result = await getMstResellerByEmail({ email });
         if (result?.mst_reseller?.[0]) {
           setUserData(result.mst_reseller[0]);
           // Check if profile image and signature are already uploaded
+          // Store just the filename (database stores filename, not full URL)
           if (result.mst_reseller[0].profile_image) {
             setProfileImageUploaded(true);
-            const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
-            const imageUrl = result.mst_reseller[0].profile_image.startsWith('http') 
-              ? result.mst_reseller[0].profile_image 
-              : `${IMAGE_UPLOAD_PATH}/${result.mst_reseller[0].profile_image}`;
-            setProfileImage(imageUrl);
+            // Extract filename if it's a full URL, otherwise use as is (it's already a filename)
+            const profileImageValue = result.mst_reseller[0].profile_image;
+            const profileImageFilename = profileImageValue.includes('/') 
+              ? profileImageValue.split('/').pop() || profileImageValue
+              : profileImageValue;
+            setProfileImage(profileImageFilename);
           }
           if (result.mst_reseller[0].signatureImage) {
             setSignatureUploaded(true);
-            const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
-            const signatureUrl = result.mst_reseller[0].signatureImage.startsWith('http') 
-              ? result.mst_reseller[0].signatureImage 
-              : `${IMAGE_UPLOAD_PATH}/${result.mst_reseller[0].signatureImage}`;
-            setSignature(signatureUrl);
+            // Extract filename if it's a full URL, otherwise use as is (it's already a filename)
+            const signatureValue = result.mst_reseller[0].signatureImage;
+            const signatureFilename = signatureValue.includes('/') 
+              ? signatureValue.split('/').pop() || signatureValue
+              : signatureValue;
+            setSignature(signatureFilename);
           }
         }
       } catch (err) {
@@ -109,9 +116,10 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       setProfileImageFile(file);
       setProfileImageUploaded(false); // Reset upload status when file changes
 
-      // Create preview
+      // Create preview (temporary data URL, will be replaced with filename after upload)
       const reader = new FileReader();
       reader.onload = (event) => {
+        // Temporarily set preview URL, will be replaced with filename after upload
         setProfileImage(event.target?.result as string);
       };
       reader.readAsDataURL(file);
@@ -172,11 +180,14 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         console.log("Response data:", result);
         
         if (result.success && result.data?.filename) {
-          const imageUrl = `${IMAGE_UPLOAD_PATH}/profile-images/${result.data.filename}`;
+          // Store only the filename (not the full URL) to send to GraphQL
+          const filename = result.data.filename;
+          const imageUrl = `${IMAGE_UPLOAD_PATH}/profile-images/${filename}`;
           console.log("✅ Profile image uploaded successfully");
-          console.log("Filename from server:", result.data.filename);
-          console.log("Full image URL:", imageUrl);
-          setProfileImage(imageUrl);
+          console.log("Filename from server:", filename);
+          console.log("Full image URL (for preview):", imageUrl);
+          // Store filename for GraphQL, but use full URL for preview
+          setProfileImage(filename);
           setProfileImageUploaded(true);
           setError("");
         } else {
@@ -240,11 +251,16 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data?.filename) {
-          const signatureUrl = `${IMAGE_UPLOAD_PATH}/signatures/${result.data.filename}`;
-          setSignature(signatureUrl);
+          // Store only the filename (not the full URL) to send to GraphQL
+          const filename = result.data.filename;
+          const signatureUrl = `${IMAGE_UPLOAD_PATH}/signatures/${filename}`;
+          console.log("✅ Signature uploaded successfully");
+          console.log("Filename from server:", filename);
+          console.log("Full signature URL (for preview):", signatureUrl);
+          // Store filename for GraphQL, but use full URL for preview
+          setSignature(filename);
           setSignatureUploaded(true);
           setError("");
-          console.log("✅ Signature uploaded successfully");
         } else {
           setError(result.message || "Failed to upload signature");
         }
@@ -328,31 +344,15 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       // Determine DOB - prioritize Aadhaar DOB, fallback to PAN DOB
       let dobToSave = latestUserData?.dob || latestUserData?.pan_dob || null;
       
-      // Extract filename from URL if it's a full URL, otherwise use as is
-      let profileImageUrl = profileImage;
-      if (profileImage) {
-        // Extract filename from URL (last part after last slash)
-        if (profileImage.includes('/')) {
-          profileImageUrl = profileImage.split('/').pop() || profileImage;
-        } else {
-          profileImageUrl = profileImage;
-        }
-      }
-      
-      let signatureUrl = signature;
-      if (signature) {
-        // Extract filename from URL (last part after last slash)
-        if (signature.includes('/')) {
-          signatureUrl = signature.split('/').pop() || signature;
-        } else {
-          signatureUrl = signature;
-        }
-      }
+      // profileImage and signature now contain just the filename (stored after upload)
+      // Use them directly for GraphQL
+      const profileImageFilename = profileImage || null;
+      const signatureFilename = signature || null;
       
       console.log("Submitting signup with data:", {
         email,
-        profile_image: profileImageUrl?.substring(0, 50),
-        signature: signatureUrl?.substring(0, 50),
+        profile_image: profileImageFilename,
+        signatureImage: signatureFilename,
         aadhaar_number: latestUserData?.aadhaar_number,
         dob: dobToSave,
         aadhar_photo: latestUserData?.aadhar_photo ? "present" : "missing",
@@ -360,9 +360,9 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       
       await completeSignupStep({
         email,
-        profile_image: profileImageUrl,
+        profile_image: profileImageFilename,
         address: addressArray.length > 0 ? addressArray : null,
-        signatureImage: signatureUrl,
+        signatureImage: signatureFilename,
         brand_name: brandName || null,
         // Preserve existing data from latestUserData
         aadhaar_number: latestUserData?.aadhaar_number || null,
@@ -384,6 +384,20 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       setLoading(false);
     }
   };
+
+  // Show loading while validating step access
+  if (validatingStep) {
+    return (
+      <div className="text-center py-24">
+        <p>Validating access...</p>
+      </div>
+    );
+  }
+
+  // If step is not valid, the hook will handle redirect
+  if (!isValid) {
+    return null;
+  }
 
   if (loadingData) {
     return (
@@ -535,9 +549,19 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
               }}
             >
               <img
-                src={profileImage}
+                src={
+                  // If it's a data URL (preview before upload), use as is
+                  // Otherwise, construct full URL from filename
+                  profileImage.startsWith('data:') 
+                    ? profileImage 
+                    : `${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads'}/profile-images/${profileImage}`
+                }
                 alt="Profile Preview"
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                onError={(e) => {
+                  // Fallback if image fails to load
+                  e.currentTarget.src = 'assets/images/user.png';
+                }}
               />
             </div>
           ) : (

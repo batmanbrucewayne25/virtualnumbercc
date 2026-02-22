@@ -346,20 +346,20 @@ const InvoiceListLayer = () => {
                         <td>
                           {transaction.mst_wallet?.mst_reseller ? (
                             <div className='d-flex align-items-center'>
-                              <div className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center'>
-                                <Icon
-                                  icon='solar:user-bold'
-                                  className='icon text-primary-600 text-xl'
-                                />
-                              </div>
+                             
                               <div className='flex-grow-1'>
                                 <span className='text-md mb-0 fw-normal text-secondary-light d-block'>
                                   {transaction.mst_wallet.mst_reseller.business_name || 
                                    `${transaction.mst_wallet.mst_reseller.first_name} ${transaction.mst_wallet.mst_reseller.last_name}`}
                                 </span>
                                 <span className='text-xs mb-0 fw-normal text-muted'>
-                                  {transaction.mst_wallet.mst_reseller.email}
+                                  {transaction.mst_wallet.mst_reseller.email} 
                                 </span>
+                                <span className='text-xs mb-0 fw-normal text-muted mx-2'> | </span>
+                                <span className='text-xs mb-0 fw-normal text-muted'>
+                                   {transaction.mst_wallet.mst_reseller.phone}
+                                </span>
+                                
                               </div>
                             </div>
                           ) : (

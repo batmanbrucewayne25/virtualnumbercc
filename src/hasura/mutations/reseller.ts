@@ -135,6 +135,7 @@ export const getMstResellerById = async (id: string) => {
       is_phone_verified
       profile_image
       logo
+      signatureImage
       suspended_reason
       suspended_at
       suspended_by
@@ -669,6 +670,7 @@ export const approveMstReseller = async (
     virtual_numbers_count?: number;
     price_per_number?: number;
     validity_date?: string | null;
+    reference?: string | null;
   }
 ) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -746,13 +748,14 @@ export const approveMstReseller = async (
     // Create wallet and credit initial balance if provided
     let walletId: string | null = null;
     if (data.wallet_balance !== undefined && data.wallet_balance > 0) {
-      // Use timestamp to make reference unique and prevent duplicates
-      const uniqueReference = `APPROVAL_${id}_${Date.now()}`;
+      // Use provided reference or generate a unique one
+      const reference = data.reference || `APPROVAL_${id}_${Date.now()}`;
       const walletResult = await creditWallet(
         id,
         data.wallet_balance,
         `Initial wallet balance upon approval`,
-        uniqueReference
+        reference,
+        data.validity_date
       );
 
       if (!walletResult.success) {

@@ -1,6 +1,6 @@
-import getMstResellerByEmail from "@/hasura/mutations";
+import { getMstResellerByEmail } from "@/hasura/mutations";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import SuccessPopup from "../../../components/Modal";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
@@ -15,6 +15,8 @@ interface SignUpLayerProps {
 }
 
 const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [step, setStep] = useState<number>(1);
   const [email, setEmail] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
@@ -23,18 +25,36 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
+    // Read step from URL query parameter
+    const stepParam = searchParams.get("step");
+    const requestedStep = stepParam ? parseInt(stepParam, 10) : null;
+
+    // Get email from localStorage or URL
     const emailFromStorage = localStorage.getItem("signupEmail");
     const phoneFromStorage = localStorage.getItem("signupPhone");
+    
     if (emailFromStorage) {
       setEmail(emailFromStorage);
       if (phoneFromStorage) {
         setPhone(phoneFromStorage);
       }
-      fetchUserData(emailFromStorage);
+      // Always fetch user data first to get current_step from database
+      // This will validate the requested step against the user's current_step
+      fetchUserData(emailFromStorage, requestedStep);
+    } else if (requestedStep) {
+      // If step param exists but no email, validate step is between 1-7
+      if (requestedStep >= 1 && requestedStep <= 7) {
+        setStep(requestedStep);
+      } else {
+        // Invalid step, default to 1
+        setStep(1);
+        setSearchParams({ step: "1" });
+      }
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
-  const fetchUserData = async (userEmail: string) => {
+  const fetchUserData = async (userEmail: string, requestedStep: number | null = null) => {
     setLoading(true);
     try {
       const result = await getMstResellerByEmail({ email: userEmail });
@@ -47,8 +67,34 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
         if (user.signup_completed) {
           setShowSuccess(true);
           setStep(7);
+          setSearchParams({ step: "7" });
         } else {
-          setStep(user.current_step || 1);
+          // Get current_step from database
+          const currentStep = user.current_step || 0;
+          const maxAllowedStep = currentStep + 1;
+
+          // If step was requested from URL, validate it
+          if (requestedStep !== null) {
+            // Validate requested step against user's current_step
+            if (requestedStep > maxAllowedStep) {
+              // BLOCK access - requested step exceeds max allowed
+              console.log(`⚠️  Step ${requestedStep} exceeds max allowed ${maxAllowedStep} for current_step ${currentStep}. Redirecting to step ${maxAllowedStep}`);
+              setStep(maxAllowedStep);
+              setSearchParams({ step: maxAllowedStep.toString() });
+            } else if (requestedStep >= 1 && requestedStep <= maxAllowedStep) {
+              // ALLOW access - requested step is within allowed range
+              setStep(requestedStep);
+              setSearchParams({ step: requestedStep.toString() });
+            } else {
+              // Invalid step, use max allowed
+              setStep(maxAllowedStep);
+              setSearchParams({ step: maxAllowedStep.toString() });
+            }
+          } else {
+            // No step param, navigate to next step (current_step + 1)
+            setStep(maxAllowedStep);
+            setSearchParams({ step: maxAllowedStep.toString() });
+          }
         }
       }
     } catch (err) {
@@ -59,8 +105,65 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   };
 
   const handleStepChange = (newStep: number) => {
-    setStep(newStep);
+    // If userData exists, enforce step navigation restrictions
+    if (userData && !userData.signup_completed) {
+      const maxAllowedStep = (userData.current_step || 0) + 1;
+      
+      // Allow navigation to steps 1 to maxAllowedStep (completed steps + next step)
+      if (newStep >= 1 && newStep <= maxAllowedStep) {
+        setStep(newStep);
+        // Update URL parameter when step changes
+        setSearchParams({ step: newStep.toString() });
+      } else if (newStep > maxAllowedStep) {
+        // If trying to skip ahead, redirect to next step
+        console.log(`⚠️  Step ${newStep} not allowed. Redirecting to step ${maxAllowedStep}`);
+        setStep(maxAllowedStep);
+        setSearchParams({ step: maxAllowedStep.toString() });
+      } else {
+        // Invalid step, stay at current or go to 1
+        setStep(1);
+        setSearchParams({ step: "1" });
+      }
+    } else {
+      // No userData or signup completed, allow free navigation
+      setStep(newStep);
+      setSearchParams({ step: newStep.toString() });
+    }
   };
+
+  // Validate step on mount and when userData changes or URL param changes
+  useEffect(() => {
+    const stepParam = searchParams.get("step");
+    const requestedStep = stepParam ? parseInt(stepParam, 10) : null;
+
+    if (userData && !userData.signup_completed) {
+      const currentStep = userData.current_step || 0;
+      const maxAllowedStep = currentStep + 1;
+      
+      // If URL param exists, validate it
+      if (requestedStep !== null) {
+        if (requestedStep > maxAllowedStep) {
+          // BLOCK access - step exceeds max allowed
+          console.log(`⚠️  URL step ${requestedStep} exceeds max allowed ${maxAllowedStep} for current_step ${currentStep}. Redirecting...`);
+          setStep(maxAllowedStep);
+          setSearchParams({ step: maxAllowedStep.toString() });
+        } else if (requestedStep !== step) {
+          // URL param is valid but different from current step, sync them
+          setStep(requestedStep);
+        }
+      } else if (step > maxAllowedStep) {
+        // Current step exceeds max allowed, redirect to next step
+        console.log(`⚠️  Current step ${step} exceeds max allowed ${maxAllowedStep}. Redirecting...`);
+        setStep(maxAllowedStep);
+        setSearchParams({ step: maxAllowedStep.toString() });
+      }
+    } else if (requestedStep !== null && requestedStep !== step) {
+      // No userData or signup completed, sync step with URL param
+      if (requestedStep >= 1 && requestedStep <= 7) {
+        setStep(requestedStep);
+      }
+    }
+  }, [userData, step, searchParams]);
 
   const handleStep1Success = (data: any) => {
     setEmail(data.email);

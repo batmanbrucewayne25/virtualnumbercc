@@ -165,7 +165,7 @@ const AdminWhatsAppLayer = () => {
                   htmlFor='api_key'
                   className='form-label fw-semibold text-primary-light text-sm mb-8'
                 >
-                  API Key <span className='text-danger-600'>*</span>
+                  Access Token <span className='text-danger-600'>*</span>
                   <small className='text-secondary ms-2'>(Required only for new configuration)</small>
                 </label>
                 <input
@@ -173,7 +173,6 @@ const AdminWhatsAppLayer = () => {
                   className='form-control radius-8'
                   id='api_key'
                   name='api_key'
-                  placeholder='Enter Meta WhatsApp API key (leave empty to keep existing)'
                   value={form.api_key}
                   onChange={handleChange}
                   disabled={loading}
@@ -238,14 +237,13 @@ const AdminWhatsAppLayer = () => {
                   htmlFor='business_account_id'
                   className='form-label fw-semibold text-primary-light text-sm mb-8'
                 >
-                  Business Account ID
+                  Template Name
                 </label>
                 <input
                   type='text'
                   className='form-control radius-8'
                   id='business_account_id'
                   name='business_account_id'
-                  placeholder='Meta business account ID (optional)'
                   value={form.business_account_id}
                   onChange={handleChange}
                   disabled={loading}

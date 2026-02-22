@@ -1,6 +1,8 @@
 import { updatePanStep } from "@/hasura/mutations";
 import { Step3Props } from "@/types/auth/signup";
 import { useState } from "react";
+import { useStepValidation } from "@/hooks/useStepValidation";
+import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
 
 interface PanVerificationData {
   pan_number: string;
@@ -17,13 +19,30 @@ interface Step4PropsWithSkip extends Step3Props {
 }
 
 const Step4 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step4PropsWithSkip) => {
+  // Validate step access
+  const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 4 });
+
+  // All hooks must be called unconditionally at the top level
   const [panNumber, setPanNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
   const [panData, setPanData] = useState<PanVerificationData | null>(null);
   const [isPanVerified, setIsPanVerified] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+
+  // Show loading while validating
+  if (validatingStep) {
+    return (
+      <div className="text-center py-24">
+        <p>Validating access...</p>
+      </div>
+    );
+  }
+
+  // If step is not valid, the hook will handle redirect
+  if (!isValid) {
+    return null;
+  }
 
   const validatePanFormat = (pan: string) => /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan);
 
@@ -76,15 +95,29 @@ const Step4 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step4Pr
       
       setLoading(true);
       try {
-        await updatePanStep({
+        const result = await updatePanStep({
           email,
           pan_number: panNumber.trim(),
           pan_dob: null,
           pan_full_name: null,
         });
+        
+        // Check for GraphQL errors in response
+        if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          setError(getConstraintViolationMessage(result));
+          setLoading(false);
+          return;
+        }
+        
         onSubmit();
-      } catch {
-        setError("Failed to submit PAN details.");
+      } catch (err: any) {
+        console.error("Error updating PAN step:", err);
+        const errorMessage = extractGraphQLError(err);
+        if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+          setError(getConstraintViolationMessage(err));
+        } else {
+          setError("Failed to submit PAN details. Please try again.");
+        }
       } finally {
         setLoading(false);
       }
@@ -96,15 +129,29 @@ const Step4 = ({ email, onBack, onSubmit, skipOtpVerification = false }: Step4Pr
 
     setLoading(true);
     try {
-      await updatePanStep({
+      const result = await updatePanStep({
         email,
         pan_number: panData.pan_number,
         pan_dob: panData.dob || null,
         pan_full_name: panData.full_name,
       });
+      
+      // Check for GraphQL errors in response
+      if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+        setError(getConstraintViolationMessage(result));
+        setLoading(false);
+        return;
+      }
+      
       onSubmit();
-    } catch {
-      setError("Failed to submit PAN details.");
+    } catch (err: any) {
+      console.error("Error updating PAN step:", err);
+      const errorMessage = extractGraphQLError(err);
+      if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+        setError(getConstraintViolationMessage(err));
+      } else {
+        setError("Failed to submit PAN details. Please try again.");
+      }
     } finally {
       setLoading(false);
     }

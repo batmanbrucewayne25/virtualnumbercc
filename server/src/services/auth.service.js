@@ -55,8 +55,9 @@ export class AuthService {
 
           // Check if reseller is approved before allowing login
           // Check both approval_date and approval field for backward compatibility
-          const isApproved = user.approval === "approved" || user.approval_date;
-          if (!isApproved) {
+          const isApproved = (user.approval.toUpperCase() === "APPROVED");
+          const isSignUpCompleted = user.current_step === 7;
+          if (!isApproved && isSignUpCompleted) {
             // If reseller is not approved, check if they have been rejected
             if (user.rejection_reason) {
               console.log(
@@ -75,7 +76,7 @@ export class AuthService {
           }
 
           // Check if reseller is suspended (check suspended_at field)
-          if (user.suspended_at) {
+          if (user.suspended_at && isSignUpCompleted) {
             console.log(
               "🚫 Reseller account suspended:",
               user.suspended_reason
@@ -97,7 +98,7 @@ export class AuthService {
           });
           
           const isStatusActive = user.status === true || user.status === 1 || user.status === "true";
-          if (!isStatusActive) {
+          if (!isStatusActive && isSignUpCompleted) {
             console.log("🚫 [NEW AuthService] BLOCKING LOGIN - Reseller account is inactive. Status value:", user.status, "Type:", typeof user.status);
             const errorMsg = "Your account is inactive. Please contact admin to activate your account.";
             console.log("🚫 [NEW AuthService] Throwing error:", errorMsg);
@@ -107,7 +108,7 @@ export class AuthService {
           console.log("✅ [NEW AuthService] Status check passed - reseller is active");
 
           // Check reseller validity expiry (only for resellers, not admins)
-          if (user.approval_date) {
+          if (user.approval_date && isSignUpCompleted) {
             console.log("🔍 Checking reseller validity...");
             const validityCheck = await this.checkResellerValidity(user.id);
             console.log("📅 Validity check result:", validityCheck);
@@ -182,6 +183,20 @@ export class AuthService {
 
       if (!isPasswordValid) {
         throw new Error("Invalid email or password");
+      }
+
+      // Check if reseller signup is incomplete
+      // For resellers, if signup_completed is false, don't generate token
+      if (userType === "reseller" && user.current_step !== 7) {
+        console.log("⚠️  Reseller signup incomplete. Current step is:", user.current_step);
+        // Remove password_hash from user object
+        const { password_hash, ...userWithoutPassword } = user;
+
+        return {
+          requiresSignupCompletion: true,
+          user: userWithoutPassword,
+          current_step: user.current_step || 1,
+        };
       }
 
       // Generate JWT token with user type

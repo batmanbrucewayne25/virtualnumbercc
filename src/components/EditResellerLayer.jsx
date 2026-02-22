@@ -184,7 +184,7 @@ const EditResellerLayer = () => {
 
           // Set image/logo previews from existing data
           if (result.data.profile_image) {
-            setImagePreview(`${IMAGE_UPLOAD_PATH}/${result.data.profile_image}`);
+            setImagePreview(`${IMAGE_UPLOAD_PATH}/profile-images/${result.data.profile_image}`);
           }
           if (result.data.logo) {
             setLogoPreview(`${IMAGE_BASE_PATH}/logos/${result.data.logo}`);
@@ -656,7 +656,7 @@ const EditResellerLayer = () => {
                         />
                       </div>
                     </div>
-                    <div className='col-sm-6'>
+                    {/* <div className='col-sm-6'>
                       <div className='mb-20'>
                         <label
                           htmlFor='gender'
@@ -672,12 +672,12 @@ const EditResellerLayer = () => {
                           onChange={handleChange}
                         >
                           <option value=''>Select gender</option>
-                          <option value='Male'>Male</option>
-                          <option value='Female'>Female</option>
-                          <option value='Other'>Other</option>
+                          <option value='M'>Male</option>
+                          <option value='F'>Female</option>
+                          <option value='O'>Other</option>
                         </select>
                       </div>
-                    </div>
+                    </div> */}
                   </div>
 
                   <div className='mb-20'>
@@ -801,7 +801,7 @@ const EditResellerLayer = () => {
                     />
                   </div>
 
-                  <div className='mb-20'>
+                  {/* <div className='mb-20'>
                     <label
                       htmlFor='legal_name'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
@@ -817,7 +817,7 @@ const EditResellerLayer = () => {
                       value={formData.legal_name}
                       onChange={handleChange}
                     />
-                  </div>
+                  </div> */}
 
                   <div className='row'>
                     <div className='col-sm-6'>

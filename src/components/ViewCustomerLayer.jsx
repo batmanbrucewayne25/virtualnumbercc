@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import {
   getMstCustomerById,
   updateMstCustomerStatus,
+  updateMstCustomer,
 } from "@/hasura/mutations/customer";
 import ApproveCustomerModal from "./ApproveCustomerModal";
 import RejectCustomerModal from "./RejectCustomerModal";
@@ -77,6 +78,11 @@ const ViewCustomerLayer = () => {
   const [showAddVirtualNumberModal, setShowAddVirtualNumberModal] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [editingField, setEditingField] = useState(null);
+  const [editValues, setEditValues] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     fetchCustomer();
@@ -89,6 +95,9 @@ const ViewCustomerLayer = () => {
         const payload = JSON.parse(atob(token.split('.')[1]));
         const role = payload.role || userData?.role;
         setUserRole(role);
+        if (role === "admin" || role === "super_admin") {
+          setIsAdmin(true);
+        }
       } catch (err) {
         console.error("Error decoding token:", err);
       }
@@ -211,6 +220,59 @@ const ViewCustomerLayer = () => {
     });
   };
 
+  const handleEditField = (field, currentValue) => {
+    setEditingField(field);
+    setEditValues({ [field]: currentValue || "" });
+    setSuccessMessage("");
+    setError("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingField(null);
+    setEditValues({});
+  };
+
+  const handleSaveField = async (field) => {
+    if (!customer || !id) return;
+
+    setSaving(true);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      const updateData = {};
+      const value = editValues[field];
+
+      if (field === "pan_dob") {
+        updateData.pan_dob = value || null;
+      } else if (field === "gender") {
+        updateData.gender = value || null;
+      } else if (field === "pan_number") {
+        updateData.pan_number = value || null;
+      }
+
+      const result = await updateMstCustomer(id, updateData);
+
+      if (result.success) {
+        setSuccessMessage(`${field === "pan_dob" ? "Date of Birth" : field === "pan_number" ? "PAN Number" : "Gender"} updated successfully!`);
+        setEditingField(null);
+        setEditValues({});
+        
+        // Refresh customer data
+        await fetchCustomer();
+        
+        setTimeout(() => setSuccessMessage(""), 3000);
+      } else {
+        setError(result.message || "Failed to update field");
+      }
+    } catch (err) {
+      console.error("Error updating field:", err);
+      setError(err.message || "An error occurred while updating");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="card h-100 p-0 radius-12">
@@ -285,6 +347,13 @@ const ViewCustomerLayer = () => {
         </button>
       </div>
       <div className="card-body p-24">
+        {successMessage && (
+          <div className="alert alert-success radius-8 mb-24" role="alert">
+            <Icon icon="material-symbols:check-circle-outline" className="icon me-2" />
+            {successMessage}
+          </div>
+        )}
+
         {error && (
           <div className="alert alert-danger radius-8 mb-24" role="alert">
             <Icon icon="material-symbols:error-outline" className="icon me-2" />
@@ -412,12 +481,49 @@ const ViewCustomerLayer = () => {
               </h6>
               <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className="text-xs text-secondary-light">
+                  <span className="text-xs text-secondary-light d-flex align-items-center gap-2">
                     PAN Number:
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("pan_number", customer.pan_number)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit PAN Number"
+                      />
+                    )}
                   </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {customer.pan_number || "N/A"}
-                  </p>
+                  {editingField === "pan_number" ? (
+                    <div className="d-flex align-items-center gap-2 mt-2">
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        value={editValues.pan_number || ""}
+                        onChange={(e) => setEditValues({ pan_number: e.target.value.toUpperCase() })}
+                        disabled={saving}
+                        maxLength={10}
+                        placeholder="Enter PAN number"
+                      />
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("pan_number")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-sm fw-medium mb-0">
+                      {customer.pan_number || "N/A"}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <span className="text-xs text-secondary-light">
@@ -428,12 +534,47 @@ const ViewCustomerLayer = () => {
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-secondary-light">
+                  <span className="text-xs text-secondary-light d-flex align-items-center gap-2">
                     Date of Birth:
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("pan_dob", customer.pan_dob)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Date of Birth"
+                      />
+                    )}
                   </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {formatDate(customer.pan_dob) || "N/A"}
-                  </p>
+                  {editingField === "pan_dob" ? (
+                    <div className="d-flex align-items-center gap-2 mt-2">
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={editValues.pan_dob || ""}
+                        onChange={(e) => setEditValues({ pan_dob: e.target.value })}
+                        disabled={saving}
+                      />
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("pan_dob")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-sm fw-medium mb-0">
+                      {formatDate(customer.pan_dob) || "N/A"}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -464,10 +605,51 @@ const ViewCustomerLayer = () => {
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-secondary-light">Gender:</span>
-                  <p className="text-sm fw-medium mb-0">
-                    {customer.gender || "N/A"}
-                  </p>
+                  <span className="text-xs text-secondary-light d-flex align-items-center gap-2">
+                    Gender:
+                    {isAdmin && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("gender", customer.gender)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Gender"
+                      />
+                    )}
+                  </span>
+                  {editingField === "gender" ? (
+                    <div className="d-flex align-items-center gap-2 mt-2">
+                      <select
+                        className="form-control form-control-sm"
+                        value={editValues.gender || ""}
+                        onChange={(e) => setEditValues({ gender: e.target.value })}
+                        disabled={saving}
+                      >
+                        <option value="">Select gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleSaveField("gender")}
+                        disabled={saving}
+                      >
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-sm fw-medium mb-0">
+                      {customer.gender || "N/A"}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <span className="text-xs text-secondary-light">
@@ -527,6 +709,56 @@ const ViewCustomerLayer = () => {
               <div className="alert alert-danger radius-8">
                 <h6 className="text-sm mb-8">Rejection Reason:</h6>
                 <p className="text-sm mb-0">{customer.rejection_reason}</p>
+              </div>
+            </div>
+          )}
+
+          {(customer.signature_storage_url || customer.signature_hash) && (
+            <div className="col-md-6">
+              <div className="card bg-base border p-16 radius-8">
+                <h6 className="text-sm text-secondary-light mb-12">
+                  Digital Signature
+                </h6>
+                <div className="d-flex flex-column gap-2">
+                  {customer.signature_storage_url ? (
+                    <div>
+                      <img 
+                        src={customer.signature_storage_url.startsWith('data:') || customer.signature_storage_url.startsWith('http') 
+                          ? customer.signature_storage_url 
+                          : customer.signature_storage_url} 
+                        alt="Digital Signature" 
+                        className="rounded border"
+                        style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
+                        onError={(e) => {
+                          console.error('Error loading signature image:', e);
+                          e.target.style.display = 'none';
+                          const errorDiv = document.createElement('div');
+                          errorDiv.className = 'alert alert-warning';
+                          errorDiv.textContent = 'Failed to load signature image';
+                          e.target.parentNode?.appendChild(errorDiv);
+                        }}
+                        onClick={() => {
+                          const img = customer.signature_storage_url.startsWith('data:') || customer.signature_storage_url.startsWith('http') 
+                            ? customer.signature_storage_url 
+                            : customer.signature_storage_url;
+                          const newWindow = window.open();
+                          if (newWindow) {
+                            newWindow.document.write(`<img src="${img}" style="max-width: 100%; height: auto; background: white;" />`);
+                          }
+                        }}
+                        title="Click to view full size"
+                      />
+                    </div>
+                  ) : customer.signature_hash ? (
+                    <div>
+                      <span className="text-xs text-secondary-light">Signature Hash:</span>
+                      <p className="text-sm fw-medium mb-0">
+                        {customer.signature_hash.substring(0, 32)}...
+                      </p>
+                      <small className="text-secondary-light">Signature stored as hash (image not available)</small>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           )}

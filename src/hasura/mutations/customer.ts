@@ -474,3 +474,101 @@ export const updateMstCustomerStatus = async (
     };
   }
 };
+
+/**
+ * Update customer fields (for admin editing)
+ */
+export const updateMstCustomer = async (
+  id: string,
+  data: {
+    gender?: string;
+    pan_number?: string;
+    pan_dob?: string;
+    [key: string]: any;
+  }
+) => {
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || typeof id !== 'string' || !uuidRegex.test(id)) {
+    return {
+      success: false,
+      message: "Invalid customer ID format",
+    };
+  }
+
+  // Build dynamic mutation - only include fields that have values
+  const setFields: string[] = [];
+  const variables: any = { id };
+  const variableDefs: string[] = ['$id: uuid!'];
+
+  // Add fields only if they have values
+  if (data.gender !== undefined && data.gender !== null && data.gender !== '') {
+    setFields.push('gender: $gender');
+    variables.gender = data.gender;
+    variableDefs.push('$gender: String');
+  }
+  if (data.pan_number !== undefined && data.pan_number !== null && data.pan_number !== '') {
+    setFields.push('pan_number: $pan_number');
+    variables.pan_number = data.pan_number;
+    variableDefs.push('$pan_number: String');
+  }
+  if (data.pan_dob !== undefined && data.pan_dob !== null && data.pan_dob !== '') {
+    setFields.push('pan_dob: $pan_dob');
+    variables.pan_dob = data.pan_dob;
+    variableDefs.push('$pan_dob: date');
+  }
+
+  // If no fields to update, return error
+  if (setFields.length === 0) {
+    return {
+      success: false,
+      message: "No fields to update",
+    };
+  }
+
+  const MUTATION = `mutation UpdateMstCustomer(
+    ${variableDefs.join('\n    ')}
+  ) {
+    update_mst_customer_by_pk(
+      pk_columns: { id: $id }
+      _set: {
+        ${setFields.join('\n        ')}
+      }
+    ) {
+      id
+      gender
+      pan_number
+      pan_dob
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, variables);
+
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update customer",
+      };
+    }
+
+    if (result?.data?.update_mst_customer_by_pk) {
+      return {
+        success: true,
+        data: result.data.update_mst_customer_by_pk,
+        message: "Customer updated successfully",
+      };
+    }
+
+    return {
+      success: false,
+      message: "Failed to update customer",
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update customer",
+    };
+  }
+};

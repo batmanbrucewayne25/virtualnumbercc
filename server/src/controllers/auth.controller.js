@@ -22,6 +22,17 @@ export const login = asyncHandler(async (req, res) => {
 
   const result = await AuthService.login(email, password);
 
+  // Check if signup completion is required
+  if (result.requiresSignupCompletion) {
+    console.log('⚠️  Login controller - signup incomplete, redirecting to signup');
+    return res.json({
+      success: true,
+      requiresSignupCompletion: true,
+      user: result.user,
+      current_step: result.current_step
+    });
+  }
+
   console.log('✅ Login controller - success');
   res.json({
     success: true,

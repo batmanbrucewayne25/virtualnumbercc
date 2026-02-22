@@ -1,6 +1,7 @@
 import { updateGstStep } from "@/hasura/mutations";
 import { Step5Props } from "@/types/auth/signup";
 import { useState } from "react";
+import { useStepValidation } from "@/hooks/useStepValidation";
 
 interface GstVerificationData {
   gstin: string;
@@ -18,11 +19,29 @@ interface GstVerificationData {
 }
 
 const Step5 = ({ email, onBack, onContinue }: Step5Props) => {
+  // Validate step access
+  const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 6 });
+
+  // All hooks must be called unconditionally at the top level
   const [gstNumber, setGstNumber] = useState("");
   const [gstVerified, setGstVerified] = useState(false);
   const [gstData, setGstData] = useState<GstVerificationData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Show loading while validating
+  if (validatingStep) {
+    return (
+      <div className="text-center py-24">
+        <p>Validating access...</p>
+      </div>
+    );
+  }
+
+  // If step is not valid, the hook will handle redirect
+  if (!isValid) {
+    return null;
+  }
 
   const validateGst = (gst: string) =>
     /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gst);

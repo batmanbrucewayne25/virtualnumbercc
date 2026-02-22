@@ -8,6 +8,12 @@ import RejectResellerModal from "./RejectResellerModal";
 import SuspendResellerModal from "./SuspendResellerModal";
 import ConfirmToggleStatusModal from "./ConfirmToggleStatusModal";
 import PermissionGuard from "@/components/PermissionGuard";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
+
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
+  const apiUrl = getApiBaseUrl();
+  return apiUrl.replace('/api', '/uploads');
+})();
 
 const ResellerListLayer = () => {
   const [resellers, setResellers] = useState([]);
@@ -444,10 +450,27 @@ const ResellerListLayer = () => {
                         >
                           <div className='d-flex align-items-center hover-text-primary'>
                             <div className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center'>
-                              <Icon
-                                icon='solar:user-bold'
-                                className='icon text-primary-600 text-xl'
-                              />
+                              {reseller.profile_image ? (
+                                <img
+                                  src={reseller.profile_image.startsWith('data:') || reseller.profile_image.startsWith('http') 
+                                    ? reseller.profile_image 
+                                    : `${IMAGE_UPLOAD_PATH}/profile-images/${reseller.profile_image}`}
+                                  alt={`${reseller.first_name} ${reseller.last_name}`}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const iconDiv = document.createElement('div');
+                                    iconDiv.className = 'd-flex align-items-center justify-content-center w-100 h-100';
+                                    iconDiv.innerHTML = '<i class="iconify icon text-primary-600 text-xl" data-icon="solar:user-bold"></i>';
+                                    e.currentTarget.parentNode?.appendChild(iconDiv);
+                                  }}
+                                />
+                              ) : (
+                                <Icon
+                                  icon='solar:user-bold'
+                                  className='icon text-primary-600 text-xl'
+                                />
+                              )}
                             </div>
                             <div className='flex-grow-1'>
                               <span className='text-md mb-0 fw-normal text-secondary-light hover-text-primary'>
@@ -484,10 +507,6 @@ const ResellerListLayer = () => {
                         ) : reseller.rejection_reason ? (
                           <span className="bg-danger-focus text-danger-600 border border-danger-main px-24 py-4 radius-4 fw-medium text-sm" title={reseller.rejection_reason}>
                             Rejected
-                          </span>
-                        ) : isPendingReseller(reseller) ? (
-                          <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm">
-                            Pending
                           </span>
                         ) : (
                           <div className='d-flex align-items-center gap-8 justify-content-center'>

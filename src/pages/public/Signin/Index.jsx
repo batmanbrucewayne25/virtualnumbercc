@@ -38,6 +38,23 @@ const SignInLayer = () => {
 
       // Handle both response structures: { success, data: { token, user } } or { success, token, user }
       if (result.success) {
+        // Check if signup completion is required (incomplete signup)
+        if (result.requiresSignupCompletion) {
+          console.log("⚠️  Signup incomplete, redirecting to signup page. Current step:", result.current_step);
+          
+          // Do NOT save token
+          // Save email to localStorage so signup page can fetch user data
+          localStorage.setItem("signupEmail", email.trim());
+          
+          // Calculate next step: current_step + 1
+          const currentStep = result.current_step || 0;
+          const nextStep = currentStep + 1;
+          
+          // Navigate to signup page with step parameter
+          navigate(`/sign-up?step=${nextStep}`, { replace: true });
+          return;
+        }
+
         // Extract token and user from either structure
         const token = result.data?.token || result.token;
         const user = result.data?.user || result.user;

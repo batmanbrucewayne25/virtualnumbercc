@@ -26,6 +26,7 @@ import AdminSMTPPage from "./pages/AdminSMTPPage";
 import AdminWhatsAppPage from "./pages/AdminWhatsAppPage";
 import AdminSmtpTemplatePage from "./pages/AdminSmtpTemplatePage";
 import DomainApprovalPage from "./pages/DomainApprovalPage";
+import CmsPage from "./pages/CmsPage";
 // import CalendarMainPage from "./pages/CalendarMainPage";
 // import CarouselPage from "./pages/CarouselPage";
 // import ChatMessagePage from "./pages/ChatMessagePage";
@@ -158,6 +159,7 @@ function App() {
           <Route exact path='/admin-smtp' element={<AdminSMTPPage />} />
           <Route exact path='/admin-whatsapp' element={<AdminWhatsAppPage />} />
           <Route exact path='/admin-smtp-template' element={<AdminSmtpTemplatePage />} />
+          <Route exact path='/cms' element={<CmsPage />} />
           <Route exact path='/domain-approvals' element={<DomainApprovalPage />} />
           {/* <Route exact path='/avatar' element={<AvatarPage />} /> */}
           {/* <Route exact path='/badges' element={<BadgesPage />} /> */}

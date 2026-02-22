@@ -1,7 +1,8 @@
 import PasswordField from "@/components/Form/PasswordField";
-import { insertMstReseller } from "@/hasura/mutations";
+import { insertMstReseller, checkMstResellerExists } from "@/hasura/mutations";
 import { Step1Props } from "@/types/auth/signup";
 import { useState } from "react";
+import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
 
 const Step1 = ({ onSuccess }: Step1Props) => {
   const [firstName, setFirstName] = useState<string>("");
@@ -46,7 +47,25 @@ const Step1 = ({ onSuccess }: Step1Props) => {
 
     setLoading(true);
     try {
-      await insertMstReseller({
+      // Check if email or phone already exists
+      const checkResult = await checkMstResellerExists({ email, phone });
+      
+      if (checkResult?.mst_reseller && checkResult.mst_reseller.length > 0) {
+        const existingUser = checkResult.mst_reseller[0];
+        if (existingUser.email === email) {
+          setEmailError("Email already exists. Please use a different email.");
+          setLoading(false);
+          return;
+        }
+        if (existingUser.phone === phone) {
+          setPhoneError("Phone number already exists. Please use a different phone number.");
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If validation passes, save the record
+      const result = await insertMstReseller({
         first_name: firstName,
         last_name: lastName,
         email,
@@ -54,10 +73,39 @@ const Step1 = ({ onSuccess }: Step1Props) => {
         password_hash: password,
       });
 
+      // Check for GraphQL errors in response
+      if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+        const errorMessage = extractGraphQLError(result);
+        if (errorMessage.includes("email") || errorMessage.includes("Email")) {
+          setEmailError(getConstraintViolationMessage(result));
+        } else if (errorMessage.includes("phone") || errorMessage.includes("Phone")) {
+          setPhoneError(getConstraintViolationMessage(result));
+        } else {
+          setError(getConstraintViolationMessage(result));
+        }
+        setLoading(false);
+        return;
+      }
+
       onSuccess({ email, phone });
-    } catch (err) {
-      console.error(err);
-      setError("Failed to create account. Try again.");
+    } catch (err: any) {
+      console.error("Error creating account:", err);
+      
+      // Extract error message from GraphQL response format
+      const errorMessage = extractGraphQLError(err);
+      
+      // Check if error is due to duplicate email/phone from database constraint
+      if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+        if (errorMessage.toLowerCase().includes("email")) {
+          setEmailError(getConstraintViolationMessage(err));
+        } else if (errorMessage.toLowerCase().includes("phone")) {
+          setPhoneError(getConstraintViolationMessage(err));
+        } else {
+          setError(getConstraintViolationMessage(err));
+        }
+      } else {
+        setError("Failed to create account. Try again.");
+      }
     } finally {
       setLoading(false);
     }

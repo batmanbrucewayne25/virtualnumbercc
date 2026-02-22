@@ -9,6 +9,7 @@ declare module "@/hasura/mutations" {
   export default _default;
   export const getMstResellerByEmail: any;
   export const loginMstReseller: any;
+  export const checkMstResellerExists: any;
   export const insertMstReseller: any;
   export const updateOtpVerificationStep: any;
   export const updatePanStep: any;

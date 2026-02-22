@@ -184,7 +184,7 @@ export const upsertMstResellerDomain = async (
       }
     } else {
       // No existing domain - first time setup, auto-approve
-      approved = true;
+      approved = false;
       console.log("First time domain setup - auto-approving");
       console.log("Will INSERT new domain record");
     }

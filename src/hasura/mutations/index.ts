@@ -37,7 +37,7 @@ export const getMstResellerByEmail = async ({ email }: any) => {
     phone
     profile_image
     logo
-    signature
+    signatureImage
     created_at
     updated_at
   }
@@ -244,7 +244,7 @@ export const completeSignupStep = async ({
   profile_image, 
   address, 
   brand_name, 
-  signature,
+  signatureImage,
   // Preserve existing data
   aadhaar_number,
   dob,
@@ -283,10 +283,10 @@ export const completeSignupStep = async ({
     variables.brand_name = brand_name;
     variableDefs.push('$brand_name: String');
   }
-  if (signature) {
-    setFields.push('signature: $signature');
-    variables.signature = signature;
-    variableDefs.push('$signature: String');
+  if (signatureImage) {
+    setFields.push('signatureImage: $signatureImage');
+    variables.signatureImage = signatureImage;
+    variableDefs.push('$signatureImage: String');
   }
   if (aadhaar_number !== undefined && aadhaar_number !== null && aadhaar_number !== '') {
     setFields.push('aadhaar_number: $aadhaar_number');
@@ -354,7 +354,7 @@ export const completeSignupStep = async ({
         aadhaar_number
         dob
         profile_image
-        signature
+        signatureImage
         signup_completed
         aadhar_photo
       }
@@ -362,7 +362,7 @@ export const completeSignupStep = async ({
   }`;
 
   console.log("CompleteSignupStep mutation:", {
-    variables: { ...variables, profile_image: variables.profile_image?.substring(0, 50), signature: variables.signature?.substring(0, 50) },
+    variables: { ...variables, profile_image: variables.profile_image?.substring(0, 50), signatureImage: variables.signatureImage?.substring(0, 50) },
     setFields,
   });
 
@@ -393,3 +393,6 @@ export * from "./transaction";
 
 // Export user mutations
 export * from "./user";
+
+// Export CMS mutations
+export * from "./cms";

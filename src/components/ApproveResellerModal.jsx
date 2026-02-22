@@ -8,6 +8,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
     virtual_numbers_count: "3",
     price_per_number: "",
     validity_date: "",
+    reference: "",
   });
   const [error, setError] = useState("");
   const isSubmittingRef = useRef(false);
@@ -23,6 +24,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
         virtual_numbers_count: "3",
         price_per_number: "",
         validity_date: "",
+        reference: "",
       });
     } else {
       // When modal opens, set default validity date to 360 days from today
@@ -112,6 +114,7 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
       virtual_numbers_count: virtualNumbersCount,
       price_per_number: pricePerNumber,
       validity_date: formData.validity_date || null,
+      reference: formData.reference || null,
     });
   };
 
@@ -252,6 +255,25 @@ const ApproveResellerModal = ({ isOpen, onClose, reseller, onApprove, loading })
                 <small className='text-xs text-secondary-light mt-4 d-block'>
                   Set the validity end date for the reseller. If not set, validity will be calculated based on wallet recharge.
                 </small>
+              </div>
+
+              <div className="mb-20">
+                <label
+                  htmlFor='reference'
+                  className='form-label fw-semibold text-primary-light text-sm mb-8'
+                >
+                  Reference
+                </label>
+                <input
+                  type='text'
+                  className='form-control radius-8'
+                  id='reference'
+                  name='reference'
+                  placeholder='Enter reference (optional)'
+                  value={formData.reference}
+                  onChange={handleChange}
+                  disabled={loading}
+                />
               </div>
             </div>
             <div className="modal-footer border-top">

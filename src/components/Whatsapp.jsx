@@ -94,7 +94,7 @@ const Whatsapplayer = () => {
     const isNewConfig = !existingConfig.success || !existingConfig.data;
     
     if (isNewConfig && !form.api_key) {
-      setError("API Key is required when creating a new WhatsApp configuration");
+      setError("Access Token is required when creating a new WhatsApp configuration");
       return;
     }
 

@@ -555,6 +555,17 @@ const MasterLayout = ({ children }) => {
                           WhatsApp Configuration
                         </NavLink>
                       </li>
+                      <li>
+                        <NavLink
+                          to='/cms'
+                          className={(navData) =>
+                            navData.isActive ? "active-page" : ""
+                          }
+                        >
+                          <i className='ri-circle-fill circle-icon text-info-main w-auto' />{" "}
+                          CMS
+                        </NavLink>
+                      </li>
                       {/* SMTP Template - Commented out for now */}
                       {/* <li>
                         <NavLink

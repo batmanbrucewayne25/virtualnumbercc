@@ -1,7 +1,10 @@
-import { updateAadhaarStep } from "@/hasura/mutations";
+import { updateAadhaarStep, getMstResellerByEmail } from "@/hasura/mutations";
 import { Step4Props } from "@/types/auth/signup";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { validateAadharFormat } from "@/utils/aadharValidation.js";
+import { useStepValidation } from "@/hooks/useStepValidation";
+import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
+import { compareDates } from "@/utils/dateComparison";
 
 interface AadhaarVerificationData {
   full_name: string;
@@ -23,6 +26,10 @@ const Step5 = ({
   onSubmit,
   skipOtpVerification = false,
 }: Step5PropsWithSkip) => {
+  // Validate step access
+  const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 5 });
+
+  // All hooks must be called unconditionally at the top level
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarOtp, setAadhaarOtp] = useState("");
@@ -31,6 +38,29 @@ const Step5 = ({
     useState<AadhaarVerificationData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [countdown, setCountdown] = useState(0);
+
+  // Countdown timer effect - MUST be called before any early returns
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  // Show loading while validating
+  if (validatingStep) {
+    return (
+      <div className="text-center py-24">
+        <p>Validating access...</p>
+      </div>
+    );
+  }
+
+  // If step is not valid, the hook will handle redirect
+  if (!isValid) {
+    return null;
+  }
 
   const validateOtp = (value: string) => /^\d{6}$/.test(value);
 
@@ -61,9 +91,10 @@ const Step5 = ({
       }
 
       // Auto-proceed without OTP
+      // Note: In skipOtpVerification mode, DOB validation is skipped as we don't have Aadhaar DOB
       setLoading(true);
       try {
-        await updateAadhaarStep({
+        const result = await updateAadhaarStep({
           email,
           aadhaar_number: cleaned,
           dob: null,
@@ -71,10 +102,23 @@ const Step5 = ({
           aadhar_photo: null,
           address: null,
         });
+        
+        // Check for GraphQL errors in response
+        if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          setError(getConstraintViolationMessage(result));
+          setLoading(false);
+          return;
+        }
+        
         onSubmit();
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to update Aadhaar step:", err);
-        setError("Failed to save Aadhaar details.");
+        const errorMessage = extractGraphQLError(err);
+        if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+          setError(getConstraintViolationMessage(err));
+        } else {
+          setError("Failed to save Aadhaar details. Please try again.");
+        }
       } finally {
         setLoading(false);
       }
@@ -114,6 +158,7 @@ const Step5 = ({
           if (requestId) {
             setRequestId(requestId);
             setAadhaarOtpSent(true);
+            setCountdown(60); // Start 60-second countdown timer
             setError(""); // Clear any previous errors
           } else {
             setError("OTP sent but request ID missing. Please try again.");
@@ -226,6 +271,37 @@ const Step5 = ({
           // Clean aadhaar number - remove spaces and dashes
           const cleanedAadhaar = (data.aadhaar_number || aadhaarNumber).replace(/[\s-]/g, "");
 
+          // Validate DOB match between PAN and Aadhaar
+          if (data.dob) {
+            try {
+              // Fetch user data to get PAN DOB
+              const userResult = await getMstResellerByEmail({ email });
+              
+              if (userResult?.mst_reseller && userResult.mst_reseller.length > 0) {
+                const user = userResult.mst_reseller[0];
+                const panDob = user.pan_dob;
+                
+                if (panDob) {
+                  // Compare PAN DOB with Aadhaar DOB
+                  if (!compareDates(panDob, data.dob)) {
+                    setError(
+                      "Date of birth mismatch! The date of birth in your PAN card does not match your Aadhaar card. Please verify that both documents have the same date of birth and try again."
+                    );
+                    setLoading(false);
+                    return;
+                  }
+                } else {
+                  // PAN DOB not found - this shouldn't happen if user completed Step 4, but handle gracefully
+                  console.warn("PAN DOB not found for user, skipping DOB validation");
+                }
+              }
+            } catch (fetchErr: any) {
+              console.error("Error fetching user data for DOB validation:", fetchErr);
+              // Continue with save even if we can't validate DOB (don't block user)
+              // But log the error for debugging
+            }
+          }
+
           console.log("Saving Aadhaar data:", {
             email,
             aadhaar_number: cleanedAadhaar,
@@ -235,7 +311,7 @@ const Step5 = ({
             address: addressToSave,
           });
 
-          await updateAadhaarStep({
+          const result = await updateAadhaarStep({
             email,
             aadhaar_number: cleanedAadhaar,
             dob: data.dob,
@@ -244,12 +320,22 @@ const Step5 = ({
             address: addressToSave,
           });
 
+          // Check for GraphQL errors in response
+          if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+            setError(getConstraintViolationMessage(result));
+            setLoading(false);
+            return;
+          }
+
           onSubmit();
-        } catch (updateErr) {
+        } catch (updateErr: any) {
           console.error("Failed to update Aadhaar step:", updateErr);
-          setError(
-            "Verification successful but failed to save. Please try again."
-          );
+          const errorMessage = extractGraphQLError(updateErr);
+          if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+            setError(getConstraintViolationMessage(updateErr));
+          } else {
+            setError("Verification successful but failed to save. Please try again.");
+          }
         }
       } else {
         const errorMsg =
@@ -336,17 +422,28 @@ const Step5 = ({
       </button>
 
       {/* RESEND OTP */}
-      {aadhaarOtpSent && !loading && (
-        <button
-          className="btn btn-link mb-8"
-          onClick={() => {
-            setAadhaarOtp("");
-            setAadhaarOtpSent(false);
-            setRequestId(null);
-          }}
-        >
-          Resend OTP
-        </button>
+      {aadhaarOtpSent && !loading && !skipOtpVerification && (
+        <div className="mb-8">
+          {countdown > 0 ? (
+            <p className="text-sm text-secondary-light mb-0">
+              Resend OTP in {countdown} seconds
+            </p>
+          ) : (
+            <button
+              className="btn btn-link p-0"
+              onClick={() => {
+                setAadhaarOtp("");
+                setAadhaarOtpSent(false);
+                setRequestId(null);
+                setCountdown(0);
+                // Trigger resend by calling handleGetOtp again
+                handleGetOtp();
+              }}
+            >
+              Resend OTP
+            </button>
+          )}
+        </div>
       )}
 
       {/* BACK */}

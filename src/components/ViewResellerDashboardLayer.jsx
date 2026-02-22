@@ -7,6 +7,7 @@ import {
   getCustomerWithTransactions,
   suspendCustomer,
 } from "@/hasura/mutations/user";
+import { getAllMstWalletTransactions } from "@/hasura/mutations/wallet";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
@@ -17,10 +18,7 @@ const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
   const apiUrl = getApiBaseUrl();
   return apiUrl.replace('/api', '/uploads');
 })();
-const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
-  const apiUrl = getApiBaseUrl();
-  return apiUrl.replace('/api', '/uploads');
-})();
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH;
 
 // Helper function to format address object into readable string
 const formatCustomerAddress = (address) => {
@@ -80,6 +78,8 @@ const ViewResellerDashboardLayer = () => {
   const navigate = useNavigate();
   const [reseller, setReseller] = useState(null);
   const [customers, setCustomers] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -110,6 +110,7 @@ const ViewResellerDashboardLayer = () => {
     if (id) {
       fetchReseller();
       fetchCustomers();
+      fetchTransactions();
     }
   }, [id]);
 
@@ -159,6 +160,21 @@ const ViewResellerDashboardLayer = () => {
       }
     } catch (err) {
       console.error("Error fetching customers:", err);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    if (!id) return;
+    setTransactionsLoading(true);
+    try {
+      const result = await getAllMstWalletTransactions(id);
+      if (result.success) {
+        setTransactions(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching transactions:", err);
+    } finally {
+      setTransactionsLoading(false);
     }
   };
 
@@ -454,8 +470,7 @@ const ViewResellerDashboardLayer = () => {
                                         `<img src="${imageSrc}" style="max-width: 100%; height: auto;" />`,
                                       );
                                     }
-                                  }}
-                                  title="Click to view full size"
+                                  }} 
                                 />
                               );
                             })()}
@@ -466,15 +481,11 @@ const ViewResellerDashboardLayer = () => {
                       {reseller?.profile_image && (
                         <div className="mb-16">
                           <label className="form-label text-xs text-secondary-light mb-4">
-                            Profile Image
+                            Profile Image 
                           </label>
                           <div>
                             <img
-                              src={
-                                reseller.profile_image.startsWith("data:") ||
-                                reseller.profile_image.startsWith("http")
-                                  ? reseller.profile_image
-                                  : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`
+                              src={ `${IMAGE_UPLOAD_PATH}/profile-images/${reseller.profile_image}`
                               }
                               alt="Profile"
                               className="rounded"
@@ -483,24 +494,31 @@ const ViewResellerDashboardLayer = () => {
                                 maxHeight: "150px",
                                 objectFit: "cover",
                                 cursor: "pointer",
-                              }}
-                              onError={(e) => {
-                                e.currentTarget.src = 'assets/images/user.png';
-                              }}
-                              onClick={() => {
-                                const img =
-                                  reseller.profile_image.startsWith("data:") ||
-                                  reseller.profile_image.startsWith("http")
-                                    ? reseller.profile_image
-                                    : `${IMAGE_UPLOAD_PATH}/${reseller.profile_image}`;
-                                const newWindow = window.open();
-                                if (newWindow) {
-                                  newWindow.document.write(
-                                    `<img src="${img}" style="max-width: 100%; height: auto;" />`,
-                                  );
-                                }
-                              }}
+                              }} 
                               title="Click to view full size"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+
+{reseller?.signatureImage && (
+                        <div className="mb-16">
+                          <label className="form-label text-xs text-secondary-light mb-4">
+                           Signature
+                          </label>
+                          <div>
+                            <img
+                              src={ `${IMAGE_UPLOAD_PATH}/signatures/${reseller.signatureImage}`
+                              }
+                              alt="Profile"
+                              className="rounded"
+                              style={{
+                                maxWidth: "150px",
+                                maxHeight: "150px",
+                                objectFit: "cover",
+                                cursor: "pointer",
+                              }}  
                             />
                           </div>
                         </div>
@@ -581,14 +599,14 @@ const ViewResellerDashboardLayer = () => {
                     </div>
                   )}
 
-                  <div className="mb-16">
+                  {/* <div className="mb-16">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       Business Email
                     </label>
                     <p className="text-md fw-medium text-primary-light mb-0">
                       {reseller?.business_email || "-"}
                     </p>
-                  </div>
+                  </div> */}
 
                   <div className="mb-16">
                     <label className="form-label text-xs text-secondary-light mb-4">
@@ -690,23 +708,21 @@ const ViewResellerDashboardLayer = () => {
                     KYC & Verification Status
                   </h6>
 
-                  <div className="mb-16">
-                    <label className="form-label text-xs text-secondary-light mb-4">
+                  <div className="mb-16 d-flex align-items-center gap-2">
+                    <label className="form-label text-xs text-secondary-light mb-0">
                       Aadhaar Verified
                     </label>
-                    <div>
-                      <span
-                        className={`${
-                          reseller?.is_aadhaar_verified
-                            ? "bg-success-focus text-success-600 border border-success-main"
-                            : "bg-danger-focus text-danger-600 border border-danger-main"
-                        } px-24 py-4 radius-4 fw-medium text-sm`}
-                      >
-                        {reseller?.is_aadhaar_verified
-                          ? "Verified"
-                          : "Not Verified"}
-                      </span>
-                    </div>
+                    <span
+                      className={`${
+                        reseller?.is_aadhaar_verified
+                          ? "bg-success-focus text-success-600 border border-success-main"
+                          : "bg-danger-focus text-danger-600 border border-danger-main"
+                      } px-24 py-4 radius-4 fw-medium text-sm`}
+                    >
+                      {reseller?.is_aadhaar_verified
+                        ? "Verified"
+                        : "Not Verified"}
+                    </span>
                   </div>
 
                   <div className="mb-16">
@@ -1047,6 +1063,99 @@ const ViewResellerDashboardLayer = () => {
         </div>
       </div>
 
+      {/* Reseller Transactions Section */}
+      <div className="card h-100 mt-24 p-0 radius-12">
+        <div className="card-header border-bottom bg-base py-16 px-24">
+          <h5 className="text-md text-primary-light mb-0">Reseller Transactions</h5>
+        </div>
+        <div className="card-body p-24">
+          {transactionsLoading ? (
+            <div className="text-center py-40">
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              <p className="text-muted mt-3">Loading transactions...</p>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="text-center py-40">
+              <Icon
+                icon="mdi:receipt-outline"
+                className="icon text-6xl text-muted mb-3"
+              />
+              <p className="text-muted">No transactions found</p>
+            </div>
+          ) : (
+            <div className="table-responsive scroll-sm">
+              <table className="table bordered-table sm-table mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">S.L</th>
+                     
+                    <th scope="col">Date</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">Balance Before</th>
+                    <th scope="col">Balance After</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Reference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((transaction, index) => (
+                    <tr key={transaction.id}>
+                      <td>{index + 1}</td>
+                     
+                      <td>
+                        <span className="text-sm">
+                          {formatDateTime(transaction.created_at)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm">
+                          {transaction.transaction_type || "-"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`text-sm fw-medium ${
+                          transaction.transaction_type === "CREDIT" 
+                            ? "text-success-600" 
+                            : transaction.transaction_type === "DEBIT"
+                            ? "text-danger-600"
+                            : "text-primary-light"
+                        }`}>
+                          {transaction.transaction_type === "CREDIT" ? "+" : transaction.transaction_type === "DEBIT" ? "-" : ""}
+                          {formatCurrency(transaction.amount)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm">
+                          {formatCurrency(transaction.balance_before || 0)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm fw-medium text-primary-light">
+                          {formatCurrency(transaction.balance_after || 0)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm">
+                          {transaction.description || "-"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm">
+                          {transaction.reference || "-"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Customer Detail Modal */}
       {showCustomerModal && selectedCustomer && (
         <div
@@ -1119,14 +1228,14 @@ const ViewResellerDashboardLayer = () => {
                           </p>
                         </div>
 
-                        <div className="mb-16">
+                        {/* <div className="mb-16">
                           <label className="form-label text-xs text-secondary-light mb-4">
                             Business Email
                           </label>
                           <p className="text-md fw-medium text-primary-light mb-0">
                             {selectedCustomer.business_email || "-"}
                           </p>
-                        </div>
+                        </div> */}
 
                         {isSuperAdmin && (
                           <>

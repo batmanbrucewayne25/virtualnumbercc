@@ -5,6 +5,7 @@ export interface StepCallback {
 
 export interface Step1SuccessData {
     email: string;
+    phone: string;
 }
 
 export interface Step1Props {

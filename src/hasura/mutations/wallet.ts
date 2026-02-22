@@ -488,6 +488,7 @@ export const getAllMstWalletTransactions = async (resellerId?: string) => {
               last_name
               email
               business_name
+              phone
             }
           }`;
           
