@@ -181,7 +181,6 @@ const AdminSMTPLayer = () => {
                   type='text'
                   name='host'
                   className='form-control radius-8'
-                  placeholder='smtp.yourdomain.com'
                   value={form.host}
                   onChange={handleChange}
                   disabled={loading}
@@ -200,7 +199,6 @@ const AdminSMTPLayer = () => {
                   type='number'
                   name='port'
                   className='form-control radius-8'
-                  placeholder='465 or 587'
                   value={form.port}
                   onChange={handleChange}
                   disabled={loading}
@@ -218,7 +216,6 @@ const AdminSMTPLayer = () => {
                   type='text'
                   name='username'
                   className='form-control radius-8'
-                  placeholder='no-reply@yourdomain.com'
                   value={form.username}
                   onChange={handleChange}
                   disabled={loading}
@@ -237,7 +234,6 @@ const AdminSMTPLayer = () => {
                   type='password'
                   name='password'
                   className='form-control radius-8'
-                  placeholder='App password'
                   value={form.password}
                   onChange={handleChange}
                   disabled={loading}
@@ -256,7 +252,6 @@ const AdminSMTPLayer = () => {
                   type='email'
                   name='from_email'
                   className='form-control radius-8'
-                  placeholder='support@yourdomain.com'
                   value={form.from_email}
                   onChange={handleChange}
                   disabled={loading}
@@ -275,7 +270,6 @@ const AdminSMTPLayer = () => {
                   type='text'
                   name='from_name'
                   className='form-control radius-8'
-                  placeholder='Your Company Name'
                   value={form.from_name}
                   onChange={handleChange}
                   disabled={loading}

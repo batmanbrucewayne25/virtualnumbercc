@@ -14,6 +14,7 @@ const RazorpayConfigLayer = () => {
   const [copied, setCopied] = useState(false);
   const [showKeySecret, setShowKeySecret] = useState(false);
   const [showWebhookSecret, setShowWebhookSecret] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -203,10 +204,10 @@ const RazorpayConfigLayer = () => {
     <div className="row gy-4">
       <div className="col-lg-10 mx-auto">
         <div className="card radius-12 p-24 h-100">
-          <h5 className="mb-24">
+          {/* <h5 className="mb-24">
             <Icon icon='logos:razorpay' className='me-2' />
             Razorpay Payment Gateway Configuration
-          </h5>
+          </h5> */}
 
           {error && (
             <div className='alert alert-danger radius-8 mb-24' role='alert'>
@@ -257,28 +258,63 @@ const RazorpayConfigLayer = () => {
             )}
           </div>
 
-          {/* Setup Instructions */}
-          <div className="mb-24 p-20 bg-warning-focus border border-warning-main radius-8">
-            <div className="d-flex align-items-start gap-3">
-              <Icon icon='material-symbols:info-outline' className='icon text-warning-600 text-2xl flex-shrink-0 mt-4' />
-              <div>
-                <h6 className="mb-12 text-warning-600">Setup Instructions</h6>
-                <ol className="text-sm text-muted mb-0 ps-16">
-                  <li className="mb-8">Log in to your <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" className="text-primary">Razorpay Dashboard</a></li>
-                  <li className="mb-8">Go to <strong>Settings → API Keys</strong> and generate your API keys</li>
-                  <li className="mb-8">Enter your <strong>Key ID</strong> and <strong>Key Secret</strong> below</li>
-                  <li className="mb-8">Go to <strong>Settings → Webhooks</strong> in Razorpay Dashboard</li>
-                  <li className="mb-8">Click <strong>"Add New Webhook"</strong> and paste the webhook URL above</li>
-                  <li className="mb-8">Select these events: <code>payment.captured</code>, <code>payment.failed</code>, <code>subscription.activated</code>, <code>subscription.charged</code></li>
-                  <li className="mb-8">Copy the <strong>Webhook Secret</strong> from Razorpay and paste it below</li>
-                  <li>Click <strong>"Create Webhook"</strong> in Razorpay Dashboard</li>
-                </ol>
-              </div>
-            </div>
+          {/* Setup Instructions - button opens modal */}
+          <div className="mb-24">
+            <button
+              type="button"
+              className="btn btn-outline-warning radius-8 px-20 py-10 d-inline-flex align-items-center gap-2"
+              onClick={() => setShowSetupModal(true)}
+            >
+              <Icon icon='material-symbols:info-outline' className='icon text-lg' />
+              View Setup Instructions
+            </button>
           </div>
 
+          {/* Setup Instructions Modal */}
+          {showSetupModal && (
+            <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+              <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div className="modal-content radius-12">
+                  <div className="modal-header border-bottom">
+                    <h5 className="modal-title text-md text-warning-600 d-flex align-items-center gap-2">
+                      <Icon icon='material-symbols:info-outline' className='icon text-lg' />
+                      Setup Instructions
+                    </h5>
+                    <button
+                      type="button"
+                      className="btn-close"
+                      onClick={() => setShowSetupModal(false)}
+                      aria-label="Close"
+                    />
+                  </div>
+                  <div className="modal-body p-24">
+                    <ol className="text-sm text-muted mb-0 ps-16">
+                      <li className="mb-8">Log in to your <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" className="text-primary">Razorpay Dashboard</a></li>
+                      <li className="mb-8">Go to <strong>Settings → API Keys</strong> and generate your API keys</li>
+                      <li className="mb-8">Enter your <strong>Key ID</strong> and <strong>Key Secret</strong> below</li>
+                      <li className="mb-8">Go to <strong>Settings → Webhooks</strong> in Razorpay Dashboard</li>
+                      <li className="mb-8">Click <strong>"Add New Webhook"</strong> and paste the webhook URL above</li>
+                      <li className="mb-8">Select these events: <code>payment.captured</code>, <code>payment.failed</code>, <code>subscription.activated</code>, <code>subscription.charged</code></li>
+                      <li className="mb-8">Copy the <strong>Webhook Secret</strong> from Razorpay and paste it below</li>
+                      <li>Click <strong>"Create Webhook"</strong> in Razorpay Dashboard</li>
+                    </ol>
+                  </div>
+                  <div className="modal-footer border-top">
+                    <button
+                      type="button"
+                      className="btn btn-primary radius-8"
+                      onClick={() => setShowSetupModal(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Status Indicator */}
-          {isConfigured && (
+          {/* {isConfigured && (
             <div className="mb-24 p-20 bg-success-focus border border-success-main radius-8">
               <div className="d-flex align-items-center gap-3">
                 <Icon icon='material-symbols:check-circle' className='icon text-success-600 text-2xl' />
@@ -290,7 +326,7 @@ const RazorpayConfigLayer = () => {
                 </div>
               </div>
             </div>
-          )}
+          )} */}
 
           {/* Configuration Form */}
           <form onSubmit={handleSubmit}>
@@ -303,7 +339,7 @@ const RazorpayConfigLayer = () => {
                   type="text"
                   name="key_id"
                   className="form-control radius-8"
-                  placeholder="rzp_test_xxxxxxxxxxxxx"
+                  placeholder=""
                   value={formData.key_id}
                   onChange={handleInputChange}
                   required

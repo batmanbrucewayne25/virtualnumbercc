@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { createMstCustomer, checkMstCustomerExists } from "@/hasura/mutations/customer";
 
 interface Step10Props {
   formData: {
@@ -37,6 +36,7 @@ interface Step10Props {
     signature: {
       signatureHash: string;
       signatureMetadata: any;
+      signatureFilename?: string;
     } | null;
   };
   resellerId: string;
@@ -46,103 +46,23 @@ interface Step10Props {
 
 const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  // Hash password on client side - Note: In production, this should be done on backend
-  const hashPassword = async (password: string): Promise<string> => {
-    // Using Web Crypto API for hashing
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-    // For production, use bcrypt on backend
-    return hashHex; // This is a placeholder - backend should handle password hashing
-  };
-
-  const handleSubmit = async () => {
-    setError("");
+  // All details already saved in previous steps; this step only reviews and completes
+  const handleComplete = () => {
     setLoading(true);
-
-    try {
-      // Check if customer already exists
-      const existsCheck = await checkMstCustomerExists(formData.email, formData.phone);
-      if (existsCheck.exists) {
-        setError("A customer with this email or phone number already exists.");
-        setLoading(false);
-        return;
-      }
-
-      // Prepare date strings for DOB
-      const formatDateForDB = (dateStr: string): string | null => {
-        if (!dateStr) return null;
-        try {
-          const date = new Date(dateStr);
-          if (isNaN(date.getTime())) return null;
-          return date.toISOString().split("T")[0]; // YYYY-MM-DD format
-        } catch {
-          return null;
-        }
-      };
-
-      // Determine profile name based on GST or Aadhaar
-      const profileName =
-        formData.gstData?.business_name || formData.aadhaarData?.full_name || null;
-
-      // Note: Password should be hashed on backend with bcrypt
-      // For now using SHA-256, but backend API should handle bcrypt hashing
-      // TODO: Create backend API endpoint that receives plain password and hashes with bcrypt
-      const passwordHash = await hashPassword(formData.password);
-
-      // Prepare customer data
-      const customerData = {
-        reseller_id: resellerId,
-        email: formData.email,
-        password_hash: passwordHash,
-        phone: formData.phone,
-        business_email: formData.email, // Using email as business email
-        profile_name: profileName,
-        profile_image: formData.aadhaarData?.profile_image || null,
-        signature_hash: formData.signature?.signatureHash || null,
-        signature_metadata: formData.signature?.signatureMetadata || null,
-        signature_storage_url: null, // Can be updated later if storing signature file
-        address: formData.aadhaarData?.address || null,
-        pan_number: formData.panData?.pan_number || null,
-        pan_full_name: formData.panData?.full_name || null,
-        pan_dob: formatDateForDB(formData.panData?.dob || ""),
-        aadhaar_number: formData.aadhaarData?.aadhaar_number || null,
-        aadhaar_dob: formatDateForDB(formData.aadhaarData?.dob || ""),
-        dob_match_verified: formData.panData && formData.aadhaarData ? true : false,
-        gender: formData.aadhaarData?.gender || formData.panData?.gender || null,
-        gstin: formData.gstData?.gstin || null,
-        business_name: formData.gstData?.business_name || null,
-        max_virtual_numbers: 3, // Default value
-      };
-
-      // Create customer
-      const result = await createMstCustomer(customerData);
-
-      if (result.success) {
-        onSubmit();
-      } else {
-        setError(result.message || "Failed to submit. Please try again.");
-      }
-    } catch (err: any) {
-      console.error("Error submitting form:", err);
-      setError(err.message || "Failed to submit. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    onSubmit();
+    setLoading(false);
   };
 
-  // Determine profile name based on GST or Aadhaar (for display only)
   const profileName = formData.gstData?.business_name || formData.aadhaarData?.full_name || "N/A";
 
   return (
     <>
       <h4 className="mb-12">Review Your Details</h4>
 
-      {error && <div className="alert alert-danger mb-12">{error}</div>}
+      <div className="alert alert-success mb-16">
+        All your details have been saved. Please review below and click <strong>Complete</strong> to finish registration.
+      </div>
 
       <div className="card border mb-16">
         <div className="card-body p-16">
@@ -249,11 +169,26 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
             <div>
               <span className="text-secondary-light text-sm">Signature Status:</span>
               <span className="ms-8 fw-medium text-success">Uploaded</span>
-              <div className="mt-8">
-                <small className="text-secondary-light">
-                  Hash: {formData.signature.signatureHash.substring(0, 16)}...
-                </small>
-              </div>
+              {formData.signature.signatureFilename ? (
+                <div className="mt-12">
+                  <img
+                    src={`${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads"}/signatures/${formData.signature.signatureFilename}`}
+                    alt="Signature preview"
+                    className="rounded border bg-white"
+                    style={{ maxWidth: "100%", maxHeight: "120px", objectFit: "contain" }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                </div>
+              ) : null}
+              {formData.signature.signatureHash ? (
+                <div className="mt-8">
+                  <small className="text-secondary-light">
+                    Hash: {formData.signature.signatureHash.substring(0, 16)}...
+                  </small>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p className="text-secondary-light text-sm mb-0">No signature uploaded</p>
@@ -278,11 +213,11 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
         className="btn btn-primary w-100 radius-12"
         onClick={(e) => {
           e.preventDefault();
-          handleSubmit();
+          handleComplete();
         }}
         disabled={loading}
       >
-        {loading ? "Submitting..." : "Submit & Continue"}
+        {loading ? "Completing..." : "Complete"}
       </button>
     </>
   );

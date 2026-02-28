@@ -31,7 +31,7 @@ if (isClientHubBuild) {
   publicPaths.push("/");
 }
 
-if (!isAuthenticated() && !publicPaths.includes(window.location.pathname) && !window.location.pathname.startsWith("/clienthub")) {
+if (!isAuthenticated() && !publicPaths.includes(window.location.pathname) && !window.location.pathname.startsWith("/clienthub") && !window.location.pathname.startsWith("/page/")) {
   // Hard redirect avoids flashing protected content while React mounts
   window.location.replace("/sign-in");
 } else {

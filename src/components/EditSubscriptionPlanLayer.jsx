@@ -376,6 +376,7 @@ const EditSubscriptionPlanLayer = () => {
                           className='form-control radius-8'
                           id='razorpay_plan_id'
                           name='razorpay_plan_id'
+                          readOnly="true"
                           placeholder='Enter Razorpay plan ID'
                           value={formData.razorpay_plan_id}
                           onChange={handleChange}
@@ -395,6 +396,7 @@ const EditSubscriptionPlanLayer = () => {
                           className='form-control radius-8'
                           id='razorpay_link_id'
                           name='razorpay_link_id'
+                          readOnly="true"
                           placeholder='Enter Razorpay link ID'
                           value={formData.razorpay_link_id}
                           onChange={handleChange}

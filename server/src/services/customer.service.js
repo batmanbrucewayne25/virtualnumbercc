@@ -2,9 +2,15 @@ import { getHasuraClient } from "../config/hasura.client.js";
 import {
   sendVirtualNumberEmail,
   sendRazorpayLinkEmail,
+  sendCustomerRejectionEmail,
 } from "../../services/emailService.js";
 import { getResellerSmtpConfig } from "./smtpConfig.service.js";
 
+/**
+ * Customer-related emails (approve, reject, payment link, etc.) must use reseller SMTP
+ * from mst_smtp_config via getResellerSmtpConfig(reseller_id). Do not fall back to env
+ * SMTP for reseller-scoped mail so that "any mail sending from reseller" uses reseller config only.
+ */
 export class CustomerService {
   /**
    * Generate a virtual number
@@ -373,9 +379,10 @@ export class CustomerService {
    * @param {string} customerId
    * @param {string} status
    * @param {string} kycStatus
+   * @param {string|null} [rejectionReason] - When approving pass null to clear; when rejecting pass the reason
    * @returns {Promise<object>}
    */
-  static async updateCustomerStatus(customerId, status, kycStatus) {
+  static async updateCustomerStatus(customerId, status, kycStatus, rejectionReason = undefined) {
     try {
       const client = getHasuraClient();
 
@@ -385,6 +392,7 @@ export class CustomerService {
           $status: String!
           $kyc_status: String!
           $approval: String
+          $rejection_reason: String
         ) {
           update_mst_customer_by_pk(
             pk_columns: { id: $id }
@@ -392,12 +400,14 @@ export class CustomerService {
               status: $status
               kyc_status: $kyc_status
               approval: $approval
+              rejection_reason: $rejection_reason
             }
           ) {
             id
             status
             kyc_status
             approval
+            rejection_reason
           }
         }
       `;
@@ -410,16 +420,113 @@ export class CustomerService {
         approvalValue = "rejected";
       }
 
+      // On approve/active: clear rejection_reason; on reject: set it
+      const rejectionReasonValue =
+        status === "approved" || status === "active"
+          ? null
+          : status === "rejected"
+            ? (rejectionReason ?? null)
+            : null;
+
       const data = await client.client.request(mutation, {
         id: customerId,
         status,
         kyc_status: kycStatus,
         approval: approvalValue,
+        rejection_reason: rejectionReasonValue,
       });
 
       return data.update_mst_customer_by_pk;
     } catch (error) {
       console.error("Error updating customer status:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reject customer: update status and send rejection email using reseller SMTP.
+   * Customer-related emails must use reseller SMTP from mst_smtp_config via getResellerSmtpConfig;
+   * do not fall back to env SMTP for reseller-scoped mail.
+   * @param {string} customerId
+   * @param {string} rejectionReason
+   * @returns {Promise<object>} { success, message, emailSent?, emailWarning? }
+   */
+  static async rejectCustomer(customerId, rejectionReason) {
+    try {
+      const customer = await this.getCustomerById(customerId);
+      if (!customer) {
+        throw new Error("Customer not found");
+      }
+      const reseller = customer.mst_reseller;
+      const resellerName =
+        reseller?.business_name ||
+        (reseller?.first_name && reseller?.last_name
+          ? `${reseller.first_name} ${reseller.last_name}`
+          : null) ||
+        reseller?.email ||
+        "Your reseller";
+
+      const client = getHasuraClient();
+      const mutation = `
+        mutation RejectCustomer(
+          $id: uuid!
+          $status: String!
+          $kyc_status: String!
+          $approval: String!
+          $rejection_reason: String!
+        ) {
+          update_mst_customer_by_pk(
+            pk_columns: { id: $id }
+            _set: {
+              status: $status
+              kyc_status: $kyc_status
+              approval: $approval
+              rejection_reason: $rejection_reason
+            }
+          ) {
+            id
+            status
+            kyc_status
+            approval
+            rejection_reason
+          }
+        }
+      `;
+      await client.client.request(mutation, {
+        id: customerId,
+        status: "rejected",
+        kyc_status: "rejected",
+        approval: "rejected",
+        rejection_reason: rejectionReason || "No reason provided.",
+      });
+
+      let emailSent = false;
+      let emailWarning = null;
+      const resellerSmtpConfig = await getResellerSmtpConfig(customer.reseller_id);
+      const emailResult = await sendCustomerRejectionEmail(
+        customer.email,
+        customer.profile_name || customer.email,
+        rejectionReason,
+        resellerName,
+        resellerSmtpConfig
+      );
+      if (emailResult?.success) {
+        emailSent = true;
+      } else {
+        emailWarning =
+          emailResult?.message ||
+          "Rejection notification email could not be sent (reseller SMTP may not be configured).";
+        console.warn("[rejectCustomer] Email failed:", emailWarning);
+      }
+
+      return {
+        success: true,
+        message: "Customer rejected successfully.",
+        emailSent,
+        emailWarning: emailSent ? null : emailWarning,
+      };
+    } catch (error) {
+      console.error("Error rejecting customer:", error);
       throw error;
     }
   }

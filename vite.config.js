@@ -18,5 +18,8 @@ export default defineConfig(({ mode }) => {
       // Inject build type into the app
       'import.meta.env.VITE_BUILD_TYPE': JSON.stringify(isClientHubBuild ? 'clienthub' : 'admin'),
     },
+    build: {
+      sourcemap: true,
+    },
   };
 })

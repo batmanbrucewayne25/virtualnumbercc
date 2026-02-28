@@ -7,6 +7,7 @@ import ApproveResellerModal from "./ApproveResellerModal";
 import RejectResellerModal from "./RejectResellerModal";
 import SuspendResellerModal from "./SuspendResellerModal";
 import ConfirmToggleStatusModal from "./ConfirmToggleStatusModal";
+import DeleteResellerModal from "./DeleteResellerModal";
 import PermissionGuard from "@/components/PermissionGuard";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
@@ -26,6 +27,7 @@ const ResellerListLayer = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [suspendModalOpen, setSuspendModalOpen] = useState(false);
   const [toggleStatusModalOpen, setToggleStatusModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedReseller, setSelectedReseller] = useState(null);
   const [pendingToggleAction, setPendingToggleAction] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -53,25 +55,36 @@ const ResellerListLayer = () => {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete reseller "${name}"?`)) {
-      return;
-    }
+  const handleDeleteClick = (reseller) => {
+    setSelectedReseller(reseller);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedReseller) return;
+
+    setActionLoading(true);
+    setError("");
+    setSuccess("");
 
     try {
-      const result = await deleteMstReseller(id);
+      const result = await deleteMstReseller(selectedReseller.id);
       if (result.success) {
         setSuccess("Reseller deleted successfully");
         setTimeout(() => setSuccess(""), 3000);
+        setDeleteModalOpen(false);
+        setSelectedReseller(null);
         fetchResellers();
       } else {
         setError(result.message || "Failed to delete reseller");
         setTimeout(() => setError(""), 5000);
+        setActionLoading(false);
       }
     } catch (err) {
       console.error("Error deleting reseller:", err);
       setError("An error occurred while deleting reseller");
       setTimeout(() => setError(""), 5000);
+      setActionLoading(false);
     }
   };
 
@@ -639,12 +652,7 @@ const ResellerListLayer = () => {
                           <PermissionGuard module="Reseller" action="delete">
                             <button
                               type='button'
-                              onClick={() =>
-                                handleDelete(
-                                  reseller.id,
-                                  `${reseller.first_name} ${reseller.last_name}`
-                                )
-                              }
+                              onClick={() => handleDeleteClick(reseller)}
                               className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
                               title='Delete'
                             >
@@ -715,6 +723,18 @@ const ResellerListLayer = () => {
         reseller={selectedReseller}
         action={pendingToggleAction?.action || ""}
         onConfirm={handleToggleStatusConfirm}
+        loading={actionLoading}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteResellerModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setSelectedReseller(null);
+        }}
+        reseller={selectedReseller}
+        onConfirm={handleDeleteConfirm}
         loading={actionLoading}
       />
     </div>

@@ -47,6 +47,109 @@ export const getCmsPages = async () => {
 };
 
 /**
+ * Get published CMS pages only
+ */
+export const getPublishedCmsPages = async () => {
+  const QUERY = `query GetPublishedCmsPages {
+    cms_pages(
+      where: { is_published: { _eq: true } }
+      order_by: { created_date: desc }
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY);
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch published CMS pages",
+        data: [],
+      };
+    }
+    if (result?.data?.cms_pages) {
+      return {
+        success: true,
+        data: result.data.cms_pages,
+      };
+    }
+    return {
+      success: false,
+      data: [],
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch published CMS pages",
+      data: [],
+    };
+  }
+};
+
+/**
+ * Get CMS page by slug
+ */
+export const getCmsPageBySlug = async (slug: string) => {
+  if (!slug || typeof slug !== 'string') {
+    return {
+      success: false,
+      message: "Invalid slug",
+      data: null,
+    };
+  }
+
+  const QUERY = `query GetCmsPageBySlug($slug: String!) {
+    cms_pages(
+      where: { slug: { _eq: $slug }, is_published: { _eq: true } }
+      limit: 1
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY, { slug });
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch CMS page",
+        data: null,
+      };
+    }
+    if (result?.data?.cms_pages && result.data.cms_pages.length > 0) {
+      return {
+        success: true,
+        data: result.data.cms_pages[0],
+      };
+    }
+    return {
+      success: false,
+      message: "CMS page not found",
+      data: null,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch CMS page",
+      data: null,
+    };
+  }
+};
+
+/**
  * Get CMS page by ID
  */
 export const getCmsPageById = async (id: string) => {
@@ -198,7 +301,7 @@ export const updateCmsPage = async (
     $is_published: Boolean
     $updated_date: timestamptz
   ) {
-    update_cms_page_by_pk(
+    update_cms_pages_by_pk(
       pk_columns: { id: $id }
       _set: {
         page_title: $page_title
@@ -239,10 +342,10 @@ export const updateCmsPage = async (
       };
     }
 
-    if (result?.data?.update_cms_page_by_pk) {
+    if (result?.data?.update_cms_pages_by_pk) {
       return {
         success: true,
-        data: result.data.update_cms_page_by_pk,
+        data: result.data.update_cms_pages_by_pk,
         message: "CMS page updated successfully",
       };
     }

@@ -11,6 +11,7 @@ import { getAdminOnboardingTemplate } from "../mailtemplate/adminOnboarding.js";
 import { getPasswordResetTemplate } from "../mailtemplate/passwordReset.js";
 import { getVirtualNumberAssignedTemplate } from "../mailtemplate/virtualNumberAssigned.js";
 import { getRazorpayLinkTemplate } from "../mailtemplate/razorpayLink.js";
+import { getCustomerRejectionTemplate } from "../mailtemplate/customerRejection.js";
 
 // Load environment variables if not already loaded
 const __filename = fileURLToPath(import.meta.url);
@@ -504,6 +505,59 @@ export const sendRazorpayLinkEmail = async (
     return {
       success: false,
       message: error.message || "Failed to send email",
+    };
+  }
+};
+
+/**
+ * Send customer rejection email (reseller-scoped: must use reseller SMTP config only, no env fallback)
+ * @param {string} toEmail - Customer email
+ * @param {string} recipientName - Customer name
+ * @param {string} rejectionReason - Reason for rejection
+ * @param {string} resellerName - Reseller/brand name
+ * @param {object} smtpConfig - Reseller SMTP config from getResellerSmtpConfig (required)
+ */
+export const sendCustomerRejectionEmail = async (
+  toEmail,
+  recipientName,
+  rejectionReason,
+  resellerName,
+  smtpConfig
+) => {
+  try {
+    if (!smtpConfig) {
+      console.error("Customer rejection email: reseller SMTP config is required (no env fallback for reseller-scoped mail).");
+      return {
+        success: false,
+        message: "Reseller SMTP not configured. Rejection notification could not be sent.",
+      };
+    }
+    const transporter = createTransporter(smtpConfig);
+    if (!transporter) {
+      console.error("Customer rejection email: transporter not available.");
+      return {
+        success: false,
+        message: "Email service not configured. Rejection notification could not be sent.",
+      };
+    }
+    const fromEmail = smtpConfig.from_email || smtpConfig.username;
+    const fromName = smtpConfig.from_name || "Virtual Number";
+    const template = getCustomerRejectionTemplate(recipientName, rejectionReason, resellerName);
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: toEmail,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    };
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Customer rejection email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Error sending customer rejection email:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to send rejection email",
     };
   }
 };

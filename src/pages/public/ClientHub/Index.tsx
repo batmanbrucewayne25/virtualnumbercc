@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import Step1 from "./steps/Step1";
@@ -25,6 +25,7 @@ const ClientHubLayer = ({
   resellerId: resellerIdProp,
   isAdminMode = false,
 }: ClientHubLayerProps) => {
+  const navigate = useNavigate();
   const { resellerId: resellerIdFromUrl } = useParams<{
     resellerId?: string;
   }>();
@@ -78,19 +79,8 @@ const ClientHubLayer = ({
         if (resellerIdFromUrl) {
           finalResellerId = resellerIdFromUrl;
         } else {
-          // Try to get resellerId from domain
+          // Try to get resellerId from domain (server allows localhost when DEFAULT_RESELLER_ID_FOR_LOCALHOST is set)
           const domain = window.location.hostname;
-
-          // Skip domain lookup for localhost/development
-          if (
-            domain === "localhost" ||
-            domain === "127.0.0.1" ||
-            domain.includes("localhost")
-          ) {
-            setError("Reseller ID or domain is required");
-            setLoading(false);
-            return;
-          }
 
           try {
             // Call API to get resellerId by domain
@@ -216,7 +206,19 @@ const ClientHubLayer = ({
     handleStepChange(9);
   };
 
-  const handleStep9Success = (data: any) => {
+  const handleStep9Success = async (data: any) => {
+    // Save only signature image filename to database (no full path)
+    if (data.signatureFilename && formData.email) {
+      try {
+        const { updateCustomerSignature } = await import("@/hasura/mutations/customer");
+        await updateCustomerSignature({
+          email: formData.email,
+          signatureImage: data.signatureFilename,
+        });
+      } catch (err) {
+        console.error("Failed to save signature:", err);
+      }
+    }
     setFormData((prev: any) => ({ ...prev, signature: data }));
     handleStepChange(10);
   };
@@ -315,8 +317,9 @@ const ClientHubLayer = ({
           )}
 
           {/* STEP 2: Form 1 - Business Email, Mobile, Password */}
-          {step === 2 && (
+          {step === 2 && resellerId && (
             <Step2
+              resellerId={resellerId}
               onBack={() => handleStepChange(1)}
               onSuccess={handleStep2FormSuccess}
             />
@@ -365,6 +368,7 @@ const ClientHubLayer = ({
           {/* STEP 7: DOB Matching */}
           {step === 7 && (
             <Step7
+              email={formData.email}
               panData={formData.panData}
               aadhaarData={formData.aadhaarData}
               skipOtpVerification={skipOtpVerification}
@@ -419,9 +423,13 @@ const ClientHubLayer = ({
           {step === 1 && !skipOtpVerification && (
             <div className="mt-32 text-center text-sm">
               <p> 
-                <Link to="/sign-in" className="text-primary-600 fw-semibold">
+                <button
+                  onClick={() => navigate("/sign-in")}
+                  className="text-primary-600 fw-semibold border-0 bg-transparent p-0"
+                  style={{ textDecoration: 'underline', cursor: 'pointer' }}
+                >
                   Login as Admin
-                </Link>
+                </button>
               </p>
             </div>
           )}

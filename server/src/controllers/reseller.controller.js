@@ -6,8 +6,59 @@ import { getHasuraClient } from '../config/hasura.client.js';
  * @route   GET /api/reseller/by-domain
  * @access  Public
  */
+function isLocalhost(hostOrDomain) {
+  if (!hostOrDomain || typeof hostOrDomain !== 'string') return false;
+  const h = hostOrDomain.toLowerCase().trim();
+  return h === 'localhost' || h === '127.0.0.1' || h.includes('localhost');
+}
+
 export const getResellerByDomain = asyncHandler(async (req, res) => {
   const { domain } = req.query;
+  const requestHost = req.get('host') || '';
+
+  // Allow localhost alone: when request is from localhost and default reseller is configured
+  const isRequestFromLocalhost = isLocalhost(requestHost);
+  const defaultResellerId = process.env.DEFAULT_RESELLER_ID_FOR_LOCALHOST;
+  const domainIsLocalhost = domain && isLocalhost(domain.trim());
+
+  if (isRequestFromLocalhost && defaultResellerId && (!domain || domainIsLocalhost)) {
+    try {
+      const client = getHasuraClient();
+      const resellerQuery = `
+        query GetResellerById($id: uuid!) {
+          mst_reseller_by_pk(id: $id) {
+            id
+            first_name
+            last_name
+            email
+            business_name
+            brand_name
+            logo
+            status
+          }
+        }
+      `;
+      const resellerResult = await client.client.request(resellerQuery, {
+        id: defaultResellerId.trim(),
+      });
+      const reseller = resellerResult.mst_reseller_by_pk;
+      if (reseller && reseller.status === true) {
+        return res.json({
+          success: true,
+          data: {
+            resellerId: reseller.id,
+            resellerName: reseller.brand_name || reseller.business_name || `${reseller.first_name} ${reseller.last_name}`.trim(),
+            brandName: reseller.brand_name || null,
+            businessName: reseller.business_name || null,
+            logo: reseller.logo || null,
+            domain: 'localhost',
+          },
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching default reseller for localhost:', err);
+    }
+  }
 
   if (!domain) {
     return res.status(400).json({

@@ -61,7 +61,7 @@ const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
         // Redirect to dashboard or home
         // For client hub, you might want to redirect to a customer dashboard
         // For now, redirect to home
-        navigate("/", { replace: true });
+        navigate("/reseller-dashboard", { replace: true });
       } else {
         setError(result.message || "Invalid email or password.");
       }

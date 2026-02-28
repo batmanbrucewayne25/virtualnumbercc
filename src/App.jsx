@@ -52,6 +52,7 @@ import NotificationPage from "./pages/NotificationPage";
 import PaymentGatewayPage from "./pages/PaymentGatewayPage";
 import SignInPage from "./pages/public/SignIn";
 import SignUpPage from "./pages/public/Signup";
+import ViewCmsPage from "./pages/public/ViewCmsPage";
 import Razorpay from "./pages/Razorpay";
 import RoleAccessPage from "./pages/RoleAccessPage";
 import Smtp from "./pages/SMTP";
@@ -106,6 +107,7 @@ function App() {
         {/* Public routes */}
         <Route exact path='/sign-in' element={<SignInPage />} />
         <Route exact path='/sign-up' element={<SignUpPage />} />
+        <Route exact path='/page/:slug' element={<ViewCmsPage />} />
         <Route exact path='/forgot-password' element={<ForgotPasswordPage />} />
         <Route exact path='/reset-password' element={<ResetPasswordPage />} />
         <Route exact path='/clienthub/:resellerId?' element={<ClientHubPage />} />
@@ -122,6 +124,11 @@ function App() {
           // Admin build: root path requires authentication
           <Route element={<ProtectedRoutes />}>
             <Route exact path='/' element={<HomePageOne />} />
+          </Route>
+        )}
+
+        {/* Admin/Reseller routes - available in both builds */}
+        <Route element={<ProtectedRoutes />}>
           <Route exact path='/index-2' element={<HomePageTwo />} />
           <Route exact path='/index-3' element={<HomePageThree />} />
           <Route exact path='/index-4' element={<HomePageFour />} />
@@ -240,8 +247,7 @@ function App() {
           <Route exact path='/change-password' element={<ChangePasswordPage />} />
           {/* <Route exact path='/widgets' element={<WidgetsPage />} /> */}
           {/* <Route exact path='/wizard' element={<WizardPage />} /> */}
-          </Route>
-        )}
+        </Route>
 
         {/* Catch-all */}
         <Route exact path='*' element={<ErrorPage />} />

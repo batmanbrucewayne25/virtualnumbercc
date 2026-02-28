@@ -21,7 +21,7 @@ const AddSubscriptionPlanLayer = () => {
     plan_name: "",
     amount: "",
     currency: "INR",
-    duration_days: "",
+    duration_days: "320",
     razorpay_plan_id: "",
     razorpay_link_id: "",
     is_active: true,
@@ -343,7 +343,7 @@ const AddSubscriptionPlanLayer = () => {
                     />
                   </div>
 
-                  <div className='row'>
+                  {/* <div className='row'>
                     <div className='col-sm-6'>
                       <div className='mb-20'>
                         <label
@@ -394,7 +394,7 @@ const AddSubscriptionPlanLayer = () => {
                         </small>
                       </div>
                     </div>
-                  </div>
+                  </div> */}
 
                   <div className='mb-20'>
                     <label

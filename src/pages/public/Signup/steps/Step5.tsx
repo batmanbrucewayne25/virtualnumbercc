@@ -276,30 +276,50 @@ const Step5 = ({
             try {
               // Fetch user data to get PAN DOB
               const userResult = await getMstResellerByEmail({ email });
+              console.log("User result:", userResult);
+              if (!userResult?.data?.mst_reseller || userResult.data.mst_reseller.length === 0) {
+                setError(
+                  "Unable to verify date of birth. Please try again or contact support."
+                );
+                setLoading(false);
+                return;
+              }
+
+              const user = userResult.data.mst_reseller[0];
+              const panDob = user.pan_dob;
               
-              if (userResult?.mst_reseller && userResult.mst_reseller.length > 0) {
-                const user = userResult.mst_reseller[0];
-                const panDob = user.pan_dob;
-                
-                if (panDob) {
-                  // Compare PAN DOB with Aadhaar DOB
-                  if (!compareDates(panDob, data.dob)) {
-                    setError(
-                      "Date of birth mismatch! The date of birth in your PAN card does not match your Aadhaar card. Please verify that both documents have the same date of birth and try again."
-                    );
-                    setLoading(false);
-                    return;
-                  }
-                } else {
-                  // PAN DOB not found - this shouldn't happen if user completed Step 4, but handle gracefully
-                  console.warn("PAN DOB not found for user, skipping DOB validation");
-                }
+              if (!panDob) {
+                // PAN DOB not found - user must complete PAN verification first
+                setError(
+                  "PAN date of birth not found. Please complete PAN verification first."
+                );
+                setLoading(false);
+                return;
+              }
+
+              // Compare PAN DOB with Aadhaar DOB
+              if (!compareDates(panDob, data.dob)) {
+                setError(
+                  "Date of birth mismatch! The date of birth in your PAN card does not match your Aadhaar card. Please verify that both documents have the same date of birth and try again."
+                );
+                setLoading(false);
+                return;
               }
             } catch (fetchErr: any) {
               console.error("Error fetching user data for DOB validation:", fetchErr);
-              // Continue with save even if we can't validate DOB (don't block user)
-              // But log the error for debugging
+              setError(
+                "Failed to verify date of birth. Please try again or contact support."
+              );
+              setLoading(false);
+              return;
             }
+          } else {
+            // Aadhaar DOB is missing
+            setError(
+              "Date of birth is missing from Aadhaar verification. Please try again."
+            );
+            setLoading(false);
+            return;
           }
 
           console.log("Saving Aadhaar data:", {

@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getMstCustomerByEmail } from "@/hasura/mutations/customer";
+import { compareDates } from "@/utils/dateComparison";
 
 interface Step7Props {
+  email: string;
   panData: any;
   aadhaarData: any;
   skipOtpVerification?: boolean;
@@ -8,8 +11,26 @@ interface Step7Props {
   onSuccess: () => void;
 }
 
-const Step7 = ({ panData, aadhaarData, skipOtpVerification = false, onBack, onSuccess }: Step7Props) => {
+const Step7 = ({ email, panData, aadhaarData, skipOtpVerification = false, onBack, onSuccess }: Step7Props) => {
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [customerData, setCustomerData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchCustomerData = async () => {
+      if (email) {
+        try {
+          const result = await getMstCustomerByEmail({ email });
+          if (result?.data?.mst_customer && result.data.mst_customer.length > 0) {
+            setCustomerData(result.data.mst_customer[0]);
+          }
+        } catch (err) {
+          console.error("Failed to fetch customer data:", err);
+        }
+      }
+    };
+    fetchCustomerData();
+  }, [email]);
 
   const normalizeDate = (dateStr: string): string | null => {
     if (!dateStr) return null;
@@ -71,37 +92,52 @@ const Step7 = ({ panData, aadhaarData, skipOtpVerification = false, onBack, onSu
     return d1 === d2;
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     setError("");
-
-    if (!panData || !aadhaarData) {
-      setError("PAN and Aadhaar data are required.");
-      return;
-    }
+    setLoading(true);
 
     // Skip DOB validation if admin is creating customer
     if (skipOtpVerification) {
       onSuccess();
+      setLoading(false);
       return;
     }
 
-    const panDob = panData.dob;
-    const aadhaarDob = aadhaarData.dob;
+    try {
+      // Fetch customer data from database to get PAN DOB
+      const result = await getMstCustomerByEmail({ email });
+      if (!result?.data?.mst_customer || result.data.mst_customer.length === 0) {
+        setError("Unable to verify date of birth. Please try again or contact support.");
+        setLoading(false);
+        return;
+      }
 
-    if (!panDob || !aadhaarDob) {
-      setError("Date of birth is missing in PAN or Aadhaar data.");
-      return;
+      const customer = result.data.mst_customer[0];
+      const panDob = customer.pan_dob;
+      const aadhaarDob = customer.aadhaar_dob;
+
+      if (!panDob || !aadhaarDob) {
+        setError("Date of birth is missing in PAN or Aadhaar data. Please complete both verifications first.");
+        setLoading(false);
+        return;
+      }
+
+      if (!compareDates(panDob, aadhaarDob)) {
+        setError(
+          "Date of birth mismatch! Please verify that the date of birth in your PAN card and Aadhaar card are the same. If they differ, please correct the documents and try again."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Dates match, proceed
+      onSuccess();
+    } catch (err: any) {
+      console.error("Error verifying DOB:", err);
+      setError("Failed to verify date of birth. Please try again.");
+    } finally {
+      setLoading(false);
     }
-
-    if (!compareDates(panDob, aadhaarDob)) {
-      setError(
-        "Date of birth mismatch! Please verify that the date of birth in your PAN card and Aadhaar card are the same. If they differ, please correct the documents and try again."
-      );
-      return;
-    }
-
-    // Dates match, proceed
-    onSuccess();
   };
 
   return (
@@ -111,8 +147,8 @@ const Step7 = ({ panData, aadhaarData, skipOtpVerification = false, onBack, onSu
       {error && <div className="alert alert-danger mb-12">{error}</div>}
 
       <div className="alert alert-info mb-16">
-        <p className="mb-8"><strong>PAN Card DOB:</strong> {panData?.dob || "N/A"}</p>
-        <p className="mb-0"><strong>Aadhaar Card DOB:</strong> {aadhaarData?.dob || "N/A"}</p>
+        <p className="mb-8"><strong>PAN Card DOB:</strong> {customerData?.pan_dob || panData?.dob || "N/A"}</p>
+        <p className="mb-0"><strong>Aadhaar Card DOB:</strong> {customerData?.aadhaar_dob || aadhaarData?.dob || "N/A"}</p>
       </div>
 
       {skipOtpVerification && (
@@ -142,8 +178,9 @@ const Step7 = ({ panData, aadhaarData, skipOtpVerification = false, onBack, onSu
           e.preventDefault();
           handleContinue();
         }}
+        disabled={loading}
       >
-        Continue
+        {loading ? "Verifying..." : "Continue"}
       </button>
     </>
   );

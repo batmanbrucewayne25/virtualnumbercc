@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { validateAadharFormat } from "@/utils/aadharValidation.js";
+import { updateCustomerAadhaarStep, getMstCustomerByEmail } from "@/hasura/mutations/customer";
+import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
+import { compareDates } from "@/utils/dateComparison";
 
 interface AadhaarVerificationData {
   full_name: string;
@@ -32,6 +35,15 @@ const Step6 = ({
     useState<AadhaarVerificationData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [countdown, setCountdown] = useState(0);
+
+  // Countdown timer effect - MUST be called before any early returns
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   const validateOtp = (value: string) => /^\d{6}$/.test(value);
 
@@ -56,9 +68,25 @@ const Step6 = ({
         return;
       }
 
-      // Auto-proceed without OTP
+      // Auto-proceed without OTP - save to database
       setLoading(true);
       try {
+        const result = await updateCustomerAadhaarStep({
+          email,
+          aadhaar_number: cleaned,
+          dob: null,
+          gender: null,
+          aadhar_photo: null,
+          address: null,
+        });
+        
+        // Check for GraphQL errors in response
+        if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          setError(getConstraintViolationMessage(result));
+          setLoading(false);
+          return;
+        }
+
         onSubmit({
           full_name: "",
           aadhaar_number: cleaned,
@@ -68,9 +96,14 @@ const Step6 = ({
           zip: "",
           profile_image: "",
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to submit Aadhaar:", err);
-        setError("Failed to save Aadhaar details.");
+        const errorMessage = extractGraphQLError(err);
+        if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+          setError(getConstraintViolationMessage(err));
+        } else {
+          setError("Failed to save Aadhaar details.");
+        }
       } finally {
         setLoading(false);
       }
@@ -132,6 +165,7 @@ const Step6 = ({
           setRequestId(requestId);
           setAadhaarOtpSent(true);
           setError("");
+          setCountdown(60); // Set countdown to 60 seconds
           console.log("[Step6] OTP sent successfully, request_id:", requestId);
         } else {
           console.error("[Step6] Request ID missing in response:", result);
@@ -207,14 +241,104 @@ const Step6 = ({
           return;
         }
 
-        const aadhaarData = {
-          full_name: data.full_name || data.name || "",
-          aadhaar_number: data.aadhaar_number || aadhaarNumber,
+        // Clean aadhaar number - remove spaces and dashes
+        const cleanedAadhaar = (data.aadhaar_number || aadhaarNumber).replace(/[\s-]/g, "");
+
+        // Validate DOB match between PAN and Aadhaar
+        if (data.dob) {
+          try {
+            // Fetch customer data to get PAN DOB
+            const userResult = await getMstCustomerByEmail({ email });
+            console.log("Customer result:", userResult);
+            if (!userResult?.data?.mst_customer || userResult.data.mst_customer.length === 0) {
+              setError(
+                "Unable to verify date of birth. Please try again or contact support."
+              );
+              setLoading(false);
+              return;
+            }
+
+            const customer = userResult.data.mst_customer[0];
+            const panDob = customer.pan_dob;
+            
+            if (!panDob) {
+              // PAN DOB not found - user must complete PAN verification first
+              setError(
+                "PAN date of birth not found. Please complete PAN verification first."
+              );
+              setLoading(false);
+              return;
+            }
+
+            // Compare PAN DOB with Aadhaar DOB
+            if (!compareDates(panDob, data.dob)) {
+              setError(
+                "Date of birth mismatch! The date of birth in your PAN card does not match your Aadhaar card. Please verify that both documents have the same date of birth and try again."
+              );
+              setLoading(false);
+              return;
+            }
+          } catch (fetchErr: any) {
+            console.error("Error fetching customer data for DOB validation:", fetchErr);
+            setError(
+              "Failed to verify date of birth. Please try again or contact support."
+            );
+            setLoading(false);
+            return;
+          }
+        } else {
+          // Aadhaar DOB is missing
+          setError(
+            "Date of birth is missing from Aadhaar verification. Please try again."
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Handle address - convert object to array or keep as is
+        let addressToSave = data.address || null;
+        if (addressToSave && typeof addressToSave === 'object' && !Array.isArray(addressToSave)) {
+          // Convert address object to array of strings
+          addressToSave = Object.values(addressToSave).filter(v => v && typeof v === 'string');
+        }
+
+        // Get profile image as base64
+        const profileImageBase64 = data.profile_image || data.photo || "";
+
+        console.log("Saving Aadhaar data:", {
+          email,
+          aadhaar_number: cleanedAadhaar,
           dob: data.dob,
           gender: data.gender,
-          address: data.address || data.full_address || null,
+          aadhar_photo: profileImageBase64 ? "present" : "missing",
+          address: addressToSave,
+        });
+
+        // Save to database
+        const updateResult = await updateCustomerAadhaarStep({
+          email,
+          aadhaar_number: cleanedAadhaar,
+          dob: data.dob,
+          gender: data.gender,
+          aadhar_photo: profileImageBase64 || null,
+          address: addressToSave,
+        });
+
+        // Check for GraphQL errors in response
+        if (updateResult?.errors && Array.isArray(updateResult.errors) && updateResult.errors.length > 0) {
+          setError(getConstraintViolationMessage(updateResult));
+          setLoading(false);
+          return;
+        }
+
+        const aadhaarData = {
+          full_name: data.full_name || data.name || "",
+          aadhaar_number: cleanedAadhaar,
+          dob: data.dob,
+          gender: data.gender,
+          address: addressToSave,
           zip: data.zip || data.pincode || "",
-          profile_image: data.profile_image || data.photo || "",
+          profile_image: profileImageBase64,
         };
 
         console.log("[Step6] Aadhaar verification successful:", aadhaarData);
@@ -232,11 +356,16 @@ const Step6 = ({
       }
     } catch (err: any) {
       console.error("[Step6] OTP verification error:", err);
-      const errorMsg =
-        err.response?.data?.message ||
-        err.message ||
-        "OTP verification failed. Please check the OTP and try again.";
-      setError(errorMsg);
+      const errorMessage = extractGraphQLError(err);
+      if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
+        setError(getConstraintViolationMessage(err));
+      } else {
+        const errorMsg =
+          err.response?.data?.message ||
+          err.message ||
+          "OTP verification failed. Please check the OTP and try again.";
+        setError(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -316,19 +445,29 @@ const Step6 = ({
               : "Get OTP"}
       </button>
 
-      {aadhaarOtpSent && !loading && (
-        <button
-          type="button"
-          className="btn btn-link mb-8"
-          onClick={(e) => {
-            e.preventDefault();
-            setAadhaarOtp("");
-            setAadhaarOtpSent(false);
-            setRequestId(null);
-          }}
-        >
-          Resend OTP
-        </button>
+      {/* RESEND OTP */}
+      {aadhaarOtpSent && !loading && !skipOtpVerification && (
+        <div className="mb-8">
+          {countdown > 0 ? (
+            <p className="text-sm text-secondary-light mb-0">
+              Resend OTP in {countdown} seconds
+            </p>
+          ) : (
+            <button
+              className="btn btn-link p-0"
+              onClick={() => {
+                setAadhaarOtp("");
+                setAadhaarOtpSent(false);
+                setRequestId(null);
+                setCountdown(0);
+                // Trigger resend by calling handleGetOtp again
+                handleGetOtp();
+              }}
+            >
+              Resend OTP
+            </button>
+          )}
+        </div>
       )}
 
       {aadhaarData && (

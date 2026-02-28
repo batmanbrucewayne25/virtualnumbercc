@@ -89,3 +89,72 @@ export const approveCustomer = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * @desc    Reject customer (update status and send rejection email via reseller SMTP)
+ * @route   POST /api/customer/reject
+ * @access  Protected (Admin or Reseller - reseller only for own customers)
+ */
+export const rejectCustomer = asyncHandler(async (req, res) => {
+  const { customer_id, rejection_reason } = req.body;
+
+  if (!customer_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide customer_id'
+    });
+  }
+
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  if (!userId || !role) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Please log in again.'
+    });
+  }
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  const isReseller = role === 'reseller';
+
+  if (!isAdmin && !isReseller) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only admins or resellers can reject customers.'
+    });
+  }
+
+  try {
+    const customer = await CustomerService.getCustomerById(customer_id);
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+    if (isReseller && customer.reseller_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only reject customers that belong to your account.'
+      });
+    }
+
+    const result = await CustomerService.rejectCustomer(
+      customer_id,
+      rejection_reason || 'No reason provided.'
+    );
+
+    return res.json({
+      success: true,
+      message: result.message,
+      data: {
+        emailSent: result.emailSent,
+        emailWarning: result.emailWarning || undefined
+      }
+    });
+  } catch (error) {
+    console.error('Error rejecting customer:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to reject customer'
+    });
+  }
+});

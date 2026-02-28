@@ -78,8 +78,10 @@ const CustomerListLayer = () => {
     }
   };
 
-  // Filter customers based on search and status
+  // Filter customers based on search, status, and exclude approved (New Customers list)
   const filteredCustomers = customers.filter((customer) => {
+    const notApproved = customer.approval !== "approved";
+
     const matchesSearch =
       searchTerm === "" ||
       customer.profile_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -90,7 +92,7 @@ const CustomerListLayer = () => {
     const matchesStatus =
       statusFilter === "all" || customer.status === statusFilter;
 
-    return matchesSearch && matchesStatus;
+    return notApproved && matchesSearch && matchesStatus;
   });
 
   const formatDate = (dateString) => {
@@ -190,8 +192,6 @@ const CustomerListLayer = () => {
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
             <option value="pending_payment">Pending Payment</option>
-            <option value="approved">Approved</option>
-            <option value="active">Active</option>
             <option value="rejected">Rejected</option>
             <option value="suspended">Suspended</option>
           </select>
@@ -241,17 +241,17 @@ const CustomerListLayer = () => {
                   <tr>
                     <th scope="col">S.L</th>
                     <th scope="col">Date</th>
-                    <th scope="col">Reseller</th>
-                    <th scope="col">Profile Name</th>
+                    {!isReseller && <th scope="col">Reseller</th>}
+                    {!isReseller && <th scope="col">Profile Name</th>}
                     <th scope="col">Email</th>
                     <th scope="col">Phone</th>
-                    <th scope="col">Business Email</th>
+                    {/* <th scope="col">Business Email</th> */}
                     <th scope="col" className="text-center">
                       Status
                     </th>
-                    <th scope="col" className="text-center">
+                    {/* <th scope="col" className="text-center">
                       KYC Status
-                    </th>
+                    </th> */}
                     <th scope="col" className="text-center">
                       Action
                     </th>
@@ -262,29 +262,33 @@ const CustomerListLayer = () => {
                     <tr key={customer.id}>
                       <td>{index + 1}</td>
                       <td>{formatDate(customer.created_at)}</td>
-                      <td>
-                        <span className="text-md mb-0 fw-normal text-secondary-light">
-                          {customer.mst_reseller?.brand_name || customer.mst_reseller?.business_name || 
-                           (customer.mst_reseller?.first_name && customer.mst_reseller?.last_name
-                             ? `${customer.mst_reseller.first_name} ${customer.mst_reseller.last_name}`
-                             : customer.mst_reseller?.email || "-")}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="d-flex align-items-center">
-                          <div className="w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center">
-                            <Icon
-                              icon="solar:user-bold"
-                              className="icon text-primary-600 text-xl"
-                            />
+                      {!isReseller && (
+                        <td>
+                          <span className="text-md mb-0 fw-normal text-secondary-light">
+                            {customer.mst_reseller?.brand_name || customer.mst_reseller?.business_name ||
+                             (customer.mst_reseller?.first_name && customer.mst_reseller?.last_name
+                               ? `${customer.mst_reseller.first_name} ${customer.mst_reseller.last_name}`
+                               : customer.mst_reseller?.email || "-")}
+                          </span>
+                        </td>
+                      )}
+                      {!isReseller && (
+                        <td>
+                          <div className="d-flex align-items-center">
+                            <div className="w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center">
+                              <Icon
+                                icon="solar:user-bold"
+                                className="icon text-primary-600 text-xl"
+                              />
+                            </div>
+                            <div className="flex-grow-1">
+                              <span className="text-md mb-0 fw-normal text-secondary-light">
+                                {customer.profile_name || "N/A"}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex-grow-1">
-                            <span className="text-md mb-0 fw-normal text-secondary-light">
-                              {customer.profile_name || "N/A"}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+                        </td>
+                      )}
                       <td>
                         <span className="text-md mb-0 fw-normal text-secondary-light">
                           {customer.email || "-"}
@@ -295,17 +299,17 @@ const CustomerListLayer = () => {
                           {customer.phone || "-"}
                         </span>
                       </td>
-                      <td>
+                      {/* <td>
                         <span className="text-md mb-0 fw-normal text-secondary-light">
                           {customer.business_email || "-"}
                         </span>
-                      </td>
+                      </td> */}
                       <td className="text-center">
                         {getStatusBadge(customer.status)}
                       </td>
-                      <td className="text-center">
+                      {/* <td className="text-center">
                         {getKycStatusBadge(customer.kyc_status)}
-                      </td>
+                      </td> */}
                       <td className="text-center">
                         <div className="d-flex align-items-center gap-10 justify-content-center flex-wrap">
                           <Link

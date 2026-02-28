@@ -5,20 +5,93 @@ import PasswordField from "@/components/Form/PasswordField";
 import { login } from "@/utils/api";
 import { saveAuthToken, isAuthenticated } from "@/utils/auth";
 import { getUserWithPermissions } from "@/hasura/mutations/userPermissions";
+import { getPublishedCmsPages, getCmsPageBySlug } from "@/hasura/mutations/cms";
+import CmsPageModal from "@/components/CmsPageModal";
 
 const SignInLayer = () => {
   const navigate = useNavigate();
+  const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
+  const isClientHubBuild = buildType === 'clienthub';
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [cmsPages, setCmsPages] = useState([]);
+  const [cmsModalOpen, setCmsModalOpen] = useState(false);
+  const [selectedCmsPage, setSelectedCmsPage] = useState(null);
+  const [cmsPageLoading, setCmsPageLoading] = useState(false);
 
-  // If already authenticated, redirect to home
+  // If already authenticated, redirect based on build type and role
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate("/", { replace: true });
+      const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
+      const isClientHubBuild = buildType === 'clienthub';
+      
+      // Get user data from localStorage
+      const userDataStr = localStorage.getItem('userData');
+      if (userDataStr) {
+        try {
+          const user = JSON.parse(userDataStr);
+          
+          if (user.role === 'reseller') {
+            // Reseller always goes to reseller dashboard
+            navigate("/reseller-dashboard", { replace: true });
+          } else if (user.role === 'admin' || user.role === 'super_admin') {
+            // Admin goes to admin dashboard (root path in admin build)
+            navigate("/", { replace: true });
+          } else {
+            // Default fallback
+            navigate("/", { replace: true });
+          }
+        } catch (err) {
+          console.error("Error parsing user data:", err);
+          navigate("/", { replace: true });
+        }
+      } else {
+        // No user data, default redirect
+        navigate("/", { replace: true });
+      }
     }
   }, [navigate]);
+
+  // Fetch published CMS pages for footer
+  useEffect(() => {
+    const fetchCmsPages = async () => {
+      try {
+        const result = await getPublishedCmsPages();
+        if (result.success && result.data) {
+          setCmsPages(result.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch CMS pages:", err);
+      }
+    };
+    fetchCmsPages();
+  }, []);
+
+  // Handle CMS page click
+  const handleCmsPageClick = async (e, page) => {
+    e.preventDefault();
+    setCmsPageLoading(true);
+    setCmsModalOpen(true);
+    setSelectedCmsPage(null);
+
+    try {
+      const result = await getCmsPageBySlug(page.slug);
+      if (result.success && result.data) {
+        setSelectedCmsPage(result.data);
+      } else {
+        setError("Failed to load page content");
+        setCmsModalOpen(false);
+      }
+    } catch (err) {
+      console.error("Failed to fetch CMS page:", err);
+      setError("Failed to load page content");
+      setCmsModalOpen(false);
+    } finally {
+      setCmsPageLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -111,9 +184,32 @@ const SignInLayer = () => {
         console.log("Token saved:", !!localStorage.getItem('authToken'));
         console.log("User data saved:", !!localStorage.getItem('userData'));
         
-        // Navigate to dashboard - ProtectedRoutes will verify authentication
-        console.log("Navigating to dashboard...");
-        navigate("/", { replace: true });
+        // Determine redirect based on role and build type
+        const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
+        const isClientHubBuild = buildType === 'clienthub';
+        
+        // Navigate based on user role
+        console.log("User role:", user.role, user);
+        console.log("Is ClientHub build:", isClientHubBuild);
+        if (isClientHubBuild) {
+          // Reseller always goes to reseller dashboard
+          console.log("Navigating to reseller dashboard...");
+          navigate("/reseller-dashboard", { replace: true });
+        } else if (user.role === 'admin' || user.role === 'super_admin') {
+          // Admin goes to admin dashboard (root path in admin build)
+          if (isClientHubBuild) {
+            // Admin shouldn't use ClientHub build, but handle gracefully
+            console.log("Admin in ClientHub build - navigating to root...");
+            navigate("/", { replace: true });
+          } else {
+            console.log("Navigating to admin dashboard...");
+            navigate("/", { replace: true }); // Admin dashboard
+          }
+        } else {
+          // Default fallback
+          console.log("Navigating to root...");
+          navigate("/", { replace: true });
+        }
       } else {
         setError(result.message || "Invalid email or password.");
       }
@@ -226,17 +322,48 @@ const SignInLayer = () => {
                 Google
               </button>
             </div> */}
-            <div className='mt-32 text-center text-sm'>
-              <p className='mb-0'>
-                Don’t have an account?{" "}
-                <Link to='/sign-up' className='text-primary-600 fw-semibold'>
-                  Sign Up
-                </Link>
-              </p>
-            </div>
+            {!isClientHubBuild && (
+              <div className='mt-32 text-center text-sm'>
+                <p className='mb-0'>
+                  Don't have an account?{" "}
+                  <Link to='/sign-up' className='text-primary-600 fw-semibold'>
+                    Sign Up
+                  </Link>
+                </p>
+              </div>
+            )}
+
+            {/* CMS Pages Links */}
+            {cmsPages.length > 0 && (
+              <div className='mt-24 text-center'>
+                <div className='d-flex flex-wrap justify-content-center gap-3'>
+                  {cmsPages.map((page) => (
+                    <button
+                      key={page.id}
+                      type="button"
+                      onClick={(e) => handleCmsPageClick(e, page)}
+                      className='btn btn-link text-sm text-secondary-light text-decoration-none p-0'
+                    >
+                      {page.page_title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </form>
         </div>
       </div>
+
+      {/* CMS Page Modal */}
+      <CmsPageModal
+        isOpen={cmsModalOpen}
+        onClose={() => {
+          setCmsModalOpen(false);
+          setSelectedCmsPage(null);
+        }}
+        page={selectedCmsPage}
+        loading={cmsPageLoading}
+      />
     </section>
   );
 };

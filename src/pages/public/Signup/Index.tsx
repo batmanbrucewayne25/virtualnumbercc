@@ -1,7 +1,9 @@
 import { getMstResellerByEmail } from "@/hasura/mutations";
+import { getPublishedCmsPages, getCmsPageBySlug } from "@/hasura/mutations/cms";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import SuccessPopup from "../../../components/Modal";
+import CmsPageModal from "@/components/CmsPageModal";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
 import Step3 from "./steps/Step3";
@@ -23,6 +25,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [cmsPages, setCmsPages] = useState<any[]>([]);
+  const [cmsModalOpen, setCmsModalOpen] = useState(false);
+  const [selectedCmsPage, setSelectedCmsPage] = useState<any>(null);
+  const [cmsPageLoading, setCmsPageLoading] = useState(false);
 
   useEffect(() => {
     // Read step from URL query parameter
@@ -53,6 +59,40 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // Fetch published CMS pages for footer
+  useEffect(() => {
+    const fetchCmsPages = async () => {
+      try {
+        const result = await getPublishedCmsPages();
+        if (result.success && result.data) {
+          setCmsPages(result.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch CMS pages:", err);
+      }
+    };
+    fetchCmsPages();
+  }, []);
+
+  // Handle CMS page click
+  const handleCmsPageClick = async (e: React.MouseEvent, page: any) => {
+    e.preventDefault();
+    setCmsPageLoading(true);
+    setCmsModalOpen(true);
+    setSelectedCmsPage(null);
+
+    try {
+      const result = await getCmsPageBySlug(page.slug);
+      if (result.success && result.data) {
+        setSelectedCmsPage(result.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch CMS page:", err);
+    } finally {
+      setCmsPageLoading(false);
+    }
+  };
 
   const fetchUserData = async (userEmail: string, requestedStep: number | null = null) => {
     setLoading(true);
@@ -270,22 +310,53 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
           )}
 
           {/* FOOTER */}
-          {!skipOtpVerification && (
-            <div className="mt-32 text-center text-sm">
-              <p>
-                Already have an account?{" "}
-                <Link to="/sign-in" className="text-primary-600 fw-semibold">
-                  Sign In
-                </Link>
-              </p>
-            </div>
-          )}
+          <div className="mt-32">
+            {!skipOtpVerification && (
+              <div className="text-center text-sm mb-16">
+                <p>
+                  Already have an account?{" "}
+                  <Link to="/sign-in" className="text-primary-600 fw-semibold">
+                    Sign In
+                  </Link>
+                </p>
+              </div>
+            )}
+            
+            {/* CMS Pages Links */}
+            {cmsPages.length > 0 && (
+              <div className="text-center">
+                <div className="d-flex flex-wrap justify-content-center gap-3 mb-12">
+                  {cmsPages.map((page) => (
+                    <button
+                      key={page.id}
+                      type="button"
+                      onClick={(e) => handleCmsPageClick(e, page)}
+                      className="btn btn-link text-sm text-secondary-light text-decoration-none p-0"
+                    >
+                      {page.page_title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <SuccessPopup
         show={showSuccess}
         onClose={() => setShowSuccess(false)}
+      />
+
+      {/* CMS Page Modal */}
+      <CmsPageModal
+        isOpen={cmsModalOpen}
+        onClose={() => {
+          setCmsModalOpen(false);
+          setSelectedCmsPage(null);
+        }}
+        page={selectedCmsPage}
+        loading={cmsPageLoading}
       />
     </section>
   );

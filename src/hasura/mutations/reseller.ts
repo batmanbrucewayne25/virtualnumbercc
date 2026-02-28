@@ -11,7 +11,15 @@ import { getApiBaseUrl } from "@/utils/apiUrl.js";
 export const getMstResellers = async () => {
   const QUERY = `query GetMstResellers {
     mst_reseller(
-      where: { _or: [{ isDelete: { _is_null: true } }, { isDelete: { _eq: false } }] }
+      where: {_and: [
+    {
+      _or: [
+        { isDelete: { _is_null: true } },
+        { isDelete: { _eq: false } }
+      ]
+    },
+    { current_step: { _eq: 7 } }
+  ] }
       order_by: { created_at: desc }
     ) {
       id
@@ -198,10 +206,20 @@ export const deleteMstReseller = async (id: string) => {
   const MUTATION = `mutation SoftDeleteMstReseller($id: uuid!) {
     update_mst_reseller_by_pk(
       pk_columns: { id: $id }
-      _set: { isDelete: true }
+      _set: { 
+        isDelete: true
+        email: null
+        phone: null
+        pan_number: null
+        aadhaar_number: null
+      }
     ) {
       id
       isDelete
+      email
+      phone
+      pan_number
+      aadhaar_number
     }
   }`;
 

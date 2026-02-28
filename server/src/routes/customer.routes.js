@@ -1,5 +1,5 @@
 import express from 'express';
-import { approveCustomer } from '../controllers/customer.controller.js';
+import { approveCustomer, rejectCustomer } from '../controllers/customer.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -10,6 +10,13 @@ const router = express.Router();
  * @access  Protected (Reseller)
  */
 router.post('/approve', authMiddleware, approveCustomer);
+
+/**
+ * @route   POST /api/customer/reject
+ * @desc    Reject customer and send rejection email (reseller SMTP)
+ * @access  Protected (Admin or Reseller)
+ */
+router.post('/reject', authMiddleware, rejectCustomer);
 
 export default router;
 

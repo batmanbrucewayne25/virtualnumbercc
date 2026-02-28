@@ -173,7 +173,6 @@ const Whatsapplayer = () => {
                   className='form-control radius-8'
                   id='api_key'
                   name='api_key'
-                  placeholder='Enter Meta WhatsApp Access Token'
                   value={form.api_key}
                   onChange={handleChange}
                   disabled={loading}
@@ -221,7 +220,6 @@ const Whatsapplayer = () => {
                   className='form-control radius-8'
                   id='phone_number_id'
                   name='phone_number_id'
-                  placeholder='WhatsApp phone number ID'
                   value={form.phone_number_id}
                   onChange={handleChange}
                   disabled={loading}
@@ -243,8 +241,7 @@ const Whatsapplayer = () => {
                   type='text'
                   className='form-control radius-8'
                   id='business_account_id'
-                  name='business_account_id'
-                  placeholder='Template Name '
+                  name='business_account_id' 
                   value={form.business_account_id}
                   onChange={handleChange}
                   disabled={loading}

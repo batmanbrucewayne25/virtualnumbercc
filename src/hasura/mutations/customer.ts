@@ -1,4 +1,5 @@
 import { graphqlRequest } from "@/hasura";
+import { normalizeDate } from "@/utils/dateComparison";
 
 /**
  * Check if customer exists by email or phone
@@ -61,7 +62,7 @@ export const createMstCustomer = async (data: {
   profile_image?: string;
   signature_hash?: string;
   signature_metadata?: any;
-  signature_storage_url?: string;
+  signatureImage?: string;
   address?: any;
   pan_number?: string;
   pan_full_name?: string;
@@ -84,7 +85,7 @@ export const createMstCustomer = async (data: {
     $profile_image: String
     $signature_hash: String
     $signature_metadata: jsonb
-    $signature_storage_url: String
+    $signatureImage: String
     $address: jsonb
     $pan_number: String
     $pan_full_name: String
@@ -107,7 +108,7 @@ export const createMstCustomer = async (data: {
       profile_image: $profile_image
       signature_hash: $signature_hash
       signature_metadata: $signature_metadata
-      signature_storage_url: $signature_storage_url
+      signatureImage: $signatureImage
       address: $address
       pan_number: $pan_number
       pan_full_name: $pan_full_name
@@ -135,6 +136,8 @@ export const createMstCustomer = async (data: {
   }`;
 
   try {
+    const normalizedPanDob = data.pan_dob ? normalizeDate(data.pan_dob) || data.pan_dob : null;
+    const normalizedAadhaarDob = data.aadhaar_dob ? normalizeDate(data.aadhaar_dob) || data.aadhaar_dob : null;
     const result = await graphqlRequest(MUTATION, {
       reseller_id: data.reseller_id,
       email: data.email,
@@ -145,13 +148,13 @@ export const createMstCustomer = async (data: {
       profile_image: data.profile_image || null,
       signature_hash: data.signature_hash || null,
       signature_metadata: data.signature_metadata || null,
-      signature_storage_url: data.signature_storage_url || null,
+      signatureImage: data.signatureImage || null,
       address: data.address || null,
       pan_number: data.pan_number || null,
       pan_full_name: data.pan_full_name || null,
-      pan_dob: data.pan_dob || null,
+      pan_dob: normalizedPanDob,
       aadhaar_number: data.aadhaar_number || null,
-      aadhaar_dob: data.aadhaar_dob || null,
+      aadhaar_dob: normalizedAadhaarDob,
       dob_match_verified: data.dob_match_verified || false,
       gender: data.gender || null,
       gstin: data.gstin || null,
@@ -204,7 +207,7 @@ export const getMstCustomerById = async (id: string) => {
       profile_image
       signature_hash
       signature_metadata
-      signature_storage_url
+      signatureImage
       address
       status
       kyc_status
@@ -514,7 +517,7 @@ export const updateMstCustomer = async (
   }
   if (data.pan_dob !== undefined && data.pan_dob !== null && data.pan_dob !== '') {
     setFields.push('pan_dob: $pan_dob');
-    variables.pan_dob = data.pan_dob;
+    variables.pan_dob = normalizeDate(data.pan_dob) || data.pan_dob;
     variableDefs.push('$pan_dob: date');
   }
 
@@ -571,4 +574,259 @@ export const updateMstCustomer = async (
       message: error.message || "Failed to update customer",
     };
   }
+};
+
+/**
+ * Update customer signature
+ */
+export const updateCustomerSignature = async ({ 
+  email, 
+  signatureImage 
+}: { 
+  email: string; 
+  signatureImage: string;
+}) => {
+  const MUTATION = `mutation UpdateCustomerSignature(
+    $email: String!
+    $signatureImage: String!
+  ) {
+    update_mst_customer(
+      where: { email: { _eq: $email } }
+      _set: {
+        signatureImage: $signatureImage
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        email
+        signatureImage
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, { email, signatureImage });
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update customer signature",
+        data: null,
+      };
+    }
+    if (result?.data?.update_mst_customer && result.data.update_mst_customer.returning.length > 0) {
+      return {
+        success: true,
+        data: result.data.update_mst_customer.returning[0],
+        message: "Signature updated successfully",
+      };
+    }
+    return {
+      success: false,
+      message: "Failed to update customer signature",
+      data: null,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update customer signature",
+      data: null,
+    };
+  }
+};
+
+/**
+ * Get customer by email
+ */
+export const getMstCustomerByEmail = async ({ email }: { email: string }) => {
+  const QUERY = `query GetMstCustomerByEmail($email: String!) {
+    mst_customer(
+      where: { email: { _eq: $email } }
+      limit: 1
+    ) {
+      id
+      email
+      phone
+      pan_number
+      pan_full_name
+      pan_dob
+      aadhaar_number
+      aadhaar_dob
+      dob_match_verified
+      gender
+      address
+      profile_image
+      signatureImage
+      created_at
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(QUERY, { email });
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch customer",
+        data: null,
+      };
+    }
+    if (result?.data?.mst_customer && result.data.mst_customer.length > 0) {
+      return {
+        success: true,
+        data: { mst_customer: result.data.mst_customer },
+      };
+    }
+    return {
+      success: true,
+      data: { mst_customer: [] },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch customer",
+      data: null,
+    };
+  }
+};
+
+/**
+ * Update customer PAN step
+ */
+export const updateCustomerPanStep = async ({ 
+  email, 
+  pan_number, 
+  pan_dob, 
+  pan_full_name 
+}: { 
+  email: string; 
+  pan_number?: string; 
+  pan_dob?: string; 
+  pan_full_name?: string;
+}) => {
+  const UPDATE_PAN = `mutation UpdateCustomerPanStep(
+    $email: String!, 
+    $pan_number: String, 
+    $pan_dob: date, 
+    $pan_full_name: String
+  ) {
+    update_mst_customer(
+      where: { email: { _eq: $email } }, 
+      _set: { 
+        pan_number: $pan_number, 
+        pan_dob: $pan_dob, 
+        pan_full_name: $pan_full_name
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        email
+        pan_number
+        pan_dob
+        pan_full_name
+      }
+    }
+  }`;
+
+  const normalizedPanDob = pan_dob ? normalizeDate(pan_dob) || pan_dob : null;
+  return graphqlRequest(UPDATE_PAN, { 
+    email, 
+    pan_number: pan_number || null, 
+    pan_dob: normalizedPanDob, 
+    pan_full_name: pan_full_name || null 
+  });
+};
+
+/**
+ * Update customer Aadhaar step
+ */
+export const updateCustomerAadhaarStep = async ({ 
+  email, 
+  aadhaar_number, 
+  dob, 
+  gender, 
+  aadhar_photo, 
+  address 
+}: { 
+  email: string; 
+  aadhaar_number?: string; 
+  dob?: string; 
+  gender?: string; 
+  aadhar_photo?: string; 
+  address?: any;
+}) => {
+  // Build dynamic mutation - only include fields that have values
+  const setFields: string[] = [];
+  const variables: any = { email };
+  const variableDefs: string[] = ['$email: String!'];
+
+  // Add fields only if they have values
+  if (aadhaar_number !== undefined && aadhaar_number !== null && aadhaar_number !== '') {
+    setFields.push('aadhaar_number: $aadhaar_number');
+    variables.aadhaar_number = aadhaar_number;
+    variableDefs.push('$aadhaar_number: String');
+  }
+  if (dob !== undefined && dob !== null && dob !== '') {
+    setFields.push('aadhaar_dob: $aadhaar_dob');
+    variables.aadhaar_dob = normalizeDate(dob) || dob;
+    variableDefs.push('$aadhaar_dob: date');
+  }
+  if (gender) {
+    setFields.push('gender: $gender');
+    variables.gender = gender;
+    variableDefs.push('$gender: String');
+  }
+  if (aadhar_photo) {
+    // Note: customer table might use different field name, adjust as needed
+    setFields.push('profile_image: $profile_image');
+    variables.profile_image = aadhar_photo;
+    variableDefs.push('$profile_image: String');
+  }
+  if (address) {
+    setFields.push('address: $address');
+    variables.address = address;
+    variableDefs.push('$address: jsonb');
+  }
+
+  // If no fields to update, return early
+  if (setFields.length === 0) {
+    return {
+      errors: [],
+      data: { update_mst_customer: { affected_rows: 0 } }
+    };
+  }
+
+  const UPDATE_AADHAAR = `mutation UpdateCustomerAadhaarStep(
+    ${variableDefs.join('\n    ')}
+  ) {
+    update_mst_customer(
+      where: { email: { _eq: $email } }
+      _set: {
+        ${setFields.join('\n        ')}
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        email
+        aadhaar_number
+        aadhaar_dob
+        gender
+        address
+        profile_image
+      }
+    }
+  }`;
+
+  console.log("UpdateCustomerAadhaarStep mutation:", {
+    variables: { ...variables, aadhar_photo: variables.profile_image?.substring(0, 50) },
+    setFields,
+  });
+
+  const result = await graphqlRequest(UPDATE_AADHAAR, variables);
+  
+  console.log("UpdateCustomerAadhaarStep result:", result);
+  
+  return result;
 };

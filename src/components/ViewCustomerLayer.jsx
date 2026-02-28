@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import {
   getMstCustomerById,
-  updateMstCustomerStatus,
   updateMstCustomer,
 } from "@/hasura/mutations/customer";
 import ApproveCustomerModal from "./ApproveCustomerModal";
@@ -183,20 +182,32 @@ const ViewCustomerLayer = () => {
     setError("");
 
     try {
-      const result = await updateMstCustomerStatus(
-        customer.id,
-        "rejected",
-        "rejected",
-        rejectionReason
-      );
+      const { getApiBaseUrl } = await import("@/utils/apiUrl");
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/customer/reject`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          customer_id: customer.id,
+          rejection_reason: rejectionReason || "No reason provided.",
+        }),
+      });
+
+      const result = await response.json();
 
       if (result.success) {
         await fetchCustomer();
         setRejectModalOpen(false);
+        const message = result.data?.emailWarning
+          ? `Customer rejected successfully. ${result.data.emailWarning}`
+          : "Customer rejected successfully! Rejection email sent to customer.";
         setAlertModal({
           isOpen: true,
           title: "Success",
-          message: "Customer rejected successfully!",
+          message,
           type: "success"
         });
       } else {
@@ -361,6 +372,16 @@ const ViewCustomerLayer = () => {
           </div>
         )}
 
+        
+{customer.rejection_reason && (
+            <div className="col-md-12">
+              <div className="alert alert-danger radius-8">
+                <h6 className="text-sm mb-8">Rejection Reason:</h6>
+                <p className="text-sm mb-0">{customer.rejection_reason}</p>
+              </div>
+            </div>
+          )}
+
         {/* Action Buttons - Only show if status is pending */}
         
         {customer.approval !== "approved"   && (
@@ -400,14 +421,14 @@ const ViewCustomerLayer = () => {
                 Basic Information
               </h6>
               <div className="d-flex flex-column gap-2">
-                <div>
+                {/* <div>
                   <span className="text-xs text-secondary-light">
                     Profile Name:
                   </span>
                   <p className="text-sm fw-medium mb-0">
                     {customer.profile_name || "N/A"}
                   </p>
-                </div>
+                </div> */}
                 <div>
                   <span className="text-xs text-secondary-light">Email:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -420,14 +441,14 @@ const ViewCustomerLayer = () => {
                     {customer.phone || "N/A"}
                   </p>
                 </div>
-                <div>
+                {/* <div>
                   <span className="text-xs text-secondary-light">
                     Business Email:
                   </span>
                   <p className="text-sm fw-medium mb-0">
                     {customer.business_email || "N/A"}
                   </p>
-                </div>
+                </div> */}
                 <div>
                   <span className="text-xs text-secondary-light">Status:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -452,7 +473,7 @@ const ViewCustomerLayer = () => {
                     </span>
                   </p>
                 </div>
-                <div>
+                {/* <div>
                   <span className="text-xs text-secondary-light">
                     KYC Status:
                   </span>
@@ -469,7 +490,7 @@ const ViewCustomerLayer = () => {
                       {customer.kyc_status || "N/A"}
                     </span>
                   </p>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>
@@ -651,7 +672,7 @@ const ViewCustomerLayer = () => {
                     </p>
                   )}
                 </div>
-                <div>
+                {/* <div>
                   <span className="text-xs text-secondary-light">
                     DOB Match Verified:
                   </span>
@@ -662,7 +683,7 @@ const ViewCustomerLayer = () => {
                       <span className="badge bg-warning">Not Verified</span>
                     )}
                   </p>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>
@@ -691,69 +712,51 @@ const ViewCustomerLayer = () => {
             </div>
           </div>
 
-          {customer.address && (
-            <div className="col-md-12">
-              <div className="card bg-base border p-16 radius-8">
-                <h6 className="text-sm text-secondary-light mb-12">Address</h6>
-                <div className="d-flex flex-column gap-2">
-                  <p className="text-sm fw-medium mb-0">
-                    {formatAddress(customer.address)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {customer.rejection_reason && (
-            <div className="col-md-12">
-              <div className="alert alert-danger radius-8">
-                <h6 className="text-sm mb-8">Rejection Reason:</h6>
-                <p className="text-sm mb-0">{customer.rejection_reason}</p>
-              </div>
-            </div>
-          )}
-
-          {(customer.signature_storage_url || customer.signature_hash) && (
+          {(customer.signatureImage || customer.signature_hash) && (
             <div className="col-md-6">
               <div className="card bg-base border p-16 radius-8">
                 <h6 className="text-sm text-secondary-light mb-12">
                   Digital Signature
                 </h6>
                 <div className="d-flex flex-column gap-2">
-                  {customer.signature_storage_url ? (
+                  {customer.signatureImage ? (
                     <div>
-                      <img 
-                        src={customer.signature_storage_url.startsWith('data:') || customer.signature_storage_url.startsWith('http') 
-                          ? customer.signature_storage_url 
-                          : customer.signature_storage_url} 
-                        alt="Digital Signature" 
-                        className="rounded border"
-                        style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
-                        onError={(e) => {
-                          console.error('Error loading signature image:', e);
-                          e.target.style.display = 'none';
-                          const errorDiv = document.createElement('div');
-                          errorDiv.className = 'alert alert-warning';
-                          errorDiv.textContent = 'Failed to load signature image';
-                          e.target.parentNode?.appendChild(errorDiv);
-                        }}
-                        onClick={() => {
-                          const img = customer.signature_storage_url.startsWith('data:') || customer.signature_storage_url.startsWith('http') 
-                            ? customer.signature_storage_url 
-                            : customer.signature_storage_url;
-                          const newWindow = window.open();
-                          if (newWindow) {
-                            newWindow.document.write(`<img src="${img}" style="max-width: 100%; height: auto; background: white;" />`);
-                          }
-                        }}
-                        title="Click to view full size"
-                      />
+                      {(() => {
+                        const raw = customer.signatureImage;
+                        const isFullUrl = raw && (raw.startsWith('data:') || raw.startsWith('http') || raw.startsWith('/'));
+                        const IMAGE_UPLOAD_PATH = import.meta.env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+                        const signatureSrc = isFullUrl ? raw : `${IMAGE_UPLOAD_PATH}/signatures/${raw}`;
+                        return (
+                          <img 
+                            src={signatureSrc} 
+                            alt="Digital Signature" 
+                            className="rounded border"
+                            style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
+                            onError={(e) => {
+                              console.error('Error loading signature image:', e);
+                              e.target.style.display = 'none';
+                              const errorDiv = document.createElement('div');
+                              errorDiv.className = 'alert alert-warning';
+                              errorDiv.textContent = 'Failed to load signature image';
+                              e.target.parentNode?.appendChild(errorDiv);
+                            }}
+                            onClick={() => {
+                              const newWindow = window.open();
+                              if (newWindow) {
+                                newWindow.document.write(`<img src="${signatureSrc}" style="max-width: 100%; height: auto; background: white;" />`);
+                              }
+                            }}
+                            title="Click to view full size"
+                          />
+                        );
+                      })()}
                     </div>
                   ) : customer.signature_hash ? (
                     <div>
                       <span className="text-xs text-secondary-light">Signature Hash:</span>
                       <p className="text-sm fw-medium mb-0">
-                        {customer.signature_hash.substring(0, 32)}...
+                        {customer.signature_hash?.substring(0, 32) ?? ''}...
                       </p>
                       <small className="text-secondary-light">Signature stored as hash (image not available)</small>
                     </div>
@@ -828,7 +831,7 @@ const ViewCustomerLayer = () => {
                     <th scope="col">Expiry Date</th>
                     <th scope="col">Days Left</th>
                     <th scope="col">Status</th>
-                    <th scope="col" className="text-center">Auto Renew</th>
+                    {/* <th scope="col" className="text-center">Auto Renew</th> */}
                   </tr>
                 </thead>
                 <tbody>
@@ -885,13 +888,13 @@ const ViewCustomerLayer = () => {
                             {vn.status || "N/A"}
                           </span>
                         </td>
-                        <td className="text-center">
+                        {/* <td className="text-center">
                           {vn.is_auto_renew ? (
                             <span className="badge bg-success">Enabled</span>
                           ) : (
                             <span className="badge bg-secondary">Disabled</span>
                           )}
-                        </td>
+                        </td> */}
                       </tr>
                     );
                   })}
