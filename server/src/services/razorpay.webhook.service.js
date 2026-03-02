@@ -318,22 +318,34 @@ export async function findCustomerByEmail(email, resellerId) {
 }
 
 /**
- * Find existing pending transaction by customer_id and amount
- * Uses amount tolerance to handle floating point precision issues
- * Returns the pending transaction for updating (instead of deleting)
- * @param {string} customerId - Customer UUID
- * @param {number} amount - Transaction amount
- * @param {string} resellerId - Reseller UUID
- * @returns {Promise<object|null>} Returns the pending transaction if found
+ * Find existing pending transaction by customer_id and amount.
+ *
+ * MATCHING STRATEGY (in priority order):
+ *   1. By razorpay_order_id  — most reliable for order-based flows
+ *   2. By customer_id with razorpay_payment_id IS NULL — for payment-link flows
+ *      where the pending record was created before any Razorpay ID was known
+ *   3. Never match by razorpay_payment_id here — pending transactions don't
+ *      have a payment_id yet; that's the whole reason we're looking for them.
+ *
+ * NOTE: paymentId parameter is accepted but intentionally NOT used as a filter
+ * for finding pending transactions. It is used only as a safeguard to skip the
+ * lookup if a transaction with that payment_id already exists (handled by callers).
+ *
+ * @param {string|null} customerId  - Customer UUID
+ * @param {number}      amount      - Payment amount in rupees
+ * @param {string}      resellerId  - Reseller UUID
+ * @param {string|null} orderId     - Razorpay order_id (if order-based flow)
+ * @param {string|null} paymentId   - Razorpay payment_id (unused for filtering here)
+ * @returns {Promise<object|null>}
  */
 export async function findPendingTransaction(
   customerId,
   amount,
   resellerId,
   orderId = null,
-  paymentId = null
+  paymentId = null // kept for API compat; not used as DB filter
 ) {
-  if ((!customerId && !orderId && !paymentId) || !amount) {
+  if ((!customerId && !orderId) || !amount || !resellerId) {
     return null;
   }
 
@@ -342,28 +354,11 @@ export async function findPendingTransaction(
   const minAmount = amount - amountTolerance;
   const maxAmount = amount + amountTolerance;
 
-  // Build dynamic where clause
-  let whereClause = {
+  const baseWhere = {
     amount: { _gte: minAmount, _lte: maxAmount },
     reseller_id: { _eq: resellerId },
     status: { _in: ["pending", "authorized"] },
   };
-
-  // Search by payment_id if provided (most reliable)
-  if (paymentId) {
-    whereClause.razorpay_payment_id = { _eq: paymentId };
-  }
-  // Search by order_id
-  else if (orderId) {
-    whereClause.razorpay_order_id = { _eq: orderId };
-  }
-  // Search by customer_id (least reliable, only if no payment_id)
-  else if (customerId) {
-    whereClause.customer_id = { _eq: customerId };
-    whereClause.razorpay_payment_id = { _is_null: true };
-  } else {
-    return null;
-  }
 
   const query = `
     query FindPendingTransactions(
@@ -387,19 +382,51 @@ export async function findPendingTransaction(
     }
   `;
 
-  try {
-    const result = await client.client.request(query, {
-      where: whereClause,
-    });
-
-    if (result.mst_transaction && result.mst_transaction.length > 0) {
-      return result.mst_transaction[0];
+  // --- Attempt 1: match by order_id (most reliable for order-based flows) ---
+  if (orderId) {
+    try {
+      const result = await client.client.request(query, {
+        where: { ...baseWhere, razorpay_order_id: { _eq: orderId } },
+      });
+      if (result.mst_transaction?.length > 0) {
+        console.log(
+          `[findPendingTransaction] Found by order_id=${orderId}: ${result.mst_transaction[0].id}`
+        );
+        return result.mst_transaction[0];
+      }
+    } catch (error) {
+      console.error("[findPendingTransaction] order_id lookup error:", error.message);
     }
-    return null;
-  } catch (error) {
-    console.error("[findPendingTransaction] Error:", error);
-    return null;
   }
+
+  // --- Attempt 2: match by customer_id where no payment_id yet ---
+  // This is the critical path for Razorpay Payment Links:
+  // The pending transaction was created with status="pending" and no payment_id.
+  // We match it by customer + amount and claim it by writing the payment_id in.
+  if (customerId) {
+    try {
+      const result = await client.client.request(query, {
+        where: {
+          ...baseWhere,
+          customer_id: { _eq: customerId },
+          razorpay_payment_id: { _is_null: true }, // only unclaimed pending records
+        },
+      });
+      if (result.mst_transaction?.length > 0) {
+        console.log(
+          `[findPendingTransaction] Found by customer_id=${customerId}: ${result.mst_transaction[0].id}`
+        );
+        return result.mst_transaction[0];
+      }
+    } catch (error) {
+      console.error("[findPendingTransaction] customer_id lookup error:", error.message);
+    }
+  }
+
+  console.log(
+    `[findPendingTransaction] No pending transaction found for customer=${customerId} amount=${amount} reseller=${resellerId}`
+  );
+  return null;
 }
 
 /**
@@ -555,17 +582,20 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
   // Extract customer_id from notes first (most reliable)
   let customerId = paymentData.notes?.customer_id || null;
 
+  // Declare customerEmail at function scope so it's accessible throughout
+  // (was previously declared with const inside the if-block — a ReferenceError
+  // when accessed later in the customer-name lookup below)
+  const customerEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email ||
+    null;
+
   // Fallback: Find by email
-  if (!customerId) {
-    const customerEmail =
-      paymentData.email ||
-      paymentData.notes?.email ||
-      paymentData.notes?.customer_email;
-    if (customerEmail) {
-      const customer = await findCustomerByEmail(customerEmail, resellerId);
-      if (customer) {
-        customerId = customer.id;
-      }
+  if (!customerId && customerEmail) {
+    const customer = await findCustomerByEmail(customerEmail, resellerId);
+    if (customer) {
+      customerId = customer.id;
     }
   }
 
@@ -678,9 +708,10 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
     });
 
     if (result?.insert_mst_transaction_one) {
-      // Update customer status to "active" if payment is successful
+      const newTxnId = result.insert_mst_transaction_one.id;
+      // Trigger full post-payment flow (virtual number + customer activation + email)
       if (customerId && (status === "success" || status === "authorized")) {
-        await updateCustomerStatusAfterPayment(customerId, resellerId);
+        await updateCustomerStatusAfterPayment(customerId, resellerId, newTxnId);
       }
 
       return {
@@ -723,43 +754,192 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
 }
 
 /**
- * Update customer status to active after successful payment
- * @param {string} customerId - Customer UUID
- * @param {string} resellerId - Reseller UUID
+ * Complete post-payment flow after a successful Razorpay webhook:
+ *   1. Check if customer already has a virtual number (idempotency)
+ *   2. If not, generate + persist a virtual number
+ *   3. Link the virtual number to the transaction record
+ *   4. Update customer status → active / kyc_status → verified / approval → approved
+ *   5. Send virtual-number email via reseller SMTP (best-effort, never throws)
+ *
+ * This function is idempotent: calling it twice for the same customer is safe.
+ *
+ * @param {string} customerId  - Customer UUID
+ * @param {string} resellerId  - Reseller UUID
+ * @param {string} transactionId - Transaction UUID (to link virtual number)
+ * @returns {Promise<boolean>} true on full success
  */
-async function updateCustomerStatusAfterPayment(customerId, resellerId) {
+async function updateCustomerStatusAfterPayment(customerId, resellerId, transactionId = null) {
   if (!customerId) {
+    console.warn("[postPayment] customerId is null — cannot complete post-payment flow");
     return false;
   }
 
   const client = getHasuraClient();
 
-  const mutation = `
-    mutation UpdateCustomerStatus($customer_id: uuid!, $status: String!, $kyc_status: String!, $approval: String!) {
-      update_mst_customer_by_pk(
-        pk_columns: { id: $customer_id }
-        _set: { status: $status, kyc_status: $kyc_status, approval: $approval }
-      ) {
-        id
-        status
-        kyc_status
-        approval
-        updated_at
-      }
-    }
-  `;
-
   try {
-    const result = await client.client.request(mutation, {
+    // ── 1. Fetch customer details ────────────────────────────────────────────
+    const customerQuery = `
+      query GetCustomerForPayment($id: uuid!) {
+        mst_customer_by_pk(id: $id) {
+          id
+          email
+          phone
+          profile_name
+          status
+          mst_reseller {
+            id
+            email
+            first_name
+            last_name
+            business_name
+          }
+          mst_virtual_numbers(limit: 1, order_by: { created_at: desc }) {
+            id
+            virtual_number
+            status
+          }
+        }
+      }
+    `;
+    const customerResult = await client.client.request(customerQuery, { id: customerId });
+    const customer = customerResult?.mst_customer_by_pk;
+    if (!customer) {
+      console.error(`[postPayment] Customer ${customerId} not found`);
+      return false;
+    }
+
+    // ── 2. Idempotency: skip if already active with a virtual number ─────────
+    const alreadyActive =
+      customer.status === "active" && customer.mst_virtual_numbers?.length > 0;
+    if (alreadyActive) {
+      console.log(
+        `[postPayment] Customer ${customerId} is already active with a virtual number — skipping`
+      );
+      return true;
+    }
+
+    // ── 3. Generate virtual number ───────────────────────────────────────────
+    const randomDigits = Math.floor(1000000000 + Math.random() * 9000000000);
+    const virtualNumber = `+91${randomDigits}`;
+    const purchaseDate = new Date().toISOString().split("T")[0];
+    const expiryDate = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 360);
+      return d.toISOString().split("T")[0];
+    })();
+
+    const createVnMutation = `
+      mutation CreateVirtualNumber(
+        $customer_id: uuid!
+        $virtual_number: String!
+        $reseller_id: uuid
+        $purchase_date: date!
+        $expiry_date: date!
+        $call_forwarding_number: String
+      ) {
+        insert_mst_virtual_number_one(object: {
+          customer_id: $customer_id
+          virtual_number: $virtual_number
+          reseller_id: $reseller_id
+          status: "active"
+          purchase_date: $purchase_date
+          expiry_date: $expiry_date
+          call_forwarding_number: $call_forwarding_number
+        }) {
+          id
+          virtual_number
+        }
+      }
+    `;
+    const vnResult = await client.client.request(createVnMutation, {
       customer_id: customerId,
-      status: "active",
-      kyc_status: "verified",
-      approval: "approved",
+      virtual_number: virtualNumber,
+      reseller_id: resellerId || null,
+      purchase_date: purchaseDate,
+      expiry_date: expiryDate,
+      call_forwarding_number: customer.phone || null,
     });
 
-    return result?.update_mst_customer_by_pk ? true : false;
+    const vnRecord = vnResult?.insert_mst_virtual_number_one;
+    if (!vnRecord) {
+      throw new Error("insert_mst_virtual_number_one returned null");
+    }
+    console.log(`[postPayment] Virtual number ${virtualNumber} created for customer ${customerId}`);
+
+    // ── 4. Link virtual number to transaction ─────────────────────────────────
+    if (transactionId && vnRecord.id) {
+      try {
+        const linkMutation = `
+          mutation LinkVirtualNumberToTransaction($txn_id: uuid!, $vn_id: uuid!) {
+            update_mst_transaction_by_pk(
+              pk_columns: { id: $txn_id }
+              _set: { virtual_number_id: $vn_id }
+            ) { id }
+          }
+        `;
+        await client.client.request(linkMutation, {
+          txn_id: transactionId,
+          vn_id: vnRecord.id,
+        });
+      } catch (linkErr) {
+        // Non-fatal: log but continue
+        console.warn(`[postPayment] Could not link virtual number to transaction: ${linkErr.message}`);
+      }
+    }
+
+    // ── 5. Update customer status ─────────────────────────────────────────────
+    const statusMutation = `
+      mutation ActivateCustomer($customer_id: uuid!) {
+        update_mst_customer_by_pk(
+          pk_columns: { id: $customer_id }
+          _set: { status: "active", kyc_status: "verified", approval: "approved" }
+        ) {
+          id
+          status
+          updated_at
+        }
+      }
+    `;
+    const statusResult = await client.client.request(statusMutation, {
+      customer_id: customerId,
+    });
+
+    if (!statusResult?.update_mst_customer_by_pk) {
+      throw new Error("Customer status update returned null");
+    }
+    console.log(`[postPayment] Customer ${customerId} activated`);
+
+    // ── 6. Send virtual-number email (best-effort) ────────────────────────────
+    try {
+      const { sendVirtualNumberEmail } = await import("../../services/emailService.js");
+      const { getResellerSmtpConfig } = await import("./smtpConfig.service.js");
+
+      const reseller = customer.mst_reseller;
+      const resellerName =
+        reseller?.business_name ||
+        (reseller?.first_name ? `${reseller.first_name} ${reseller.last_name}` : null) ||
+        reseller?.email ||
+        "Your Provider";
+
+      const smtpConfig = await getResellerSmtpConfig(resellerId);
+
+      await sendVirtualNumberEmail(
+        customer.email,
+        customer.profile_name || customer.email,
+        virtualNumber,
+        resellerName,
+        smtpConfig
+      );
+
+      console.log(`[postPayment] Virtual number email sent to ${customer.email}`);
+    } catch (emailErr) {
+      // Non-fatal: payment succeeded; log and move on
+      console.error(`[postPayment] Failed to send virtual number email: ${emailErr.message}`);
+    }
+
+    return true;
   } catch (error) {
-    console.error("[updateCustomerStatus] Error:", error.message);
+    console.error(`[postPayment] Error completing post-payment flow for customer ${customerId}:`, error.message);
     return false;
   }
 }
@@ -1072,7 +1252,8 @@ export async function processPaymentAuthorized(resellerId, payload) {
 
     if (updateResult.success) {
       if (customerId) {
-        await updateCustomerStatusAfterPayment(customerId, resellerId);
+        // authorized = payment captured by bank; generate virtual number
+        await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
       }
       return updateResult;
     }
@@ -1153,11 +1334,12 @@ export async function processPaymentCaptured(resellerId, payload) {
           resellerId
         );
 
-        // Update customer status if successful
+        // Trigger full post-payment flow (virtual number + activation + email)
         if (updateResult.success && existingTransaction.customer_id) {
           await updateCustomerStatusAfterPayment(
             existingTransaction.customer_id,
-            resellerId
+            resellerId,
+            existingTransaction.id
           );
         }
 
@@ -1243,9 +1425,9 @@ export async function processPaymentCaptured(resellerId, payload) {
       result = updateResult;
       transactionId = pendingTransaction.id;
 
-      // Update customer status to active after successful payment
+      // Trigger full post-payment flow (virtual number + customer activation + email)
       if (customerId) {
-        await updateCustomerStatusAfterPayment(customerId, resellerId);
+        await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
       }
     }
   }
@@ -1514,8 +1696,8 @@ export async function processOrderPaid(resellerId, payload) {
         );
 
         if (updateResult.success) {
-          // Update customer status to active after successful payment
-          await updateCustomerStatusAfterPayment(customerId, resellerId);
+          // Trigger full post-payment flow (virtual number + activation + email)
+          await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
           return updateResult;
         } else {
           console.error(
@@ -1636,8 +1818,8 @@ export async function processSubscriptionCharged(resellerId, payload) {
       );
 
       if (updateResult.success) {
-        // Update customer status to active after successful payment
-        await updateCustomerStatusAfterPayment(customerId, resellerId);
+        // Trigger full post-payment flow (virtual number + activation + email)
+        await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
         return updateResult;
       } else {
         console.error(

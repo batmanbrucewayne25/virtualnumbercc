@@ -250,6 +250,9 @@ export class CustomerService {
           $status: String
           $reference_number: String
           $payment_date: date
+          $customer_email: String
+          $customer_name: String
+          $notes: jsonb
         ) {
           insert_mst_transaction_one(object: {
             transaction_number: $transaction_number
@@ -263,6 +266,9 @@ export class CustomerService {
             status: $status
             reference_number: $reference_number
             payment_date: $payment_date
+            customer_email: $customer_email
+            customer_name: $customer_name
+            notes: $notes
           }) {
             id
             transaction_number
@@ -293,6 +299,9 @@ export class CustomerService {
         status: transactionData.status || "success",
         reference_number: transactionData.reference_number || null,
         payment_date: transactionData.payment_date || null,
+        customer_email: transactionData.customer_email || null,
+        customer_name: transactionData.customer_name || null,
+        notes: transactionData.notes || null,
       });
 
       return result.insert_mst_transaction_one;
@@ -634,7 +643,10 @@ export class CustomerService {
           throw new Error("Subscription plan not found");
         }
 
-        // 2. Create pending transaction record
+        // 2. Create pending transaction record.
+        // IMPORTANT: Store customer_email and notes.customer_id so the webhook
+        // service can match this pending record even when using static payment
+        // links (which don't embed customer_id in Razorpay's own notes).
         await this.createTransaction({
           customer_id: customer_id,
           reseller_id: reseller_id,
@@ -646,6 +658,14 @@ export class CustomerService {
           status: "pending",
           reference_number: null,
           payment_date: null,
+          customer_email: customer.email || null,
+          customer_name: customer.profile_name || null,
+          notes: {
+            customer_id: customer_id,
+            reseller_id: reseller_id,
+            subscription_plan_id: subscription_plan_id,
+            plan_name: subscriptionPlan.plan_name,
+          },
         });
 
         // 3. Update customer status (but don't generate virtual number yet - wait for payment)
