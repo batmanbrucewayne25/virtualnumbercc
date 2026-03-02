@@ -28,11 +28,10 @@ const router = express.Router();
  * @note    This route receives payment notifications from Razorpay
  *          Resellers configure this URL in their Razorpay dashboard
  */
-router.post(
-  "/webhook/:resellerId",
-  express.raw({ type: "application/json" }),
-  handleWebhook
-);
+// NOTE: Raw body is captured by the global middleware in index.js
+// via req.rawBody — do NOT add express.raw() or express.json() here
+// as the global body parser has already run.
+router.post("/webhook/:resellerId", handleWebhook);
 
 // ==========================================
 // CONFIGURATION ROUTES (Private)

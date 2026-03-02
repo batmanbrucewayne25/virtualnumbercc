@@ -37,7 +37,35 @@ app.use(
   })
 );
 
-// Body parser middleware - but webhook routes will use raw body
+// Body parser middleware
+// CRITICAL: For Razorpay webhook routes we must preserve the raw body buffer
+// so that HMAC-SHA256 signature verification works correctly.
+// express.json() must NOT run on webhook routes — it consumes the stream and
+// JSON.stringify(parsed) does not reproduce the exact original byte sequence.
+app.use((req, res, next) => {
+  // Capture raw body for Razorpay webhook signature verification
+  if (req.path.startsWith("/api/razorpay/webhook/")) {
+    let data = [];
+    req.on("data", (chunk) => data.push(chunk));
+    req.on("end", () => {
+      req.rawBody = Buffer.concat(data).toString("utf8");
+      // Also make req.body available as a parsed object
+      try {
+        req.body = JSON.parse(req.rawBody);
+      } catch {
+        req.body = {};
+      }
+      next();
+    });
+    req.on("error", (err) => {
+      console.error("[RawBody] Stream error:", err);
+      next(err);
+    });
+  } else {
+    next();
+  }
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

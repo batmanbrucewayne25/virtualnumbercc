@@ -20,10 +20,23 @@ export const handleWebhook = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get raw body for signature verification
-  const rawBody =
-    typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+  // Use the preserved raw body for signature verification.
+  // req.rawBody is set by the global middleware in index.js BEFORE any JSON parsing.
+  // Using JSON.stringify(req.body) is WRONG — it does not reproduce the original
+  // byte sequence (key order, whitespace, number formatting differ), causing HMAC
+  // mismatch and every webhook returning 401.
+  const rawBody = req.rawBody;
   const signature = req.headers["x-razorpay-signature"];
+
+  if (!rawBody) {
+    console.error(
+      "[Webhook] rawBody is missing — req.rawBody was not set by middleware. Check index.js body capture middleware."
+    );
+    return res.status(400).json({
+      success: false,
+      message: "Webhook request body could not be read",
+    });
+  }
 
   // Get reseller's Razorpay config for webhook secret
   const config = await WebhookService.getResellerRazorpayConfig(resellerId);
