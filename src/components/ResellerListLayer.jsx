@@ -552,48 +552,50 @@ const ResellerListLayer = () => {
                           </div>
                         )}
                       </td>
-                      <td className='text-center'>
-                        {reseller.suspended_at ? (
-                          <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm">
-                            SUSPEND
-                          </span>
-                        ) : (
-                          <PermissionGuard 
-                            module="Reseller" 
-                            action="update"
-                            fallback={
-                              <span
-                                className={`${
-                                  reseller.status
-                                    ? "bg-success-focus text-success-600 border border-success-main"
-                                    : "bg-danger-focus text-danger-600 border border-danger-main"
-                                } px-24 py-4 radius-4 fw-medium text-sm`}
-                              >
-                                {reseller.status ? "Active" : "Inactive"}
-                              </span>
-                            }
-                          >
-                            <div className="form-check form-switch d-inline-flex align-items-center justify-content-center">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                                role="switch"
-                                id={`status-toggle-${reseller.id}`}
-                                checked={reseller.status || false}
-                                onChange={() => handleToggleStatusClick(reseller)}
-                                disabled={actionLoading || reseller.suspended_at}
-                                style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer', width: '3rem', height: '1.5rem' }}
-                              />
-                              <label
-                                className="form-check-label ms-2 text-sm fw-medium"
-                                htmlFor={`status-toggle-${reseller.id}`}
-                                style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer' }}
-                              >
-                                {reseller.status ? "Active" : "Inactive"}
-                              </label>
-                            </div>
-                          </PermissionGuard>
-                        )}
+                      <td className="text-center">
+                        <div className="d-flex align-items-center justify-content-center">
+                          {reseller.suspended_at ? (
+                            <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm">
+                              SUSPEND
+                            </span>
+                          ) : (
+                            <PermissionGuard
+                              module="Reseller"
+                              action="update"
+                              fallback={
+                                <span
+                                  className={`${
+                                    reseller.status
+                                      ? "bg-success-focus text-success-600 border border-success-main"
+                                      : "bg-danger-focus text-danger-600 border border-danger-main"
+                                  } px-24 py-4 radius-4 fw-medium text-sm`}
+                                >
+                                  {reseller.status ? "Active" : "Inactive"}
+                                </span>
+                              }
+                            >
+                              <div className="form-check form-switch d-flex align-items-center gap-2 mb-0" style={{ paddingLeft: '3.5rem' }}>
+                                <input
+                                  className="form-check-input mt-0"
+                                  type="checkbox"
+                                  role="switch"
+                                  id={`status-toggle-${reseller.id}`}
+                                  checked={reseller.status || false}
+                                  onChange={() => handleToggleStatusClick(reseller)}
+                                  disabled={actionLoading || reseller.suspended_at}
+                                  style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer', width: '3rem', height: '1.5rem', marginLeft: '-3.5rem' }}
+                                />
+                                <label
+                                  className="text-sm fw-medium mb-0"
+                                  htmlFor={`status-toggle-${reseller.id}`}
+                                  style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer' }}
+                                >
+                                  {reseller.status ? "Active" : "Inactive"}
+                                </label>
+                              </div>
+                            </PermissionGuard>
+                          )}
+                        </div>
                       </td>
                       <td className='text-center'>
                         <div className='d-flex align-items-center gap-10 justify-content-center flex-wrap'>

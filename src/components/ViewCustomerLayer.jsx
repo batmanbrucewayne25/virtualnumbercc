@@ -350,10 +350,10 @@ const ViewCustomerLayer = () => {
         </h5>
         <button
           type="button"
-          className="btn btn-secondary btn-sm"
+          className="btn btn-secondary btn-sm d-flex align-items-center gap-1"
           onClick={() => navigate("/customer-list")}
         >
-          <Icon icon="mdi:arrow-left" className="icon me-2" />
+          <Icon icon="mdi:arrow-left" className="icon text-xl line-height-1" />
           Back
         </button>
       </div>
@@ -388,25 +388,25 @@ const ViewCustomerLayer = () => {
           <div className="d-flex gap-3 mb-24">
             <button
               type="button"
-              className="btn btn-success"
+              className="btn btn-success d-flex align-items-center gap-1"
               onClick={handleApproveClick}
               disabled={actionLoading}
             >
               <Icon
                 icon="material-symbols:check-circle-outline"
-                className="icon me-2"
+                className="icon text-xl line-height-1"
               />
               Approve
             </button>
             <button
               type="button"
-              className="btn btn-danger"
+              className="btn btn-danger d-flex align-items-center gap-1"
               onClick={handleRejectClick}
               disabled={actionLoading}
             >
               <Icon
                 icon="material-symbols:cancel-outline"
-                className="icon me-2"
+                className="icon text-xl line-height-1"
               />
               Reject
             </button>
@@ -421,14 +421,6 @@ const ViewCustomerLayer = () => {
                 Basic Information
               </h6>
               <div className="d-flex flex-column gap-2">
-                {/* <div>
-                  <span className="text-xs text-secondary-light">
-                    Profile Name:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {customer.profile_name || "N/A"}
-                  </p>
-                </div> */}
                 <div>
                   <span className="text-xs text-secondary-light">Email:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -810,10 +802,10 @@ const ViewCustomerLayer = () => {
             {(userRole === 'admin' || userRole === 'super_admin' || userRole === 'reseller') && (
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary btn-sm d-flex align-items-center gap-1"
                 onClick={() => setShowAddVirtualNumberModal(true)}
               >
-                <Icon icon="ic:baseline-plus" className="icon me-2" />
+                <Icon icon="ic:baseline-plus" className="icon text-xl line-height-1" />
                 Add Virtual Number
               </button>
             )}

@@ -394,21 +394,21 @@ const ViewUserLayer = () => {
           {customer.status !== "suspended" && (
             <button
               type="button"
-              className="btn btn-danger btn-sm"
+              className="btn btn-danger btn-sm d-flex align-items-center gap-1"
               onClick={handleSuspend}
               disabled={actionLoading}
             >
               {actionLoading ? (
                 <>
                   <span
-                    className="spinner-border spinner-border-sm me-2"
+                    className="spinner-border spinner-border-sm"
                     role="status"
                   ></span>
                   Suspending...
                 </>
               ) : (
                 <>
-                  <Icon icon="mdi:account-cancel" className="icon me-2" />
+                  <Icon icon="mdi:account-cancel" className="icon text-xl line-height-1" />
                   Suspend Account
                 </>
               )}
@@ -416,10 +416,10 @@ const ViewUserLayer = () => {
           )}
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm d-flex align-items-center gap-1"
             onClick={() => navigate("/users-list")}
           >
-            <Icon icon="mdi:arrow-left" className="icon me-2" />
+            <Icon icon="mdi:arrow-left" className="icon text-xl line-height-1" />
             Back
           </button>
         </div>
@@ -440,14 +440,6 @@ const ViewUserLayer = () => {
                 Basic Information
               </h6>
               <div className="d-flex flex-column gap-2">
-                <div>
-                  <span className="text-xs text-secondary-light">
-                    Profile Name:
-                  </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {customer.profile_name || "N/A"}
-                  </p>
-                </div>
                 <div>
                   <span className="text-xs text-secondary-light">Email:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -473,7 +465,7 @@ const ViewUserLayer = () => {
                   <p className="text-sm fw-medium mb-0">
                     <span
                       className={`badge ${
-                        customer.status === "approved"
+                        customer.status === "active" || customer.status === "approved"
                           ? "bg-success"
                           : customer.status === "suspended"
                           ? "bg-danger"
@@ -568,11 +560,11 @@ const ViewUserLayer = () => {
             {(userRole === 'admin' || userRole === 'super_admin' || userRole === 'reseller') && (
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary btn-sm d-flex align-items-center gap-1"
                 onClick={handleApproveClick}
                 disabled={actionLoading}
               >
-                <Icon icon="ic:baseline-plus" className="icon me-2" />
+                <Icon icon="ic:baseline-plus" className="icon text-xl line-height-1" />
                 Add Virtual Number
               </button>
             )}
@@ -741,12 +733,12 @@ const ViewUserLayer = () => {
             <h6 className="text-sm text-secondary-light mb-0">Transactions</h6>
             <button
               type="button"
-              className="btn btn-sm btn-outline-primary"
+              className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
               onClick={() => setShowTransactions(!showTransactions)}
             >
               <Icon
                 icon={showTransactions ? "mdi:chevron-up" : "mdi:chevron-down"}
-                className="icon me-2"
+                className="icon text-xl line-height-1"
               />
               {showTransactions ? "Hide" : "Show"} Transactions
             </button>

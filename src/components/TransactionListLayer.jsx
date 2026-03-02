@@ -69,8 +69,8 @@ const TransactionListLayer = () => {
       // Prepare data for Excel
       const excelData = transactions.map((txn) => ({
         "Transaction Number": txn.transaction_number || "-",
-        "Customer Name":
-          txn.mst_customer?.profile_name || txn.mst_customer?.email || "-",
+        "Customer":
+          txn.mst_customer?.email || "-",
         "Customer Email": txn.mst_customer?.email || "-",
         "Virtual Number": txn.mst_virtual_number?.virtual_number || "-",
         "Payment Mode": txn.payment_mode || "-",
@@ -356,7 +356,7 @@ const TransactionListLayer = () => {
                     <th scope="col">S.L</th>
                     <th scope="col">Transaction #</th>
                     <th scope="col">Date</th>
-                    <th scope="col">Customer Name</th>
+                    <th scope="col">Customer</th>
                     <th scope="col">Virtual Number</th>
                     <th scope="col">Payment Mode</th>
                     <th scope="col">Payment Method</th>
@@ -380,14 +380,9 @@ const TransactionListLayer = () => {
                       </td>
                       <td>{formatDate(txn.payment_date || txn.created_at)}</td>
                       <td>
-                        <div className="d-flex flex-column">
-                          <span className="text-sm fw-medium">
-                            {txn.mst_customer?.profile_name || "N/A"}
-                          </span>
-                          <span className="text-xs text-secondary-light">
-                            {txn.mst_customer?.email || ""}
-                          </span>
-                        </div>
+                        <span className="text-sm">
+                          {txn.mst_customer?.email || "-"}
+                        </span>
                       </td>
                       <td>
                         <span className="text-sm">
