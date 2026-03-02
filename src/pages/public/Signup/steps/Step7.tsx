@@ -36,16 +36,17 @@ interface UserData {
   pan_number?: string;
   phone?: string;
   profile_image?: string;
+  logo?: string;
   id?: string;
 }
 
 const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   // Validate step access
   const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 7 });
-  const [profileImage, setProfileImage] = useState<string>("");
-  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
-  const [profileImageUploaded, setProfileImageUploaded] = useState<boolean>(false);
-  const [uploadingProfileImage, setUploadingProfileImage] = useState<boolean>(false);
+  const [logo, setLogo] = useState<string>("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoUploaded, setLogoUploaded] = useState<boolean>(false);
+  const [uploadingLogo, setUploadingLogo] = useState<boolean>(false);
   const [brandName, setBrandName] = useState<string>("");
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [signature, setSignature] = useState<string>("");
@@ -65,16 +66,13 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         const result = await getMstResellerByEmail({ email });
         if (result?.mst_reseller?.[0]) {
           setUserData(result.mst_reseller[0]);
-          // Check if profile image and signature are already uploaded
+          // Check if logo and signature are already uploaded
           // Store just the filename (database stores filename, not full URL)
-          if (result.mst_reseller[0].profile_image) {
-            setProfileImageUploaded(true);
-            // Extract filename if it's a full URL, otherwise use as is (it's already a filename)
-            const profileImageValue = result.mst_reseller[0].profile_image;
-            const profileImageFilename = profileImageValue.includes('/') 
-              ? profileImageValue.split('/').pop() || profileImageValue
-              : profileImageValue;
-            setProfileImage(profileImageFilename);
+          if (result.mst_reseller[0].logo) {
+            setLogoUploaded(true);
+            const logoValue = result.mst_reseller[0].logo;
+            const logoFilename = logoValue.includes('/') ? logoValue.split('/').pop() || logoValue : logoValue;
+            setLogo(logoFilename);
           }
           if (result.mst_reseller[0].signatureImage) {
             setSignatureUploaded(true);
@@ -98,115 +96,79 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
     }
   }, [email]);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith("image/")) {
-        setError("Please upload a valid image file.");
+        setError("Please upload a valid image file (e.g. JPEG, PNG).");
         return;
       }
-
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        setError("Image size should be less than 5MB.");
+        setError("Logo size should be less than 5MB.");
         return;
       }
 
-      setProfileImageFile(file);
-      setProfileImageUploaded(false); // Reset upload status when file changes
+      setLogoFile(file);
+      setLogoUploaded(false);
 
-      // Create preview (temporary data URL, will be replaced with filename after upload)
       const reader = new FileReader();
       reader.onload = (event) => {
-        // Temporarily set preview URL, will be replaced with filename after upload
-        setProfileImage(event.target?.result as string);
+        setLogo(event.target?.result as string);
       };
       reader.readAsDataURL(file);
       setError("");
     }
   };
 
-  // Upload profile image function
-  const handleUploadProfileImage = async () => {
-    console.log("handleUploadProfileImage called");
-    if (!profileImageFile) {
-      setError("Please select a profile image first.");
-      console.error("No profile image file selected");
+  const handleUploadLogo = async () => {
+    if (!logoFile) {
+      setError("Please select a logo first.");
       return;
     }
 
     setError("");
-    setUploadingProfileImage(true);
-    console.log("Starting profile image upload...");
+    setUploadingLogo(true);
 
     try {
       const token = getAuthToken();
       const { getApiBaseUrl } = await import("@/utils/apiUrl");
       const API_BASE_URL = getApiBaseUrl();
-      const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+      const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads";
 
-      // Create FormData
       const uploadFormData = new FormData();
-      uploadFormData.append('profile_image', profileImageFile);
+      uploadFormData.append("logo", logoFile);
 
-      // Prepare headers
       const headers: HeadersInit = {};
       if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+        headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const uploadUrl = `${API_BASE_URL}/upload/profile-image`;
-      console.log("=== PROFILE IMAGE UPLOAD START ===");
-      console.log("Upload URL:", uploadUrl);
-      console.log("File:", {
-        name: profileImageFile.name,
-        size: profileImageFile.size,
-        type: profileImageFile.type
-      });
-      console.log("Headers:", headers);
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: headers,
+      const response = await fetch(`${API_BASE_URL}/upload/logo`, {
+        method: "POST",
+        headers,
         body: uploadFormData,
       });
 
-      console.log("Response status:", response.status);
-      console.log("Response ok:", response.ok);
-
       if (response.ok) {
         const result = await response.json();
-        console.log("Response data:", result);
-        
         if (result.success && result.data?.filename) {
-          // Store only the filename (not the full URL) to send to GraphQL
           const filename = result.data.filename;
-          const imageUrl = `${IMAGE_UPLOAD_PATH}/profile-images/${filename}`;
-          console.log("✅ Profile image uploaded successfully");
-          console.log("Filename from server:", filename);
-          console.log("Full image URL (for preview):", imageUrl);
-          // Store filename for GraphQL, but use full URL for preview
-          setProfileImage(filename);
-          setProfileImageUploaded(true);
+          setLogo(filename);
+          setLogoUploaded(true);
           setError("");
         } else {
-          console.error("❌ Upload response missing filename:", result);
-          setError(result.message || "Failed to upload profile image - no filename returned");
+          setError(result.message || "Failed to upload logo.");
         }
       } else {
         const errorText = await response.text();
-        console.error("❌ Upload failed - Status:", response.status);
-        console.error("Error response:", errorText);
-        setError(`Failed to upload profile image: ${response.status} - ${errorText}`);
+        setError(`Failed to upload logo: ${response.status}`);
+        console.error("Upload failed:", errorText);
       }
-      
-      console.log("=== PROFILE IMAGE UPLOAD END ===");
     } catch (uploadErr: any) {
-      console.error("Profile image upload error:", uploadErr);
-      setError(uploadErr.message || "Failed to upload profile image");
+      console.error("Logo upload error:", uploadErr);
+      setError(uploadErr.message || "Failed to upload logo");
     } finally {
-      setUploadingProfileImage(false);
+      setUploadingLogo(false);
     }
   };
 
@@ -300,9 +262,8 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   const handleSubmit = async () => {
     setError("");
     
-    // Check if both are uploaded
-    if (!profileImageUploaded) {
-      setError("Please upload your profile image first.");
+    if (!logoUploaded) {
+      setError("Please upload your logo first.");
       return;
     }
     if (!signatureUploaded) {
@@ -344,23 +305,10 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       // Determine DOB - prioritize Aadhaar DOB, fallback to PAN DOB
       let dobToSave = latestUserData?.dob || latestUserData?.pan_dob || null;
       
-      // profileImage and signature now contain just the filename (stored after upload)
-      // Use them directly for GraphQL
-      const profileImageFilename = profileImage || null;
       const signatureFilename = signature || null;
-      
-      console.log("Submitting signup with data:", {
-        email,
-        profile_image: profileImageFilename,
-        signatureImage: signatureFilename,
-        aadhaar_number: latestUserData?.aadhaar_number,
-        dob: dobToSave,
-        aadhar_photo: latestUserData?.aadhar_photo ? "present" : "missing",
-      });
-      
+
       await completeSignupStep({
         email,
-        profile_image: profileImageFilename,
         address: addressArray.length > 0 ? addressArray : null,
         signatureImage: signatureFilename,
         brand_name: brandName || null,
@@ -453,14 +401,20 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
               </div>
             </div>
           )}
-          {/* Name, Photo, Address */}
+          {/* Name, Logo, Address */}
           <div className="mb-16">
             <strong className="d-block mb-8">Personal Details</strong>
             <div className="ps-12">
               <p className="text-sm mb-4"><strong>Name:</strong> {userData.first_name} {userData.last_name}</p>
               <p className="text-sm mb-4"><strong>Email:</strong> {userData.email}</p>
               <p className="text-sm mb-4"><strong>Phone:</strong> {userData.phone}</p>
-              <p className="text-sm mb-4"><strong>Photo:</strong> {userData.profile_image ? <img src={userData.profile_image} alt="Profile" style={{height:32}} /> : "N/A"}</p>
+              <p className="text-sm mb-4"><strong>Logo:</strong> {userData.logo ? (
+                <img
+                  src={userData.logo.startsWith("data:") || userData.logo.startsWith("http") ? userData.logo : `${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads"}/logos/${userData.logo}`}
+                  alt="Logo"
+                  style={{ height: 32, objectFit: "contain" }}
+                />
+              ) : "N/A"}</p>
               <p className="text-sm"><strong>Address:</strong> {userData.address || "N/A"}</p>
             </div>
           </div>
@@ -535,45 +489,37 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         )}
       </div>
 
-      {/* Profile Photo Upload */}
+      {/* Logo Upload */}
       <div className="mb-24">
-        <strong className="d-block mb-12">Profile Photo</strong>
+        <strong className="d-block mb-12">Business Logo</strong>
+        <p className="text-sm text-secondary-light mb-12">
+          Upload your business logo (JPEG, PNG, GIF or WebP, max 5MB).
+        </p>
         <div className="d-flex align-items-center gap-12">
-          {profileImage ? (
+          {logo ? (
             <div
-              className="border radius-8 overflow-hidden"
-              style={{
-                width: "100px",
-                height: "100px",
-                flexShrink: 0,
-              }}
+              className="border radius-8 overflow-hidden bg-light d-flex align-items-center justify-content-center"
+              style={{ width: "100px", height: "100px", flexShrink: 0 }}
             >
               <img
                 src={
-                  // If it's a data URL (preview before upload), use as is
-                  // Otherwise, construct full URL from filename
-                  profileImage.startsWith('data:') 
-                    ? profileImage 
-                    : `${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads'}/profile-images/${profileImage}`
+                  logo.startsWith("data:")
+                    ? logo
+                    : `${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads"}/logos/${logo}`
                 }
-                alt="Profile Preview"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                alt="Logo preview"
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
                 onError={(e) => {
-                  // Fallback if image fails to load
-                  e.currentTarget.src = 'assets/images/user.png';
+                  e.currentTarget.src = "assets/images/logo-icon.png";
                 }}
               />
             </div>
           ) : (
             <div
               className="border border-secondary-light radius-8 bg-light d-flex align-items-center justify-content-center"
-              style={{
-                width: "100px",
-                height: "100px",
-                flexShrink: 0,
-              }}
+              style={{ width: "100px", height: "100px", flexShrink: 0 }}
             >
-              <span className="text-secondary-light text-xs">No image</span>
+              <span className="text-secondary-light text-xs">No logo</span>
             </div>
           )}
           <div className="flex-grow-1">
@@ -581,18 +527,18 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
               type="button"
               className="btn btn-outline-primary mb-8"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingProfileImage}
+              disabled={uploadingLogo}
             >
-              {profileImage ? "Change" : "Select"} Photo
+              {logo ? "Change" : "Select"} Logo
             </button>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              onChange={handleImageUpload}
+              onChange={handleLogoSelect}
               style={{ display: "none" }}
             />
-            {profileImageFile && (
+            {logoFile && (
               <div>
                 <button
                   type="button"
@@ -600,27 +546,26 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Upload Profile Image button clicked");
-                    handleUploadProfileImage();
+                    handleUploadLogo();
                   }}
-                  disabled={uploadingProfileImage || profileImageUploaded}
+                  disabled={uploadingLogo || logoUploaded}
                 >
-                  {uploadingProfileImage ? (
+                  {uploadingLogo ? (
                     <>
-                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
                       Uploading...
                     </>
-                  ) : profileImageUploaded ? (
+                  ) : logoUploaded ? (
                     <>
                       <span className="text-success me-2">✓</span>
                       Uploaded
                     </>
                   ) : (
-                    "Upload Profile Image"
+                    "Upload Logo"
                   )}
                 </button>
-                {profileImageUploaded && (
-                  <small className="text-success ms-2 d-block mt-4">Profile image uploaded successfully</small>
+                {logoUploaded && (
+                  <small className="text-success ms-2 d-block mt-4">Logo uploaded successfully</small>
                 )}
               </div>
             )}
@@ -661,17 +606,17 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
 
       <button
         className="btn btn-success w-100 radius-12"
-        disabled={!profileImageUploaded || !signatureUploaded || !acceptedTerms || loading}
+        disabled={!logoUploaded || !signatureUploaded || !acceptedTerms || loading}
         onClick={handleSubmit}
       >
         {loading ? "Submitting..." : "Confirm & Complete Signup"}
       </button>
-      {(!profileImageUploaded || !signatureUploaded) && (
+      {(!logoUploaded || !signatureUploaded) && (
         <div className="mt-8">
           <small className="text-warning d-block">
-            {!profileImageUploaded && !signatureUploaded && "Please upload both profile image and signature to continue"}
-            {!profileImageUploaded && signatureUploaded && "Please upload profile image to continue"}
-            {profileImageUploaded && !signatureUploaded && "Please upload signature to continue"}
+            {!logoUploaded && !signatureUploaded && "Please upload both logo and signature to continue"}
+            {!logoUploaded && signatureUploaded && "Please upload logo to continue"}
+            {logoUploaded && !signatureUploaded && "Please upload signature to continue"}
           </small>
         </div>
       )}

@@ -377,7 +377,7 @@ const ViewProfileLayer = () => {
           
           <div className='pb-24 ms-16 mb-24 me-16 '>
             <div className='text-center border border-top-0 border-start-0 border-end-0'>
-              <div className='position-relative d-inline-block mb-16'>
+              {/* <div className='position-relative d-inline-block mb-16'>
                 <img
                   src={imagePreview}
                   alt='Profile'
@@ -403,7 +403,7 @@ const ViewProfileLayer = () => {
                   style={{ display: 'none' }}
                   onChange={handleImageChange}
                 />
-              </div>
+              </div> */}
               <h6 className='mb-0 mt-16'>{fullName}</h6>
               <span className='text-secondary-light mb-16'>
                 {displayEmail}

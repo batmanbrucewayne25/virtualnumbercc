@@ -247,16 +247,16 @@ const MasterLayout = ({ children }) => {
           <Link to='/' className='sidebar-logo'>
             {userRole === "reseller" && (() => {
               const userData = getUserData();
-              const logo = userData?.logo;
+              const logo = userData?.logo; 
               const logoUrl = logo && !resellerLogoError
                 ? (logo.startsWith("data:") || logo.startsWith("http") ? logo : `${IMAGE_BASE_PATH}/logos/${logo}`)
-                : null;
+                : null; 
               const logoAlt = userData?.brand_name || userData?.business_name || "Logo";
               return logoUrl ? (
                 <img
                   src={logoUrl}
                   alt={logoAlt}
-                  className="light-logo dark-logo logo-icon"
+                  className="logo-image"
                   style={{ maxHeight: "40px", width: "auto", objectFit: "contain" }}
                   onError={() => setResellerLogoError(true)}
                 />

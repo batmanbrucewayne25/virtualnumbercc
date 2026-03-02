@@ -478,7 +478,7 @@ const ViewResellerDashboardLayer = () => {
                         </div>
                       )}
 
-                      {reseller?.profile_image && (
+                      {/* {reseller?.profile_image && (
                         <div className="mb-16">
                           <label className="form-label text-xs text-secondary-light mb-4">
                             Profile Image 
@@ -499,7 +499,7 @@ const ViewResellerDashboardLayer = () => {
                             />
                           </div>
                         </div>
-                      )}
+                      )} */}
 
 
 {reseller?.signatureImage && (
@@ -725,12 +725,11 @@ const ViewResellerDashboardLayer = () => {
                     </span>
                   </div>
 
-                  <div className="mb-16">
+                  <div className="mb-16 d-flex align-items-center gap-2">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       PAN Verified
                     </label>
-                    <div>
-                      <span
+                    <span
                         className={`${
                           reseller?.is_pan_verified
                             ? "bg-success-focus text-success-600 border border-success-main"
@@ -741,15 +740,16 @@ const ViewResellerDashboardLayer = () => {
                           ? "Verified"
                           : "Not Verified"}
                       </span>
+                    <div>
+                   
                     </div>
                   </div>
 
-                  <div className="mb-16">
+                  <div className="mb-16 d-flex align-items-center gap-2">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       GST Verified
                     </label>
-                    <div>
-                      <span
+                    <span
                         className={`${
                           reseller?.is_gst_verified
                             ? "bg-success-focus text-success-600 border border-success-main"
@@ -760,15 +760,16 @@ const ViewResellerDashboardLayer = () => {
                           ? "Verified"
                           : "Not Verified"}
                       </span>
+                    <div>
+                     
                     </div>
                   </div>
 
-                  <div className="mb-16">
+                  <div className="mb-16 d-flex align-items-center gap-2">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       Email Verified
                     </label>
-                    <div>
-                      <span
+                    <span
                         className={`${
                           reseller?.is_email_verified
                             ? "bg-success-focus text-success-600 border border-success-main"
@@ -779,15 +780,16 @@ const ViewResellerDashboardLayer = () => {
                           ? "Verified"
                           : "Not Verified"}
                       </span>
+                    <div>
+                     
                     </div>
                   </div>
 
-                  <div className="mb-16">
+                  <div className="mb-16 d-flex align-items-center gap-2">
                     <label className="form-label text-xs text-secondary-light mb-4">
                       Phone Verified
                     </label>
-                    <div>
-                      <span
+                    <span
                         className={`${
                           reseller?.is_phone_verified
                             ? "bg-success-focus text-success-600 border border-success-main"
@@ -798,11 +800,13 @@ const ViewResellerDashboardLayer = () => {
                           ? "Verified"
                           : "Not Verified"}
                       </span>
+                    <div>
+                      
                     </div>
                   </div>
 
                   {reseller?.approval_date && (
-                    <div className="mb-16">
+                    <div className="mb-16 d-flex align-items-center gap-2">
                       <label className="form-label text-xs text-secondary-light mb-4">
                         Approval Date
                       </label>
@@ -814,7 +818,7 @@ const ViewResellerDashboardLayer = () => {
 
                   {reseller?.grace_period_days !== null &&
                     reseller?.grace_period_days !== undefined && (
-                      <div className="mb-16">
+                      <div className="mb-16 d-flex align-items-center gap-2">
                         <label className="form-label text-xs text-secondary-light mb-4">
                           Grace Period (Days)
                         </label>

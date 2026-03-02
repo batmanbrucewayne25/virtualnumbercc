@@ -21,7 +21,7 @@ const AddSubscriptionPlanLayer = () => {
     plan_name: "",
     amount: "",
     currency: "INR",
-    duration_days: "320",
+    duration_days: "360",
     razorpay_plan_id: "",
     razorpay_link_id: "",
     is_active: true,

@@ -16,6 +16,18 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [error, setError] = useState("");
 
+  // When modal opens, set defaults: call forwarding = customer phone, payment date = today
+  useEffect(() => {
+    if (isOpen && customer) {
+      const today = new Date().toISOString().split("T")[0];
+      setFormData((prev) => ({
+        ...prev,
+        call_forwarding_number: customer.phone || prev.call_forwarding_number || "",
+        payment_date: prev.payment_date || today,
+      }));
+    }
+  }, [isOpen, customer]);
+
   useEffect(() => {
     if (isOpen && (formData.payment_method === "online" || formData.payment_method === "offline")) {
       fetchSubscriptionPlans();
@@ -66,10 +78,17 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      // When subscription plan is selected, set payment amount from plan
+      if (name === "subscription_plan_id" && value && subscriptionPlans.length > 0) {
+        const plan = subscriptionPlans.find((p) => p.id === value);
+        if (plan != null && plan.amount != null) {
+          next.payment_amount = String(plan.amount);
+        }
+      }
+      return next;
+    });
     setError("");
   };
 
@@ -160,24 +179,42 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
               {/* Offline Payment Fields */}
               {formData.payment_method === "offline" && (
                 <>
-                  <div className="mb-20">
+                   <div className="mb-20">
                     <label
-                      htmlFor='payment_reference_number'
+                      htmlFor='subscription_plan_id_offline'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
                     >
-                      Payment Reference Number <span className='text-danger-600'>*</span>
+                      Subscription Plan  <span className='text-danger-600'>*</span>
                     </label>
-                    <input
-                      type='text'
-                      className='form-control radius-8'
-                      id='payment_reference_number'
-                      name='payment_reference_number'
-                      placeholder='Enter payment reference number'
-                      value={formData.payment_reference_number}
-                      onChange={handleChange}
-                      required
-                      disabled={loading}
-                    />
+                    {loadingPlans ? (
+                      <div className="text-center py-3">
+                        <div className="spinner-border spinner-border-sm text-primary" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="text-sm text-muted mt-2">Loading plans...</p>
+                      </div>
+                    ) : subscriptionPlans.length === 0 ? (
+                      <div className="alert alert-warning radius-8">
+                        <Icon icon='material-symbols:warning-outline' className='icon me-2' />
+                        No active subscription plans found.
+                      </div>
+                    ) : (
+                      <select
+                        className='form-select radius-8'
+                        id='subscription_plan_id_offline'
+                        name='subscription_plan_id'
+                        value={formData.subscription_plan_id}
+                        onChange={handleChange}
+                        disabled={loading}
+                      >
+                        <option value="">Select Subscription Plan (Optional)</option>
+                        {subscriptionPlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} ({plan.duration_days} days)
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
                   <div className="mb-20">
@@ -223,6 +260,28 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
 
                   <div className="mb-20">
                     <label
+                      htmlFor='payment_reference_number'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Payment Reference Number <span className='text-danger-600'>*</span>
+                    </label>
+                    <input
+                      type='text'
+                      className='form-control radius-8'
+                      id='payment_reference_number'
+                      name='payment_reference_number'
+                      placeholder='Enter payment reference number'
+                      value={formData.payment_reference_number}
+                      onChange={handleChange}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+
+                
+
+                  <div className="mb-20">
+                    <label
                       htmlFor='call_forwarding_number'
                       className='form-label fw-semibold text-primary-light text-sm mb-8'
                     >
@@ -244,43 +303,7 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
                     </small>
                   </div>
 
-                  <div className="mb-20">
-                    <label
-                      htmlFor='subscription_plan_id_offline'
-                      className='form-label fw-semibold text-primary-light text-sm mb-8'
-                    >
-                      Subscription Plan (Optional)
-                    </label>
-                    {loadingPlans ? (
-                      <div className="text-center py-3">
-                        <div className="spinner-border spinner-border-sm text-primary" role="status">
-                          <span className="visually-hidden">Loading...</span>
-                        </div>
-                        <p className="text-sm text-muted mt-2">Loading plans...</p>
-                      </div>
-                    ) : subscriptionPlans.length === 0 ? (
-                      <div className="alert alert-warning radius-8">
-                        <Icon icon='material-symbols:warning-outline' className='icon me-2' />
-                        No active subscription plans found.
-                      </div>
-                    ) : (
-                      <select
-                        className='form-select radius-8'
-                        id='subscription_plan_id_offline'
-                        name='subscription_plan_id'
-                        value={formData.subscription_plan_id}
-                        onChange={handleChange}
-                        disabled={loading}
-                      >
-                        <option value="">Select Subscription Plan (Optional)</option>
-                        {subscriptionPlans.map((plan) => (
-                          <option key={plan.id} value={plan.id}>
-                            {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} ({plan.duration_days} days)
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+               
                 </>
               )}
 
