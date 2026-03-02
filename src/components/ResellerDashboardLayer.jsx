@@ -3,7 +3,7 @@ import ReactApexChart from "react-apexcharts";
 import { useState, useEffect } from "react";
 import { getResellerDashboardStats, getResellerDashboardCharts, getExpiringNumbers } from "@/utils/api";
 
-const ResellerDashboardLayer = () => {
+const ResellerDashboardLayer = ({ expiryDate }) => {
   const [stats, setStats] = useState({
     activeNumbers: 0,
     expiringNumbers: 0,
@@ -71,6 +71,21 @@ const ResellerDashboardLayer = () => {
       year: "numeric",
     });
   };
+
+  const calculateDaysLeft = (expiryDateVal) => {
+    if (!expiryDateVal) return null;
+    const expiry = new Date(expiryDateVal);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expiry.setHours(0, 0, 0, 0);
+    const diffTime = expiry - today;
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const daysLeft = expiryDate ? calculateDaysLeft(expiryDate) : null;
+  const isExpired = daysLeft !== null && daysLeft < 0;
+  const isExpiringSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 30;
+  const expiryStatusClass = isExpired ? "text-danger-600" : isExpiringSoon ? "text-warning-600" : "text-primary-light";
 
   // Admin Performance Chart Options
   const adminPerformanceChartOptions = {
@@ -260,6 +275,35 @@ const ResellerDashboardLayer = () => {
                 <div>
                   <p className='fw-medium text-primary-light mb-1 text-sm'>Debit</p>
                   <h6 className='mb-0 text-danger'>{formatCurrency(stats.debitAmount)}</h6>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Expiry Date */}
+        <div className='col'>
+          <div className='card shadow-none border bg-gradient-start-1 h-100'>
+            <div className='card-body p-20'>
+              <div className='d-flex flex-wrap align-items-center justify-content-between gap-3'>
+                <div>
+                  <p className='fw-medium text-primary-light mb-1'>Expiry Date</p>
+                  <h6 className={`mb-0 ${expiryStatusClass}`}>
+                    {expiryDate ? formatDate(expiryDate) : "—"}
+                  </h6>
+                  {expiryDate && daysLeft !== null && (
+                    <span className={`text-xs ${expiryStatusClass}`}>
+                      {isExpired
+                        ? `Expired ${Math.abs(daysLeft)} days ago`
+                        : `${daysLeft} days left`}
+                    </span>
+                  )}
+                </div>
+                <div className='w-50-px h-50-px bg-secondary rounded-circle d-flex justify-content-center align-items-center'>
+                  <Icon
+                    icon='solar:calendar-date-outline'
+                    className='text-white text-2xl mb-0'
+                  />
                 </div>
               </div>
             </div>

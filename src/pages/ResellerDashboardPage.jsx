@@ -46,7 +46,7 @@ const ResellerDashboardPage = () => {
         <Breadcrumb title='Dashboard' expiryDate={expiryDate} />
 
         {/* ResellerDashboardLayer */}
-        <ResellerDashboardLayer />
+        <ResellerDashboardLayer expiryDate={expiryDate} />
       </MasterLayout>
     </>
   );

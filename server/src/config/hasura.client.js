@@ -37,6 +37,8 @@ class HasuraClient {
           signup_completed
           status
           brand_name
+          logo
+          business_name
           is_email_verified
           is_phone_verified
           approval_date

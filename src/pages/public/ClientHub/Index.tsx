@@ -258,12 +258,32 @@ const ClientHubLayer = ({
     );
   }
 
+  const imageBasePath = (import.meta as any).env?.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads";
+  const resellerLogoUrl = resellerData?.logo
+    ? (resellerData.logo.startsWith("data:") || resellerData.logo.startsWith("http")
+        ? resellerData.logo
+        : `${imageBasePath}/logos/${resellerData.logo}`)
+    : null;
+  const resellerLogoAlt = resellerData?.brand_name || resellerData?.business_name || "Logo";
+
   return (
     <section className="auth bg-base d-flex flex-wrap">
-      {/* LEFT (UNCHANGED) */}
+      {/* LEFT: reseller logo when available, else default illustration */}
       <div className="auth-left d-lg-block d-none">
         <div className="d-flex align-items-center flex-column h-100 justify-content-center">
-          <img src="assets/images/own/login.svg" alt="Onboarding" />
+          {resellerLogoUrl ? (
+            <img
+              src={resellerLogoUrl}
+              alt={resellerLogoAlt}
+              style={{ maxWidth: "100%", maxHeight: "280px", objectFit: "contain" }}
+              onError={(e: any) => {
+                e.currentTarget.src = "assets/images/own/login.svg";
+                e.currentTarget.alt = "Onboarding";
+              }}
+            />
+          ) : (
+            <img src="assets/images/own/login.svg" alt="Onboarding" />
+          )}
         </div>
       </div>
 
@@ -273,17 +293,13 @@ const ClientHubLayer = ({
           {/* LOGO & BRAND */}
           <div className="mb-40">
             <Link to="/index" className="max-w-290-px d-block">
-              {resellerData?.logo ? (
+              {resellerLogoUrl ? (
                 <img
-                  src={
-                    resellerData.logo.startsWith('http')
-                      ? resellerData.logo
-                      : `${(import.meta as any).env?.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads'}/logos/${resellerData.logo}`
-                  }
-                  alt={resellerData?.brand_name || resellerData?.business_name || "Logo"}
-                  style={{ maxHeight: '60px', objectFit: 'contain' }}
+                  src={resellerLogoUrl}
+                  alt={resellerLogoAlt}
+                  style={{ maxHeight: "60px", objectFit: "contain" }}
                   onError={(e: any) => {
-                    e.target.src = 'assets/images/own/dlogo.png';
+                    e.target.src = "assets/images/own/dlogo.png";
                   }}
                 />
               ) : (

@@ -724,27 +724,6 @@ const EditResellerLayer = () => {
                     <div className='col-sm-6'>
                       <div className='mb-20'>
                         <label
-                          htmlFor='pan_dob'
-                          className='form-label fw-semibold text-primary-light text-sm mb-8'
-                        >
-                          PAN Date of Birth
-                        </label>
-                        <input
-                          type='date'
-                          className='form-control radius-8'
-                          id='pan_dob'
-                          name='pan_dob'
-                          value={formData.pan_dob}
-                          onChange={handleChange}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className='row'>
-                    <div className='col-sm-6'>
-                      <div className='mb-20'>
-                        <label
                           htmlFor='aadhaar_number'
                           className='form-label fw-semibold text-primary-light text-sm mb-8'
                         >
@@ -760,8 +739,10 @@ const EditResellerLayer = () => {
                           onChange={handleChange}
                         />
                       </div>
-                    </div>
+                    </div>   
                   </div>
+
+                  
                   <hr className='my-24' />
                   <h6 className='text-sm text-primary-light mb-16 mt-24'>Business Information</h6>
                   <div className='mb-20'>
@@ -820,7 +801,7 @@ const EditResellerLayer = () => {
                   </div> */}
 
                   <div className='row'>
-                    <div className='col-sm-6'>
+                    {/* <div className='col-sm-6'>
                       <div className='mb-20'>
                         <label
                           htmlFor='business_email'
@@ -839,7 +820,7 @@ const EditResellerLayer = () => {
                           required
                         />
                       </div>
-                    </div>
+                    </div> */}
                     <div className='col-sm-6'>
                       <div className='mb-20'>
                         <label

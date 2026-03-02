@@ -8,9 +8,6 @@ const Step11 = ({ resellerName }: Step11Props) => {
   return (
     <>
       <div className="text-center mb-24">
-        <div className="mb-16 d-inline-flex align-items-center justify-content-center w-80-px h-80-px bg-success-focus radius-circle">
-          <Icon icon="solar:check-circle-bold" className="text-success-main text-3xl" />
-        </div>
         <h4 className="mb-8">Registration Successful!</h4>
         <p className="text-sm text-secondary-light mb-0">
           Your registration has been submitted successfully.
@@ -56,12 +53,9 @@ const Step11 = ({ resellerName }: Step11Props) => {
       </div>
 
       <div className="text-center">
-        <p className="text-sm text-secondary-light mb-16">
+        <p className="text-sm text-secondary-light mb-0">
           For any queries, please contact our support team.
         </p>
-        <a href="/sign-in" className="btn btn-primary radius-12">
-          Go to Login
-        </a>
       </div>
     </>
   );

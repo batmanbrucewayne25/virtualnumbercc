@@ -66,7 +66,8 @@ app.use("/api/upload", uploadRoutes);
 // External API Routes (Virtual Numbers API)
 app.use("/virtualnumbers", virtualNumbersRoutes);
 
-// Serve uploaded images
+// Serve uploaded images (Option A: use default path so save and serve match;
+// do not set IMAGE_UPLOAD_PATH in server .env)
 const uploadsPath = path.join(__dirname, "../uploads");
 console.log(`📂 Uploads path: ${path.resolve(uploadsPath)}`);
 app.use("/uploads", express.static(uploadsPath));

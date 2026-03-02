@@ -26,13 +26,13 @@ const SignInLayer = () => {
     if (isAuthenticated()) {
       const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
       const isClientHubBuild = buildType === 'clienthub';
-      
+
       // Get user data from localStorage
       const userDataStr = localStorage.getItem('userData');
       if (userDataStr) {
         try {
           const user = JSON.parse(userDataStr);
-          
+
           if (user.role === 'reseller') {
             // Reseller always goes to reseller dashboard
             navigate("/reseller-dashboard", { replace: true });
@@ -114,15 +114,15 @@ const SignInLayer = () => {
         // Check if signup completion is required (incomplete signup)
         if (result.requiresSignupCompletion) {
           console.log("⚠️  Signup incomplete, redirecting to signup page. Current step:", result.current_step);
-          
+
           // Do NOT save token
           // Save email to localStorage so signup page can fetch user data
           localStorage.setItem("signupEmail", email.trim());
-          
+
           // Calculate next step: current_step + 1
           const currentStep = result.current_step || 0;
           const nextStep = currentStep + 1;
-          
+
           // Navigate to signup page with step parameter
           navigate(`/sign-up?step=${nextStep}`, { replace: true });
           return;
@@ -131,17 +131,17 @@ const SignInLayer = () => {
         // Extract token and user from either structure
         const token = result.data?.token || result.token;
         const user = result.data?.user || result.user;
-        
+
         if (!token || !user) {
           setError("Invalid response from server. Please try again.");
           return;
         }
-        
+
         console.log("Saving auth token and user data:", { token: token ? "present" : "missing", user });
-        
+
         // Save token first to ensure authentication is set
         saveAuthToken(token, user, null);
-        
+
         // Fetch user permissions after login (non-blocking)
         let permissions = null;
         try {
@@ -172,22 +172,22 @@ const SignInLayer = () => {
           console.error("Error fetching permissions:", permError);
           // Continue login even if permissions fail to load
         }
-        
+
         // Dispatch event to refresh permissions in PermissionContext
         window.dispatchEvent(new Event('permissionsUpdated'));
-        
+
         setError("");
-        
+
         // Verify authentication is set
         const authCheck = isAuthenticated();
         console.log("Auth check after save:", authCheck);
         console.log("Token saved:", !!localStorage.getItem('authToken'));
         console.log("User data saved:", !!localStorage.getItem('userData'));
-        
+
         // Determine redirect based on role and build type
         const buildType = import.meta.env.VITE_BUILD_TYPE || 'admin';
         const isClientHubBuild = buildType === 'clienthub';
-        
+
         // Navigate based on user role
         console.log("User role:", user.role, user);
         console.log("Is ClientHub build:", isClientHubBuild);
@@ -297,9 +297,7 @@ const SignInLayer = () => {
             {error && (
               <div className='mt-16 text-danger'>{error}</div>
             )}
-            <div className='mt-32 center-border-horizontal text-center'>
-              <span className='bg-base z-1 px-4'>Or sign in with</span>
-            </div>
+
             {/* <div className='mt-32 d-flex align-items-center gap-3'>
               <button
                 type='button'
@@ -323,14 +321,20 @@ const SignInLayer = () => {
               </button>
             </div> */}
             {!isClientHubBuild && (
-              <div className='mt-32 text-center text-sm'>
-                <p className='mb-0'>
-                  Don't have an account?{" "}
-                  <Link to='/sign-up' className='text-primary-600 fw-semibold'>
-                    Sign Up
-                  </Link>
-                </p>
-              </div>
+              <>
+                <div className='mt-32 center-border-horizontal text-center'>
+                  <span className='bg-base z-1 px-4'>Or sign in with</span>
+                </div>
+
+                <div className='mt-32 text-center text-sm'>
+                  <p className='mb-0'>
+                    Don't have an account?{" "}
+                    <Link to='/sign-up' className='text-primary-600 fw-semibold'>
+                      Sign Up
+                    </Link>
+                  </p>
+                </div>
+              </>
             )}
 
             {/* CMS Pages Links */}

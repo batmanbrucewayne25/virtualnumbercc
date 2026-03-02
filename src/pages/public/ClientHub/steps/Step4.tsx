@@ -34,10 +34,9 @@ const Step4 = ({ phone, skipOtpVerification = false, onBack, onVerify }: Step4Pr
       title="Verify Phone Number (WhatsApp)"
       label="Phone"
       phone={phone}
+      userType="customer"
       onBack={onBack}
       onVerify={async () => {
-        // TODO: Add WhatsApp OTP verification API call
-        // For now, just proceed
         onVerify();
       }}
     />

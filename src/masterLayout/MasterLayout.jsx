@@ -7,6 +7,9 @@ import { clearAuth, getAuthToken, getUserData } from "@/utils/auth";
 import PermissionGuard from "@/components/PermissionGuard";
 import { getMstWalletByResellerId } from "@/hasura/mutations/wallet";
 
+const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads";
+const DEFAULT_TITLE = "Virtual Number";
+
 const MasterLayout = ({ children }) => {
   let [sidebarActive, seSidebarActive] = useState(false);
   let [mobileMenu, setMobileMenu] = useState(false);
@@ -15,21 +18,31 @@ const MasterLayout = ({ children }) => {
   const [userDisplayName, setUserDisplayName] = useState("");
   const [walletBalance, setWalletBalance] = useState(null);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [resellerLogoError, setResellerLogoError] = useState(false);
   const location = useLocation(); // Hook to get the current route
 
   // Get user role and name from JWT token and localStorage
   useEffect(() => {
     const token = getAuthToken();
     const userData = getUserData();
-    
+    let role = null;
+
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        setUserRole(payload.role || null);
+        role = payload.role || null;
+        setUserRole(role);
       } catch (err) {
         console.error("Error decoding token:", err);
         setUserRole(null);
       }
+    }
+
+    // Set browser tab title: reseller brand_name when reseller is logged in
+    if (role === "reseller" && userData) {
+      document.title = userData.brand_name || userData.business_name || DEFAULT_TITLE;
+    } else {
+      document.title = DEFAULT_TITLE;
     }
 
     // Get user name from localStorage
@@ -43,7 +56,7 @@ const MasterLayout = ({ children }) => {
         setUserDisplayName(name);
       }
       // For reseller: use business_name or first_name + last_name
-      else if (userData.role === 'reseller') {
+      else if (userData.role === 'reseller' || role === 'reseller') {
         const name = userData.business_name 
           || (userData.first_name && userData.last_name ? `${userData.first_name} ${userData.last_name}`.trim() : null)
           || userData.name 
@@ -232,21 +245,60 @@ const MasterLayout = ({ children }) => {
         </button>
         <div>
           <Link to='/' className='sidebar-logo'>
-            <img
-              src='assets/images/own/dlogo.png'
-              alt='site logo'
-              className='light-logo'
-            />
-            <img
-              src='assets/images/logo-light.png'
-              alt='site logo'
-              className='dark-logo'
-            />
-            <img
-              src='assets/images/logo-icon.png'
-              alt='site logo'
-              className='logo-icon'
-            />
+            {userRole === "reseller" && (() => {
+              const userData = getUserData();
+              const logo = userData?.logo;
+              const logoUrl = logo && !resellerLogoError
+                ? (logo.startsWith("data:") || logo.startsWith("http") ? logo : `${IMAGE_BASE_PATH}/logos/${logo}`)
+                : null;
+              const logoAlt = userData?.brand_name || userData?.business_name || "Logo";
+              return logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt={logoAlt}
+                  className="light-logo dark-logo logo-icon"
+                  style={{ maxHeight: "40px", width: "auto", objectFit: "contain" }}
+                  onError={() => setResellerLogoError(true)}
+                />
+              ) : (
+                <>
+                  <img
+                    src='assets/images/own/dlogo.png'
+                    alt='site logo'
+                    className='light-logo'
+                  />
+                  <img
+                    src='assets/images/logo-light.png'
+                    alt='site logo'
+                    className='dark-logo'
+                  />
+                  <img
+                    src='assets/images/logo-icon.png'
+                    alt='site logo'
+                    className='logo-icon'
+                  />
+                </>
+              );
+            })()}
+            {userRole !== "reseller" && (
+              <>
+                <img
+                  src='assets/images/own/dlogo.png'
+                  alt='site logo'
+                  className='light-logo'
+                />
+                <img
+                  src='assets/images/logo-light.png'
+                  alt='site logo'
+                  className='dark-logo'
+                />
+                <img
+                  src='assets/images/logo-icon.png'
+                  alt='site logo'
+                  className='logo-icon'
+                />
+              </>
+            )}
           </Link>
         </div>
         <div className='sidebar-menu-area'>

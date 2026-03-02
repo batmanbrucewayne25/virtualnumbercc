@@ -7,7 +7,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
  * @access  Public
  */
 export const sendEmailOTP = asyncHandler(async (req, res) => {
-  const { email } = req.body;
+  const { email, user_type: userType } = req.body;
 
   if (!email) {
     return res.status(400).json({
@@ -16,7 +16,7 @@ export const sendEmailOTP = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await OTPService.sendEmailOTP(email);
+  const result = await OTPService.sendEmailOTP(email, userType);
 
   if (result.success) {
     res.status(200).json({
@@ -37,7 +37,7 @@ export const sendEmailOTP = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const verifyEmailOTP = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body;
+  const { email, otp, user_type: userType } = req.body;
 
   if (!email || !otp) {
     return res.status(400).json({
@@ -46,7 +46,13 @@ export const verifyEmailOTP = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await OTPService.verifyOTP(email, null, otp, 'email');
+  const result = await OTPService.verifyOTP(
+    email,
+    null,
+    otp,
+    'email',
+    userType || 'reseller'
+  );
 
   if (result.success) {
     res.status(200).json({
@@ -67,7 +73,7 @@ export const verifyEmailOTP = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const sendPhoneOTP = asyncHandler(async (req, res) => {
-  const { phone } = req.body;
+  const { phone, user_type: userType } = req.body;
 
   if (!phone) {
     return res.status(400).json({
@@ -76,7 +82,7 @@ export const sendPhoneOTP = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await OTPService.sendWhatsAppOTP(phone);
+  const result = await OTPService.sendWhatsAppOTP(phone, userType);
 
   if (result.success) {
     res.status(200).json({
@@ -97,7 +103,7 @@ export const sendPhoneOTP = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const verifyPhoneOTP = asyncHandler(async (req, res) => {
-  const { phone, otp } = req.body;
+  const { phone, otp, user_type: userType } = req.body;
 
   if (!phone || !otp) {
     return res.status(400).json({
@@ -106,7 +112,13 @@ export const verifyPhoneOTP = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await OTPService.verifyOTP(null, phone, otp, 'phone');
+  const result = await OTPService.verifyOTP(
+    null,
+    phone,
+    otp,
+    'phone',
+    userType || 'reseller'
+  );
 
   if (result.success) {
     res.status(200).json({

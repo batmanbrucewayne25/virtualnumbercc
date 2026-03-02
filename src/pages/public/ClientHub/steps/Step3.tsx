@@ -34,10 +34,9 @@ const Step3 = ({ email, skipOtpVerification = false, onBack, onVerify }: Step3Pr
       title="Verify Email"
       label="Email"
       email={email}
+      userType="customer"
       onBack={onBack}
       onVerify={async () => {
-        // TODO: Add email OTP verification API call
-        // For now, just proceed
         onVerify();
       }}
     />

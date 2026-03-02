@@ -294,6 +294,7 @@ export const getAllMstCustomers = async () => {
       aadhaar_number
       gstin
       business_name
+      signatureImage
       mst_reseller {
         id
         first_name
@@ -357,6 +358,7 @@ export const getMstCustomersByReseller = async (resellerId: string) => {
       aadhaar_number
       gstin
       business_name
+      signatureImage
       mst_reseller {
         id
         first_name

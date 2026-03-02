@@ -612,8 +612,10 @@ export class OTPService {
 
   /**
    * Send email OTP with comprehensive error handling
+   * @param {string} email - Email address
+   * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
    */
-  static async sendEmailOTP(email) {
+  static async sendEmailOTP(email, userType = "reseller") {
     try {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -625,10 +627,10 @@ export class OTPService {
       }
 
       const otp = this.generateOTP();
-      console.log(`[OTP] Generating OTP for email: ${email}`);
+      console.log(`[OTP] Generating OTP for email: ${email} (user_type: ${userType})`);
 
       // Store OTP
-      const storeResult = await this.storeOTP(email, null, otp, "email");
+      const storeResult = await this.storeOTP(email, null, otp, "email", userType);
       if (!storeResult.success) {
         console.error("[OTP] Failed to store OTP:", storeResult.message);
         return storeResult;
@@ -786,13 +788,15 @@ export class OTPService {
 
   /**
    * Send WhatsApp OTP
+   * @param {string} phone - Phone number
+   * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
    */
-  static async sendWhatsAppOTP(phone) {
+  static async sendWhatsAppOTP(phone, userType = "reseller") {
     try {
       const otp = this.generateOTP();
 
       // Store OTP
-      const storeResult = await this.storeOTP(null, phone, otp, "phone");
+      const storeResult = await this.storeOTP(null, phone, otp, "phone", userType);
       if (!storeResult.success) {
         return storeResult;
       }

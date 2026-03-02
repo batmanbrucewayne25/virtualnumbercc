@@ -6,6 +6,8 @@ type OtpVerifyProps = {
   label: string;
   email?: string;
   phone?: string;
+  /** "customer" for clienthub onboarding, omit for reseller signup */
+  userType?: "customer" | "reseller";
   onBack: () => void;
   onVerify: () => Promise<void>;
 };
@@ -15,6 +17,7 @@ const OtpVerify = ({
   label,
   email,
   phone,
+  userType,
   onBack,
   onVerify,
 }: OtpVerifyProps) => {
@@ -68,7 +71,10 @@ const OtpVerify = ({
           ? `${API_BASE_URL}/otp/send-email`
           : `${API_BASE_URL}/otp/send-phone`;
 
-      const payload = label.toLowerCase() === "email" ? { email } : { phone };
+      const payload =
+        label.toLowerCase() === "email"
+          ? { email, ...(userType && { user_type: userType }) }
+          : { phone, ...(userType && { user_type: userType }) };
 
       // Validate payload before sending
       if (label.toLowerCase() === "email" && !payload.email) {
@@ -131,7 +137,9 @@ const OtpVerify = ({
           : `${API_BASE_URL}/otp/verify-phone`;
 
       const payload =
-        label.toLowerCase() === "email" ? { email, otp } : { phone, otp };
+        label.toLowerCase() === "email"
+          ? { email, otp, ...(userType && { user_type: userType }) }
+          : { phone, otp, ...(userType && { user_type: userType }) };
 
       const response = await fetch(endpoint, {
         method: "POST",

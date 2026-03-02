@@ -78,9 +78,10 @@ const CustomerListLayer = () => {
     }
   };
 
-  // Filter customers based on search, status, and exclude approved (New Customers list)
+  // Filter customers based on search, status, exclude approved, and require signatureImage
   const filteredCustomers = customers.filter((customer) => {
     const notApproved = customer.approval !== "approved";
+    const hasSignature = !!customer.signatureImage?.trim();
 
     const matchesSearch =
       searchTerm === "" ||
@@ -92,7 +93,7 @@ const CustomerListLayer = () => {
     const matchesStatus =
       statusFilter === "all" || customer.status === statusFilter;
 
-    return notApproved && matchesSearch && matchesStatus;
+    return notApproved && hasSignature && matchesSearch && matchesStatus;
   });
 
   const formatDate = (dateString) => {

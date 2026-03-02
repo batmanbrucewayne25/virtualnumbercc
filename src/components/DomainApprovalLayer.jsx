@@ -9,6 +9,12 @@ const DomainApprovalLayer = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [actionLoading, setActionLoading] = useState(null);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    domainId: null,
+    domain: "",
+    resellerName: "",
+  });
 
   useEffect(() => {
     fetchPendingApprovals();
@@ -32,10 +38,19 @@ const DomainApprovalLayer = () => {
     }
   };
 
-  const handleApprove = async (domainId, domain, resellerName) => {
-    if (!window.confirm(`Approve domain "${domain}" for reseller "${resellerName}"?`)) {
-      return;
+  const handleApproveClick = (domainId, domain, resellerName) => {
+    setConfirmModal({ isOpen: true, domainId, domain, resellerName: resellerName || "—" });
+  };
+
+  const handleApproveClose = () => {
+    if (actionLoading !== confirmModal.domainId) {
+      setConfirmModal({ isOpen: false, domainId: null, domain: "", resellerName: "" });
     }
+  };
+
+  const handleApproveConfirm = async () => {
+    const { domainId, domain, resellerName } = confirmModal;
+    if (!domainId) return;
 
     setActionLoading(domainId);
     setError("");
@@ -50,9 +65,10 @@ const DomainApprovalLayer = () => {
       }
 
       const result = await approveMstResellerDomain(domainId, userData.id);
-      
+
       if (result.success) {
         setSuccess(`Domain "${domain}" approved successfully!`);
+        setConfirmModal({ isOpen: false, domainId: null, domain: "", resellerName: "" });
         setTimeout(() => {
           setSuccess("");
           fetchPendingApprovals();
@@ -146,7 +162,7 @@ const DomainApprovalLayer = () => {
                     <td>
                       <button
                         className="btn btn-sm btn-success"
-                        onClick={() => handleApprove(
+                        onClick={() => handleApproveClick(
                           domainRecord.id,
                           domainRecord.domain,
                           domainRecord.reseller_data?.business_name || `${domainRecord.reseller_data?.first_name || ''} ${domainRecord.reseller_data?.last_name || ''}`.trim()
@@ -173,6 +189,60 @@ const DomainApprovalLayer = () => {
           </div>
         )}
       </div>
+
+      {/* Custom confirmation modal for domain approval */}
+      {confirmModal.isOpen && (
+        <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">Approve Domain</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={handleApproveClose}
+                  disabled={actionLoading === confirmModal.domainId}
+                  aria-label="Close"
+                />
+              </div>
+              <div className="modal-body p-24">
+                <p className="text-primary-light mb-0">
+                  Approve domain <strong>&quot;{confirmModal.domain}&quot;</strong> for reseller{" "}
+                  <strong>&quot;{confirmModal.resellerName}&quot;</strong>?
+                </p>
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary radius-8"
+                  onClick={handleApproveClose}
+                  disabled={actionLoading === confirmModal.domainId}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success radius-8"
+                  onClick={handleApproveConfirm}
+                  disabled={actionLoading === confirmModal.domainId}
+                >
+                  {actionLoading === confirmModal.domainId ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+                      Approving...
+                    </>
+                  ) : (
+                    <>
+                      <Icon icon="mdi:check" className="me-1" />
+                      Approve
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
