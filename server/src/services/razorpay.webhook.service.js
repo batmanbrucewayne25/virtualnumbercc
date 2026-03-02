@@ -241,40 +241,76 @@ export async function recordWebhookEvent(
  * @param {string} razorpayPaymentId - Razorpay payment ID
  * @returns {Promise<object|null>} Returns transaction object if exists, null otherwise
  */
-export async function transactionExists(razorpayPaymentId) {
-  if (!razorpayPaymentId) return null;
+export async function transactionExists(razorpayPaymentId, orderId = null) {
+  if (!razorpayPaymentId && !orderId) return null;
 
   const client = getHasuraClient();
 
-  const query = `
-    query CheckTransactionExists($razorpay_payment_id: String!) {
-      mst_transaction(
-        where: { razorpay_payment_id: { _eq: $razorpay_payment_id } }
-        order_by: { created_at: desc }
-        limit: 1
-      ) {
-        id
-        transaction_number
-        customer_id
-        status
-        razorpay_payment_id
-        amount
-        reseller_id
+  // First try by payment_id (most specific)
+  if (razorpayPaymentId) {
+    const query = `
+      query CheckTransactionExists($razorpay_payment_id: String!) {
+        mst_transaction(
+          where: { razorpay_payment_id: { _eq: $razorpay_payment_id } }
+          order_by: { created_at: desc }
+          limit: 1
+        ) {
+          id
+          transaction_number
+          customer_id
+          status
+          razorpay_payment_id
+          razorpay_order_id
+          amount
+          reseller_id
+          virtual_number_id
+        }
       }
+    `;
+    try {
+      const result = await client.client.request(query, { razorpay_payment_id: razorpayPaymentId });
+      if (result.mst_transaction?.length > 0) return result.mst_transaction[0];
+    } catch (error) {
+      console.error("Error checking transaction existence by payment_id:", error);
     }
-  `;
-
-  try {
-    const result = await client.client.request(query, {
-      razorpay_payment_id: razorpayPaymentId,
-    });
-    return result.mst_transaction && result.mst_transaction.length > 0
-      ? result.mst_transaction[0]
-      : null;
-  } catch (error) {
-    console.error("Error checking transaction existence:", error);
-    return null;
   }
+
+  // Fallback: try by order_id (catches race where payment_id not yet written)
+  if (orderId) {
+    const orderQuery = `
+      query CheckTransactionExistsByOrder($razorpay_order_id: String!) {
+        mst_transaction(
+          where: {
+            razorpay_order_id: { _eq: $razorpay_order_id }
+            status: { _in: ["success", "authorized", "captured"] }
+          }
+          order_by: { created_at: desc }
+          limit: 1
+        ) {
+          id
+          transaction_number
+          customer_id
+          status
+          razorpay_payment_id
+          razorpay_order_id
+          amount
+          reseller_id
+          virtual_number_id
+        }
+      }
+    `;
+    try {
+      const result = await client.client.request(orderQuery, { razorpay_order_id: orderId });
+      if (result.mst_transaction?.length > 0) {
+        console.log(`[transactionExists] Found by order_id=${orderId}: ${result.mst_transaction[0].id}`);
+        return result.mst_transaction[0];
+      }
+    } catch (error) {
+      console.error("Error checking transaction existence by order_id:", error);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -324,18 +360,20 @@ export async function findCustomerByEmail(email, resellerId) {
  *   1. By razorpay_order_id  — most reliable for order-based flows
  *   2. By customer_id with razorpay_payment_id IS NULL — for payment-link flows
  *      where the pending record was created before any Razorpay ID was known
- *   3. Never match by razorpay_payment_id here — pending transactions don't
- *      have a payment_id yet; that's the whole reason we're looking for them.
+ *   3. By customer_email column with razorpay_payment_id IS NULL — for STATIC
+ *      payment links where Razorpay's notes has no customer_id embedded
+ *   4. By customer_id alone (no amount filter) — fallback for amount mismatch
  *
  * NOTE: paymentId parameter is accepted but intentionally NOT used as a filter
  * for finding pending transactions. It is used only as a safeguard to skip the
  * lookup if a transaction with that payment_id already exists (handled by callers).
  *
- * @param {string|null} customerId  - Customer UUID
- * @param {number}      amount      - Payment amount in rupees
- * @param {string}      resellerId  - Reseller UUID
- * @param {string|null} orderId     - Razorpay order_id (if order-based flow)
- * @param {string|null} paymentId   - Razorpay payment_id (unused for filtering here)
+ * @param {string|null} customerId    - Customer UUID
+ * @param {number}      amount        - Payment amount in rupees
+ * @param {string}      resellerId    - Reseller UUID
+ * @param {string|null} orderId       - Razorpay order_id (if order-based flow)
+ * @param {string|null} paymentId     - Razorpay payment_id (unused for filtering here)
+ * @param {string|null} customerEmail - Customer email (fallback for static link flow)
  * @returns {Promise<object|null>}
  */
 export async function findPendingTransaction(
@@ -343,19 +381,22 @@ export async function findPendingTransaction(
   amount,
   resellerId,
   orderId = null,
-  paymentId = null // kept for API compat; not used as DB filter
+  paymentId = null, // kept for API compat; not used as DB filter
+  customerEmail = null
 ) {
-  if ((!customerId && !orderId) || !amount || !resellerId) {
+  if ((!customerId && !orderId && !customerEmail) || !resellerId) {
+    console.log(`[findPendingTransaction] Skipping — no customer/order/email identifier`);
     return null;
   }
 
   const client = getHasuraClient();
-  const amountTolerance = 0.01;
-  const minAmount = amount - amountTolerance;
-  const maxAmount = amount + amountTolerance;
+  // Use a generous tolerance to handle floating-point representation differences
+  const amountTolerance = 1.0;
+  const minAmount = amount ? amount - amountTolerance : null;
+  const maxAmount = amount ? amount + amountTolerance : null;
 
   const baseWhere = {
-    amount: { _gte: minAmount, _lte: maxAmount },
+    ...(amount ? { amount: { _gte: minAmount, _lte: maxAmount } } : {}),
     reseller_id: { _eq: resellerId },
     status: { _in: ["pending", "authorized"] },
   };
@@ -372,6 +413,7 @@ export async function findPendingTransaction(
         id
         transaction_number
         customer_id
+        customer_email
         amount
         status
         reseller_id
@@ -423,8 +465,54 @@ export async function findPendingTransaction(
     }
   }
 
+  // --- Attempt 3: match by customer_email column (STATIC PAYMENT LINK path) ---
+  // When a static payment link is used, Razorpay's notes has no customer_id.
+  // But approveCustomer() stores customer_email on the pending transaction.
+  // We match by email so we can still claim the pending record.
+  if (customerEmail) {
+    try {
+      const result = await client.client.request(query, {
+        where: {
+          ...baseWhere,
+          customer_email: { _eq: customerEmail },
+          razorpay_payment_id: { _is_null: true },
+        },
+      });
+      if (result.mst_transaction?.length > 0) {
+        console.log(
+          `[findPendingTransaction] Found by customer_email=${customerEmail}: ${result.mst_transaction[0].id}`
+        );
+        return result.mst_transaction[0];
+      }
+    } catch (error) {
+      console.error("[findPendingTransaction] customer_email lookup error:", error.message);
+    }
+  }
+
+  // --- Attempt 4: match by customer_id only (no amount filter) — amount mismatch fallback ---
+  if (customerId) {
+    try {
+      const result = await client.client.request(query, {
+        where: {
+          reseller_id: { _eq: resellerId },
+          status: { _in: ["pending", "authorized"] },
+          customer_id: { _eq: customerId },
+          razorpay_payment_id: { _is_null: true },
+        },
+      });
+      if (result.mst_transaction?.length > 0) {
+        console.log(
+          `[findPendingTransaction] Found by customer_id (no amount filter)=${customerId}: ${result.mst_transaction[0].id} (amount=${result.mst_transaction[0].amount} vs expected=${amount})`
+        );
+        return result.mst_transaction[0];
+      }
+    } catch (error) {
+      console.error("[findPendingTransaction] customer_id-only lookup error:", error.message);
+    }
+  }
+
   console.log(
-    `[findPendingTransaction] No pending transaction found for customer=${customerId} amount=${amount} reseller=${resellerId}`
+    `[findPendingTransaction] No pending transaction found for customer=${customerId} email=${customerEmail} amount=${amount} reseller=${resellerId}`
   );
   return null;
 }
@@ -453,6 +541,8 @@ export async function updatePendingTransactionWithPayment(
 
   const mappedStatus = statusMap[status] || status;
 
+  // Use update_mst_transaction with a where clause to prevent downgrading a
+  // "success" transaction to "authorized" in a race between concurrent webhooks.
   const mutation = `
     mutation UpdatePendingTransaction(
       $transaction_id: uuid!
@@ -470,8 +560,11 @@ export async function updatePendingTransactionWithPayment(
       $notes: jsonb
       $failure_reason: String
     ) {
-      update_mst_transaction_by_pk(
-        pk_columns: { id: $transaction_id }
+      update_mst_transaction(
+        where: {
+          id: { _eq: $transaction_id }
+          status: { _nin: ["success", "refunded"] }
+        }
         _set: {
           status: $status
           razorpay_payment_id: $razorpay_payment_id
@@ -489,15 +582,17 @@ export async function updatePendingTransactionWithPayment(
           failure_reason: $failure_reason
         }
       ) {
-        id
-        transaction_number
-        customer_id
-        reseller_id
-        status
-        razorpay_payment_id
-        razorpay_order_id
-        amount
-        updated_at
+        returning {
+          id
+          transaction_number
+          customer_id
+          reseller_id
+          status
+          razorpay_payment_id
+          razorpay_order_id
+          amount
+          updated_at
+        }
       }
     }
   `;
@@ -527,19 +622,24 @@ export async function updatePendingTransactionWithPayment(
         paymentData.error_description || paymentData.error_reason || null,
     });
 
-    if (result?.update_mst_transaction_by_pk) {
+    const updated = result?.update_mst_transaction?.returning?.[0];
+    if (updated) {
       console.log(
         `[updatePendingTransaction] Successfully updated transaction ${transactionId} to ${mappedStatus}`
       );
       return {
         success: true,
-        data: result.update_mst_transaction_by_pk,
+        data: updated,
       };
     }
 
+    // 0 rows updated = the transaction was already at success/refunded (status guard fired)
+    console.warn(
+      `[updatePendingTransaction] Transaction ${transactionId} not updated — already at terminal status (success/refunded)`
+    );
     return {
       success: false,
-      message: "Failed to update pending transaction",
+      message: "Transaction already at terminal status — update skipped",
     };
   } catch (error) {
     console.error("[updatePendingTransaction] Error:", error);
@@ -558,6 +658,14 @@ export async function updatePendingTransactionWithPayment(
  */
 export async function createTransactionFromWebhook(resellerId, paymentData) {
   const client = getHasuraClient();
+
+  // CRITICAL: The webhook URL reseller_id may differ from the reseller who actually
+  // created the payment link (notes.reseller_id). Always prefer notes.reseller_id
+  // because the transaction FK must point to the reseller that exists in mst_reseller.
+  const effectiveResellerId = paymentData.notes?.reseller_id || resellerId;
+  if (effectiveResellerId !== resellerId) {
+    console.log(`[createTransactionFromWebhook] Using notes.reseller_id=${effectiveResellerId} instead of webhook URL reseller_id=${resellerId}`);
+  }
 
   // Generate unique transaction number
   const transactionNumber = `TXN${Date.now()}${Math.random()
@@ -583,17 +691,15 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
   let customerId = paymentData.notes?.customer_id || null;
 
   // Declare customerEmail at function scope so it's accessible throughout
-  // (was previously declared with const inside the if-block — a ReferenceError
-  // when accessed later in the customer-name lookup below)
   const customerEmail =
     paymentData.email ||
     paymentData.notes?.email ||
     paymentData.notes?.customer_email ||
     null;
 
-  // Fallback: Find by email
+  // Fallback: Find by email using effective reseller id
   if (!customerId && customerEmail) {
-    const customer = await findCustomerByEmail(customerEmail, resellerId);
+    const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
     if (customer) {
       customerId = customer.id;
     }
@@ -675,15 +781,17 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
     // Get customer name if customer found
     let customerName = paymentData.notes?.customer_name || null;
     if (customerId && !customerName) {
-      const customer = await findCustomerByEmail(customerEmail, resellerId);
+      const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
       if (customer) {
         customerName = customer.profile_name || customer.email;
       }
     }
 
+    console.log(`[createTransactionFromWebhook] Inserting transaction reseller_id=${effectiveResellerId} customer_id=${customerId} status=${status}`);
+
     const result = await client.client.request(mutation, {
       transaction_number: transactionNumber,
-      reseller_id: resellerId,
+      reseller_id: effectiveResellerId,
       customer_id: customerId, // Link customer if found
       transaction_type: "payment",
       payment_mode: "razorpay",
@@ -711,7 +819,7 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
       const newTxnId = result.insert_mst_transaction_one.id;
       // Trigger full post-payment flow (virtual number + customer activation + email)
       if (customerId && (status === "success" || status === "authorized")) {
-        await updateCustomerStatusAfterPayment(customerId, resellerId, newTxnId);
+        await updateCustomerStatusAfterPayment(customerId, effectiveResellerId, newTxnId);
       }
 
       return {
@@ -777,9 +885,9 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
   const client = getHasuraClient();
 
   try {
-    // ── 1. Fetch customer details ────────────────────────────────────────────
+    // ── 1. Fetch customer details + transaction state ─────────────────────────
     const customerQuery = `
-      query GetCustomerForPayment($id: uuid!) {
+      query GetCustomerForPayment($id: uuid!, $txn_id: uuid) {
         mst_customer_by_pk(id: $id) {
           id
           email
@@ -799,16 +907,33 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
             status
           }
         }
+        mst_transaction(where: { id: { _eq: $txn_id } }, limit: 1) {
+          id
+          virtual_number_id
+        }
       }
     `;
-    const customerResult = await client.client.request(customerQuery, { id: customerId });
+    const customerResult = await client.client.request(customerQuery, {
+      id: customerId,
+      txn_id: transactionId || "00000000-0000-0000-0000-000000000000",
+    });
     const customer = customerResult?.mst_customer_by_pk;
     if (!customer) {
       console.error(`[postPayment] Customer ${customerId} not found`);
       return false;
     }
 
-    // ── 2. Idempotency: skip if already active with a virtual number ─────────
+    // ── 2. Idempotency guards ─────────────────────────────────────────────────
+    // Guard A: transaction already has a virtual number linked (DB-level, race-safe)
+    const txnRecord = customerResult?.mst_transaction?.[0];
+    if (transactionId && txnRecord?.virtual_number_id) {
+      console.log(
+        `[postPayment] Transaction ${transactionId} already has virtual_number_id=${txnRecord.virtual_number_id} — skipping`
+      );
+      return true;
+    }
+
+    // Guard B: customer already active with a virtual number (covers no-transactionId path)
     const alreadyActive =
       customer.status === "active" && customer.mst_virtual_numbers?.length > 0;
     if (alreadyActive) {
@@ -1197,46 +1322,53 @@ export async function processPaymentAuthorized(resellerId, payload) {
     };
   }
 
-  // Check if transaction already exists by payment ID
-  if (paymentData.id) {
-    const existingTransaction = await transactionExists(paymentData.id);
-    if (existingTransaction) {
-      return {
-        success: true,
-        data: existingTransaction,
-        message: "Transaction already exists",
-      };
-    }
+  // Use notes.reseller_id as the authoritative reseller — the webhook URL reseller_id
+  // may belong to a different (parent) account that forwards events.
+  const effectiveResellerId = paymentData.notes?.reseller_id || resellerId;
+
+  const orderId = paymentData.order_id || null;
+
+  // Check if transaction already exists by payment ID or order ID.
+  // payment.authorized and payment.captured fire concurrently — captured may have
+  // already updated the pending transaction before authorized runs.
+  const existingTransaction = await transactionExists(paymentData.id, orderId);
+  if (existingTransaction) {
+    console.log(`[processPaymentAuthorized] Transaction already exists (${existingTransaction.status}), skipping`);
+    return {
+      success: true,
+      data: existingTransaction,
+      message: "Transaction already exists",
+    };
   }
 
   const amountInRupees = (paymentData.amount || 0) / 100;
 
-  // Extract customer_id from multiple possible locations
+  // Extract customer_id and email from multiple possible locations
   let customerId = paymentData.notes?.customer_id || null;
+  const customerEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email ||
+    null;
 
   // If not in notes, try to find by email
-  if (!customerId) {
-    const customerEmail =
-      paymentData.email ||
-      paymentData.notes?.email ||
-      paymentData.notes?.customer_email;
-    if (customerEmail) {
-      const customer = await findCustomerByEmail(customerEmail, resellerId);
-      if (customer) {
-        customerId = customer.id;
-      }
+  if (!customerId && customerEmail) {
+    const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
+    if (customer) {
+      customerId = customer.id;
     }
   }
 
-  const orderId = paymentData.order_id || null;
+  console.log(`[processPaymentAuthorized] effectiveReseller=${effectiveResellerId} customerId=${customerId} email=${customerEmail} amount=${amountInRupees}`);
 
-  // Try to find and UPDATE the pending transaction
+  // Try to find and UPDATE the pending transaction (pass email for static link fallback)
   const pendingTransaction = await findPendingTransaction(
     customerId,
     amountInRupees,
-    resellerId,
+    effectiveResellerId,
     orderId,
-    paymentData.id
+    paymentData.id,
+    customerEmail
   );
 
   if (pendingTransaction) {
@@ -1251,31 +1383,21 @@ export async function processPaymentAuthorized(resellerId, payload) {
     );
 
     if (updateResult.success) {
-      if (customerId) {
-        // authorized = payment captured by bank; generate virtual number
-        await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
-      }
+      // NOTE: do NOT trigger postPayment here — payment.authorized means the bank
+      // has authorised but money is not yet settled. postPayment runs only on
+      // payment.captured (the authoritative settled-payment event).
       return updateResult;
     }
+
+    // update failed because transaction reached success/refunded concurrently — that's fine
+    console.log(`[processPaymentAuthorized] Update skipped (terminal status) — payment.captured already handled it`);
+    return { success: true, message: "Transaction already processed by payment.captured" };
   }
 
-  // Final check before creating
-  if (paymentData.id) {
-    const finalCheck = await transactionExists(paymentData.id);
-    if (finalCheck) {
-      return {
-        success: true,
-        data: finalCheck,
-        message: "Transaction created by concurrent webhook",
-      };
-    }
-  }
-
-  // Create new transaction
-  return await createTransactionFromWebhook(resellerId, {
-    ...paymentData,
-    status: "authorized",
-  });
+  // No pending transaction found — payment.captured likely already processed this payment.
+  // Do NOT create a new transaction from authorized event; it would be a duplicate.
+  console.log(`[processPaymentAuthorized] No pending transaction found — payment.captured likely already handled pay=${paymentData.id}, skipping creation`);
+  return { success: true, message: "No pending transaction to update; payment.captured will handle it" };
 }
 
 /**
@@ -1295,15 +1417,25 @@ export async function processPaymentCaptured(resellerId, payload) {
     };
   }
 
+  // Use notes.reseller_id as the authoritative reseller
+  const effectiveResellerId = paymentData.notes?.reseller_id || resellerId;
+
+  // Extract email early — needed across all steps for static payment link matching
+  const earlyEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email ||
+    null;
+
   console.log(
-    `[processPaymentCaptured] Processing payment ${paymentData.id}, Event: ${eventId}`
+    `[processPaymentCaptured] Processing payment ${paymentData.id}, Event: ${eventId}, effectiveReseller: ${effectiveResellerId}, email: ${earlyEmail}, notes: ${JSON.stringify(paymentData.notes)}`
   );
 
   // ========================================
   // STEP 1: IDEMPOTENCY CHECK (Event-based)
   // ========================================
   if (eventId) {
-    const alreadyProcessed = await isWebhookEventProcessed(eventId, resellerId);
+    const alreadyProcessed = await isWebhookEventProcessed(eventId, effectiveResellerId);
     if (alreadyProcessed) {
       const existing = await transactionExists(paymentData.id);
       console.log(
@@ -1320,9 +1452,11 @@ export async function processPaymentCaptured(resellerId, payload) {
   // ========================================
   // STEP 2: CHECK IF TRANSACTION EXISTS - UPDATE STATUS IF NEEDED
   // ========================================
-  if (paymentData.id) {
-    const existingTransaction = await transactionExists(paymentData.id);
+  const step2OrderId = paymentData.order_id || null;
+  if (paymentData.id || step2OrderId) {
+    const existingTransaction = await transactionExists(paymentData.id, step2OrderId);
     if (existingTransaction) {
+      console.log(`[processPaymentCaptured] STEP2 found existing txn=${existingTransaction.id} status=${existingTransaction.status} customer_id=${existingTransaction.customer_id}`);
       // If transaction exists but status is not "success", update it
       if (existingTransaction.status !== "success") {
         const updateResult = await updateTransactionStatus(
@@ -1331,23 +1465,32 @@ export async function processPaymentCaptured(resellerId, payload) {
           null,
           existingTransaction.id,
           paymentData,
-          resellerId
+          effectiveResellerId
         );
 
+        // Resolve customer_id: from transaction or from email lookup
+        let resolvedCustomerId = existingTransaction.customer_id;
+        if (!resolvedCustomerId && earlyEmail) {
+          const cust = await findCustomerByEmail(earlyEmail, effectiveResellerId);
+          if (cust) resolvedCustomerId = cust.id;
+        }
+
         // Trigger full post-payment flow (virtual number + activation + email)
-        if (updateResult.success && existingTransaction.customer_id) {
+        if (updateResult.success && resolvedCustomerId) {
           await updateCustomerStatusAfterPayment(
-            existingTransaction.customer_id,
-            resellerId,
+            resolvedCustomerId,
+            effectiveResellerId,
             existingTransaction.id
           );
+        } else if (updateResult.success && !resolvedCustomerId) {
+          console.warn(`[processPaymentCaptured] STEP2 could not resolve customer_id — post-payment skipped`);
         }
 
         // Record event
         if (eventId && updateResult.success) {
           await recordWebhookEvent(
             eventId,
-            resellerId,
+            effectiveResellerId,
             existingTransaction.id,
             payload
           );
@@ -1356,11 +1499,20 @@ export async function processPaymentCaptured(resellerId, payload) {
         return updateResult;
       }
 
-      // Transaction already exists and is "success", just record event
+      // Transaction already exists and is "success", ensure post-payment ran
+      const resolvedCustomerId =
+        existingTransaction.customer_id ||
+        (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
+
+      if (resolvedCustomerId) {
+        // Idempotent — will skip if customer is already active
+        await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, existingTransaction.id);
+      }
+
       if (eventId) {
         await recordWebhookEvent(
           eventId,
-          resellerId,
+          effectiveResellerId,
           existingTransaction.id,
           payload
         );
@@ -1374,23 +1526,27 @@ export async function processPaymentCaptured(resellerId, payload) {
   }
 
   // ========================================
-  // STEP 3: EXTRACT CUSTOMER ID
+  // STEP 3: EXTRACT CUSTOMER ID + EMAIL
   // ========================================
   const amountInRupees = (paymentData.amount || 0) / 100;
   let customerId = paymentData.notes?.customer_id || null;
   const orderId = paymentData.order_id || null;
 
-  // Fallback: Find by email
-  if (!customerId) {
-    const customerEmail =
-      paymentData.email ||
-      paymentData.notes?.email ||
-      paymentData.notes?.customer_email;
-    if (customerEmail) {
-      const customer = await findCustomerByEmail(customerEmail, resellerId);
-      if (customer) {
-        customerId = customer.id;
-      }
+  // Extract email regardless — needed for static payment link matching
+  const customerEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email ||
+    null;
+
+  console.log(`[processPaymentCaptured] STEP3 effectiveReseller=${effectiveResellerId} customerId=${customerId} email=${customerEmail} amount=${amountInRupees} orderId=${orderId}`);
+
+  // Fallback: Find customer UUID by email if not in notes
+  if (!customerId && customerEmail) {
+    const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
+    if (customer) {
+      customerId = customer.id;
+      console.log(`[processPaymentCaptured] Resolved customerId=${customerId} from email`);
     }
   }
 
@@ -1400,13 +1556,14 @@ export async function processPaymentCaptured(resellerId, payload) {
   let result = null;
   let transactionId = null;
 
-  // Try to find pending transaction by payment_id, order_id, or customer_id
+  // Try to find pending transaction by order_id, customer_id, or customer_email
   const pendingTransaction = await findPendingTransaction(
     customerId,
     amountInRupees,
-    resellerId,
+    effectiveResellerId,
     orderId,
-    paymentData.id
+    paymentData.id,
+    customerEmail
   );
 
   if (pendingTransaction) {
@@ -1427,7 +1584,7 @@ export async function processPaymentCaptured(resellerId, payload) {
 
       // Trigger full post-payment flow (virtual number + customer activation + email)
       if (customerId) {
-        await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
+        await updateCustomerStatusAfterPayment(customerId, effectiveResellerId, pendingTransaction.id);
       }
     }
   }
@@ -1435,15 +1592,20 @@ export async function processPaymentCaptured(resellerId, payload) {
   // ========================================
   // STEP 5: FINAL DUPLICATE CHECK & SKIP CREATE
   // ========================================
-  if (!result && paymentData.id) {
-    // One last check before giving up - maybe another webhook just processed it
-    const finalCheck = await transactionExists(paymentData.id);
+  // Also pass orderId — a concurrent webhook may have updated the pending tx
+  // (setting razorpay_order_id) just before this check, but before payment_id was written.
+  if (!result) {
+    const finalCheck = await transactionExists(paymentData.id, orderId);
     if (finalCheck) {
-      console.log(
-        `[RACE CONDITION] Transaction created by concurrent webhook, returning it`
-      );
+      console.log(`[RACE CONDITION] Transaction created by concurrent webhook, returning it`);
       if (eventId) {
-        await recordWebhookEvent(eventId, resellerId, finalCheck.id, payload);
+        await recordWebhookEvent(eventId, effectiveResellerId, finalCheck.id, payload);
+      }
+      // Ensure post-payment ran on the found transaction
+      const resolvedCustomerId = finalCheck.customer_id ||
+        (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
+      if (resolvedCustomerId) {
+        await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, finalCheck.id);
       }
       return {
         success: true,
@@ -1457,7 +1619,7 @@ export async function processPaymentCaptured(resellerId, payload) {
   // STEP 6: CREATE NEW TRANSACTION (Last Resort)
   // ========================================
   if (!result) {
-    result = await createTransactionFromWebhook(resellerId, {
+    result = await createTransactionFromWebhook(effectiveResellerId, {
       ...paymentData,
       status: "captured",
     });
@@ -1468,7 +1630,7 @@ export async function processPaymentCaptured(resellerId, payload) {
   // STEP 7: RECORD EVENT (Idempotency)
   // ========================================
   if (eventId && transactionId) {
-    await recordWebhookEvent(eventId, resellerId, transactionId, payload);
+    await recordWebhookEvent(eventId, effectiveResellerId, transactionId, payload);
   }
 
   return result;
@@ -1489,7 +1651,8 @@ export async function processPaymentFailed(resellerId, payload) {
     };
   }
 
-  console.log(`[processPaymentFailed] Processing payment ${paymentData.id}`);
+  const effectiveResellerId = paymentData.notes?.reseller_id || resellerId;
+  console.log(`[processPaymentFailed] Processing payment ${paymentData.id} effectiveReseller=${effectiveResellerId}`);
 
   // CRITICAL: Check if transaction already exists by payment ID FIRST
   // This prevents race conditions where multiple webhooks arrive simultaneously
@@ -1510,7 +1673,7 @@ export async function processPaymentFailed(resellerId, payload) {
         failureReason,
         existingTransaction.id,
         paymentData,
-        resellerId
+        effectiveResellerId
       );
     }
   }
@@ -1523,34 +1686,36 @@ export async function processPaymentFailed(resellerId, payload) {
 
   const amountInRupees = (paymentData.amount || 0) / 100;
 
-  // Extract customer_id from multiple possible locations
+  // Extract customer_id and email from multiple possible locations
   let customerId = paymentData.notes?.customer_id || null;
+  const customerEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email ||
+    null;
 
   // If not in notes, try to find by email
-  if (!customerId) {
-    const customerEmail =
-      paymentData.email ||
-      paymentData.notes?.email ||
-      paymentData.notes?.customer_email;
-    if (customerEmail) {
-      const customer = await findCustomerByEmail(customerEmail, resellerId);
-      if (customer) {
-        customerId = customer.id;
-      }
+  if (!customerId && customerEmail) {
+    const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
+    if (customer) {
+      customerId = customer.id;
     }
   }
 
   console.log(
-    `[processPaymentFailed] Customer: ${customerId}, Amount: ${amountInRupees}`
+    `[processPaymentFailed] Customer: ${customerId}, Email: ${customerEmail}, Amount: ${amountInRupees}`
   );
 
-  // Try to find and UPDATE the pending transaction
+  // Try to find and UPDATE the pending transaction (pass email for static link fallback)
   let pendingTransaction = null;
-  if (customerId) {
+  if (customerId || customerEmail) {
     pendingTransaction = await findPendingTransaction(
       customerId,
       amountInRupees,
-      resellerId
+      effectiveResellerId,
+      null,
+      null,
+      customerEmail
     );
     if (pendingTransaction) {
       console.log(
@@ -1587,7 +1752,7 @@ export async function processPaymentFailed(resellerId, payload) {
 
   // Create new transaction only if no pending transaction found
   console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
-  return await createTransactionFromWebhook(resellerId, {
+  return await createTransactionFromWebhook(effectiveResellerId, {
     ...paymentData,
     status: "failed",
     error_description: failureReason,
@@ -1633,19 +1798,18 @@ export async function processOrderPaid(resellerId, payload) {
     return { success: false, message: "Invalid order data in webhook payload" };
   }
 
+  // Use notes.reseller_id as the authoritative reseller
+  const effectiveResellerId = paymentData?.notes?.reseller_id || orderData?.notes?.reseller_id || resellerId;
+
   // If payment data exists, process as captured payment
-  // NOTE: order.paid and payment.captured can fire for the same payment
-  // So we MUST check if transaction already exists first
   if (paymentData) {
-    console.log(`[processOrderPaid] Processing payment ${paymentData.id}`);
+    console.log(`[processOrderPaid] Processing payment ${paymentData.id} effectiveReseller=${effectiveResellerId}`);
 
     // Check if transaction already exists by payment ID FIRST
     if (paymentData.id) {
       const existingTransaction = await transactionExists(paymentData.id);
       if (existingTransaction) {
-        console.log(
-          `[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`
-        );
+        console.log(`[DUPLICATE] Transaction exists for ${paymentData.id}, skipping`);
         return {
           success: true,
           data: existingTransaction,
@@ -1655,40 +1819,34 @@ export async function processOrderPaid(resellerId, payload) {
     }
 
     const amountInRupees = (paymentData.amount || 0) / 100;
-
-    // Extract customer_id from multiple possible locations
     let customerId = paymentData.notes?.customer_id || null;
+    const customerEmail =
+      paymentData.email ||
+      paymentData.notes?.email ||
+      paymentData.notes?.customer_email ||
+      null;
 
-    // If not in notes, try to find by email
-    if (!customerId) {
-      const customerEmail =
-        paymentData.email ||
-        paymentData.notes?.email ||
-        paymentData.notes?.customer_email;
-      if (customerEmail) {
-        const customer = await findCustomerByEmail(customerEmail, resellerId);
-        if (customer) {
-          customerId = customer.id;
-        }
-      }
+    if (!customerId && customerEmail) {
+      const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
+      if (customer) customerId = customer.id;
     }
 
-    console.log(
-      `[processOrderPaid] Customer: ${customerId}, Amount: ${amountInRupees}`
-    );
+    console.log(`[processOrderPaid] Customer: ${customerId}, Amount: ${amountInRupees}`);
 
     // Try to find and UPDATE the pending transaction
     let pendingTransaction = null;
-    if (customerId) {
+    if (customerId || customerEmail) {
       pendingTransaction = await findPendingTransaction(
         customerId,
         amountInRupees,
-        resellerId
+        effectiveResellerId,
+        paymentData.order_id || null,
+        null,
+        customerEmail
       );
       if (pendingTransaction) {
-        console.log(
-          `[UPDATE] Found pending transaction ${pendingTransaction.transaction_number}, updating with payment details`
-        );
+        if (!customerId && pendingTransaction.customer_id) customerId = pendingTransaction.customer_id;
+        console.log(`[UPDATE] Found pending transaction ${pendingTransaction.transaction_number}, updating`);
         const updateResult = await updatePendingTransactionWithPayment(
           pendingTransaction.id,
           { ...paymentData, order_id: orderData?.id },
@@ -1696,38 +1854,28 @@ export async function processOrderPaid(resellerId, payload) {
         );
 
         if (updateResult.success) {
-          // Trigger full post-payment flow (virtual number + activation + email)
-          await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
+          // NOTE: do NOT trigger postPayment here — order.paid fires concurrently with
+          // payment.captured. postPayment runs only on payment.captured to avoid
+          // duplicate virtual number creation and emails.
           return updateResult;
         } else {
-          console.error(
-            `[ERROR] Failed to update pending transaction, will create new one: ${updateResult.message}`
-          );
+          console.error(`[ERROR] Failed to update pending transaction: ${updateResult.message}`);
         }
       }
     }
 
-    // Final check before creating
-    if (paymentData.id) {
-      const finalCheck = await transactionExists(paymentData.id);
-      if (finalCheck) {
-        console.log(`[RACE CONDITION] Transaction just created, skipping`);
-        return {
-          success: true,
-          data: finalCheck,
-          message: "Transaction created by concurrent webhook",
-        };
-      }
+    // Final check before creating — also check by order_id for timing races
+    const finalCheck = await transactionExists(paymentData.id, paymentData.order_id || orderData?.id);
+    if (finalCheck) {
+      console.log(`[RACE CONDITION] Transaction already exists for ${paymentData.id}, skipping`);
+      return { success: true, data: finalCheck, message: "Transaction created by concurrent webhook" };
     }
 
-    console.log(
-      `[CREATE] Creating new transaction for ${paymentData.id} (order.paid)`
-    );
-    return await createTransactionFromWebhook(resellerId, {
-      ...paymentData,
-      order_id: orderData?.id,
-      status: "captured",
-    });
+    // order.paid should NOT create new transactions — payment.captured is the
+    // authoritative handler for new transaction creation. If no pending transaction
+    // was found, payment.captured will handle it.
+    console.log(`[processOrderPaid] No pending transaction found — payment.captured will handle creation for ${paymentData.id}`);
+    return { success: true, message: "No pending transaction to update; payment.captured will handle it" };
   }
 
   return { success: true, message: "Order paid event processed" };
@@ -1748,6 +1896,16 @@ export async function processSubscriptionCharged(resellerId, payload) {
       success: false,
       message: "Invalid subscription payment data in webhook payload",
     };
+  }
+
+  // Resolve effective reseller: notes.reseller_id (set at payment link creation)
+  // takes priority over the webhook URL reseller (which may be a different account).
+  const effectiveResellerId =
+    paymentData.notes?.reseller_id || subscriptionData?.notes?.reseller_id || resellerId;
+  if (effectiveResellerId !== resellerId) {
+    console.log(
+      `[processSubscriptionCharged] Using notes.reseller_id=${effectiveResellerId} (webhook URL reseller=${resellerId})`
+    );
   }
 
   console.log(
@@ -1774,17 +1932,17 @@ export async function processSubscriptionCharged(resellerId, payload) {
   // Extract customer_id from multiple possible locations
   let customerId = paymentData.notes?.customer_id || null;
 
+  // Extract customer email for fallback matching
+  const customerEmail =
+    paymentData.email ||
+    paymentData.notes?.email ||
+    paymentData.notes?.customer_email;
+
   // If not in notes, try to find by email
-  if (!customerId) {
-    const customerEmail =
-      paymentData.email ||
-      paymentData.notes?.email ||
-      paymentData.notes?.customer_email;
-    if (customerEmail) {
-      const customer = await findCustomerByEmail(customerEmail, resellerId);
-      if (customer) {
-        customerId = customer.id;
-      }
+  if (!customerId && customerEmail) {
+    const customer = await findCustomerByEmail(customerEmail, effectiveResellerId);
+    if (customer) {
+      customerId = customer.id;
     }
   }
 
@@ -1794,11 +1952,14 @@ export async function processSubscriptionCharged(resellerId, payload) {
 
   // Try to find and UPDATE the pending transaction
   let pendingTransaction = null;
-  if (customerId) {
+  if (customerId || customerEmail) {
     pendingTransaction = await findPendingTransaction(
       customerId,
       amountInRupees,
-      resellerId
+      effectiveResellerId,
+      null,
+      null,
+      customerEmail
     );
     if (pendingTransaction) {
       console.log(
@@ -1819,7 +1980,7 @@ export async function processSubscriptionCharged(resellerId, payload) {
 
       if (updateResult.success) {
         // Trigger full post-payment flow (virtual number + activation + email)
-        await updateCustomerStatusAfterPayment(customerId, resellerId, pendingTransaction.id);
+        await updateCustomerStatusAfterPayment(customerId, effectiveResellerId, pendingTransaction.id);
         return updateResult;
       } else {
         console.error(
@@ -1844,7 +2005,7 @@ export async function processSubscriptionCharged(resellerId, payload) {
 
   // Create new transaction with subscription info only if no pending transaction found
   console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
-  return await createTransactionFromWebhook(resellerId, {
+  return await createTransactionFromWebhook(effectiveResellerId, {
     ...paymentData,
     status: "captured",
     notes: {

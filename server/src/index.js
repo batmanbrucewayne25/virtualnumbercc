@@ -43,18 +43,27 @@ app.use(
 // express.json() must NOT run on webhook routes — it consumes the stream and
 // JSON.stringify(parsed) does not reproduce the exact original byte sequence.
 app.use((req, res, next) => {
-  // Capture raw body for Razorpay webhook signature verification
+  // Capture raw body for Razorpay webhook signature verification.
+  // We must consume the stream here AND set req._body = true so that
+  // express.json() (below) skips re-reading an already-consumed stream,
+  // which would throw "stream is not readable".
   if (req.path.startsWith("/api/razorpay/webhook/")) {
+    console.log(`[RawBody] Capturing raw body for webhook path: ${req.path}`);
     let data = [];
     req.on("data", (chunk) => data.push(chunk));
     req.on("end", () => {
-      req.rawBody = Buffer.concat(data).toString("utf8");
-      // Also make req.body available as a parsed object
+      const rawBuf = Buffer.concat(data);
+      req.rawBody = rawBuf.toString("utf8");
+      console.log(`[RawBody] Captured ${rawBuf.length} bytes`);
+      // Parse JSON body so controllers can access req.body
       try {
         req.body = JSON.parse(req.rawBody);
       } catch {
         req.body = {};
       }
+      // CRITICAL: tell body-parser the body is already parsed — prevents
+      // express.json() from trying to read the consumed stream again.
+      req._body = true;
       next();
     });
     req.on("error", (err) => {
