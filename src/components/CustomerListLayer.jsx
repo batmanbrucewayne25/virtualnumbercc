@@ -243,7 +243,6 @@ const CustomerListLayer = () => {
                     <th scope="col">S.L</th>
                     <th scope="col">Date</th>
                     {!isReseller && <th scope="col">Reseller</th>}
-                    {!isReseller && <th scope="col">Profile Name</th>}
                     <th scope="col">Email</th>
                     <th scope="col">Phone</th>
                     {/* <th scope="col">Business Email</th> */}
@@ -271,23 +270,6 @@ const CustomerListLayer = () => {
                                ? `${customer.mst_reseller.first_name} ${customer.mst_reseller.last_name}`
                                : customer.mst_reseller?.email || "-")}
                           </span>
-                        </td>
-                      )}
-                      {!isReseller && (
-                        <td>
-                          <div className="d-flex align-items-center">
-                            <div className="w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden bg-primary-100 d-flex align-items-center justify-content-center">
-                              <Icon
-                                icon="solar:user-bold"
-                                className="icon text-primary-600 text-xl"
-                              />
-                            </div>
-                            <div className="flex-grow-1">
-                              <span className="text-md mb-0 fw-normal text-secondary-light">
-                                {customer.profile_name || "N/A"}
-                              </span>
-                            </div>
-                          </div>
                         </td>
                       )}
                       <td>

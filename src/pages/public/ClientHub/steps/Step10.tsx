@@ -48,8 +48,23 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
   const [loading, setLoading] = useState(false);
 
   // All details already saved in previous steps; this step only reviews and completes
-  const handleComplete = () => {
+  const handleComplete = async () => {
     setLoading(true);
+    try {
+      // Save profile_name and business_name derived from KYC data
+      if (formData.email) {
+        const { updateCustomerProfileName } = await import("@/hasura/mutations/customer");
+        const derivedProfileName = formData.aadhaarData?.full_name || formData.panData?.full_name || null;
+        const derivedBusinessName = formData.gstData?.business_name || null;
+        await updateCustomerProfileName({
+          email: formData.email,
+          profile_name: derivedProfileName,
+          business_name: derivedBusinessName,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to save profile name:", err);
+    }
     onSubmit();
     setLoading(false);
   };

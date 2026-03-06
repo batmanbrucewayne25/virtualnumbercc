@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:clienthub": "vite --mode clienthub",
     "build": "vite build",
     "build:admin": "vite build --mode admin",
     "build:clienthub": "vite build --mode clienthub",

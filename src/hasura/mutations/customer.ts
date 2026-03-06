@@ -647,6 +647,69 @@ export const updateCustomerSignature = async ({
 };
 
 /**
+ * Update customer profile name and business name by email
+ */
+export const updateCustomerProfileName = async ({
+  email,
+  profile_name,
+  business_name,
+}: {
+  email: string;
+  profile_name?: string;
+  business_name?: string;
+}) => {
+  const MUTATION = `mutation UpdateCustomerProfileName(
+    $email: String!
+    $profile_name: String
+    $business_name: String
+  ) {
+    update_mst_customer(
+      where: { email: { _eq: $email } }
+      _set: {
+        profile_name: $profile_name
+        business_name: $business_name
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        email
+        profile_name
+        business_name
+      }
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, {
+      email,
+      profile_name: profile_name || null,
+      business_name: business_name || null,
+    });
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update profile name",
+        data: null,
+      };
+    }
+    if (result?.data?.update_mst_customer?.returning?.length > 0) {
+      return {
+        success: true,
+        data: result.data.update_mst_customer.returning[0],
+      };
+    }
+    return { success: false, message: "Failed to update profile name", data: null };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update profile name",
+      data: null,
+    };
+  }
+};
+
+/**
  * Get customer by email
  */
 export const getMstCustomerByEmail = async ({ email }: { email: string }) => {

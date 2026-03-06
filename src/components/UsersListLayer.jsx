@@ -151,6 +151,7 @@ const UsersListLayer = () => {
       customer.business_name ||
       customer.profile_name ||
       customer.pan_full_name ||
+      customer.email ||
       "N/A"
     );
   };
@@ -292,10 +293,10 @@ const UsersListLayer = () => {
               />
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary btn-sm d-flex align-items-center justify-content-center"
                 onClick={handleSearch}
               >
-                <Icon icon="ion:search-outline" />
+                <Icon icon="ion:search-outline" className="icon text-xl line-height-1" />
               </button>
             </div>
           </div>
@@ -341,10 +342,10 @@ const UsersListLayer = () => {
           <div className="col-md-2 d-flex align-items-end">
             <button
               type="button"
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary btn-sm d-flex align-items-center gap-1"
               onClick={handleClearFilters}
             >
-              <Icon icon="mdi:filter-off" className="icon me-2" />
+              <Icon icon="mdi:filter-off" className="icon text-xl line-height-1" />
               Clear Filters
             </button>
           </div>
@@ -382,7 +383,7 @@ const UsersListLayer = () => {
                     {(userRole === "admin" || userRole === "super_admin") && (
                       <th scope="col">Reseller</th>
                     )}
-                    <th scope="col">Customer Name</th>
+                    <th scope="col">Email</th>
                     <th scope="col" className="text-center">
                       Virtual Numbers
                     </th>
@@ -419,9 +420,7 @@ const UsersListLayer = () => {
                         </td>
                       )}
                       <td>
-                        <span className="text-sm fw-medium">
-                          {getCustomerName(customer)}
-                        </span>
+                        <span className="text-sm">{customer.email || "-"}</span>
                       </td>
                       <td className="text-center">
                         <span className="text-sm fw-medium text-primary-600">
@@ -473,16 +472,18 @@ const UsersListLayer = () => {
                         </button>
                       </td> */}
                       <td className="text-center">
-                        <Link
-                          to={`/view-user/${customer.id}`}
-                          className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
-                          title="View Details"
-                        >
-                          <Icon
-                            icon="majesticons:eye-line"
-                            className="icon text-xl"
-                          />
-                        </Link>
+                        <div className="d-flex justify-content-center">
+                          <Link
+                            to={`/view-user/${customer.id}`}
+                            className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                            title="View Details"
+                          >
+                            <Icon
+                              icon="majesticons:eye-line"
+                              className="icon text-xl"
+                            />
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}
