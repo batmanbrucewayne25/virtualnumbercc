@@ -336,6 +336,7 @@ const AddSubscriptionPlanLayer = () => {
                       className='form-control radius-8'
                       id='duration_days'
                       name='duration_days'
+                      readOnly
                       placeholder='Enter duration in days (e.g., 30, 90, 365)'
                       value={formData.duration_days}
                       onChange={handleChange}

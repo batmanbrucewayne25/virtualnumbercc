@@ -72,8 +72,20 @@ export const uploadLogo = asyncHandler(async (req, res) => {
     });
   }
 
-  // Allow admin to upload for a specific reseller via query param
-  const targetId = req.query.resellerId || req.user.userId;
+  // Reseller id: from auth, query resellerId, or look up by email (for signup flow when no token)
+  let targetId = req.user?.userId || req.query.resellerId;
+  if (!targetId && (req.query.email || req.body?.email)) {
+    const client = getHasuraClient();
+    const email = req.query.email || req.body.email;
+    const reseller = await client.getUserByEmail(email);
+    if (reseller) targetId = reseller.id;
+  }
+  if (!targetId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Reseller identification required. Log in, or provide resellerId or email (e.g. during signup).'
+    });
+  }
 
   try {
     // Get logo URL

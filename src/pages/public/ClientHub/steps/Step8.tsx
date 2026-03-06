@@ -74,7 +74,31 @@ const Step8 = ({ email, onBack, onContinue }: Step8Props) => {
     onContinue(null);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    if (gstData) {
+      setLoading(true);
+      setError("");
+      try {
+        const { updateCustomerGstStep } = await import("@/hasura/mutations/customer");
+        const result = await updateCustomerGstStep({
+          email,
+          gstin: gstData.gstin,
+          business_name: gstData.business_name || null,
+        });
+        if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          setError("Failed to save GST details. Please try again.");
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Error saving GST to database:", err);
+        setError("Failed to save GST details. Please try again.");
+        setLoading(false);
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
     onContinue(gstData);
   };
 
@@ -155,9 +179,16 @@ const Step8 = ({ email, onBack, onContinue }: Step8Props) => {
           e.preventDefault();
           handleContinue();
         }}
-        disabled={gstNumber.trim() !== "" && !gstVerified}
+        disabled={(gstNumber.trim() !== "" && !gstVerified) || loading}
       >
-        Continue
+        {loading ? (
+          <>
+            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+            {gstData ? "Saving..." : "Verifying..."}
+          </>
+        ) : (
+          "Continue"
+        )}
       </button>
     </>
   );

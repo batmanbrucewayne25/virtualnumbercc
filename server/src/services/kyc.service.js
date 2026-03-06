@@ -256,6 +256,13 @@ export class KYCService {
    * @returns {Promise<object>}
    */
   static async verifyPAN(idNumber, dob = null) {
+    const apiUrl = `${this.QUICKEKYC_BASE_URL}/pan/pan_with_dob`;
+    console.log("[KYC Service PAN] verifyPAN called:", {
+      idNumber: idNumber ? `${idNumber.substring(0, 3)}***` : "(empty)",
+      dob: dob ?? "(not provided)",
+      apiUrl,
+    });
+
     try {
       if (!idNumber) {
         throw new Error("PAN number (id_number) is required");
@@ -271,8 +278,15 @@ export class KYCService {
         requestData.dob = dob;
       }
 
+      console.log("[KYC Service PAN] Request to external API:", {
+        url: apiUrl,
+        hasKey: !!requestData.key,
+        id_number: requestData.id_number ? `${requestData.id_number.substring(0, 3)}***` : "(empty)",
+        hasDob: !!requestData.dob,
+      });
+
       const response = await axios.post(
-        `${this.QUICKEKYC_BASE_URL}/pan/pan_with_dob`,
+        apiUrl,
         requestData,
         {
           headers: {
@@ -281,15 +295,24 @@ export class KYCService {
         }
       );
 
+      console.log("[KYC Service PAN] External API response:", {
+        status: response.status,
+        statusText: response.statusText,
+        dataKeys: response.data ? Object.keys(response.data) : [],
+        dataSample: response.data ? JSON.stringify(response.data).substring(0, 200) : "(none)",
+      });
+
       return {
         success: true,
         data: response.data,
       };
     } catch (error) {
-      console.error(
-        "PAN Verification Error:",
-        error.response?.data || error.message
-      );
+      console.error("[KYC Service PAN] External API error:", {
+        message: error.message,
+        responseStatus: error.response?.status,
+        responseData: error.response?.data,
+        responseHeaders: error.response?.headers ? "(present)" : "(none)",
+      });
       throw {
         status: error.response?.status || 500,
         message: error.response?.data?.message || "Failed to verify PAN",

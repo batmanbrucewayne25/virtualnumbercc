@@ -89,7 +89,14 @@ export const submitAadhaarOTP = asyncHandler(async (req, res) => {
 export const verifyPAN = asyncHandler(async (req, res) => {
   const { id_number, dob } = req.body;
 
+  console.log("[KYC PAN Verify] Request received:", {
+    body: req.body,
+    id_number: id_number ?? "(missing)",
+    dob: dob ?? "(not provided)",
+  });
+
   if (!id_number) {
+    console.log("[KYC PAN Verify] Validation failed: id_number required");
     return res.status(400).json({
       success: false,
       message: "PAN number (id_number) is required",
@@ -98,8 +105,18 @@ export const verifyPAN = asyncHandler(async (req, res) => {
 
   try {
     const result = await KYCService.verifyPAN(id_number, dob);
+    console.log("[KYC PAN Verify] Success:", {
+      hasData: !!result?.data,
+      dataKeys: result?.data ? Object.keys(result.data) : [],
+    });
     res.status(200).json(result);
   } catch (error) {
+    console.error("[KYC PAN Verify] Error:", {
+      message: error.message,
+      status: error.status,
+      errorDetail: error.error,
+      stack: error.stack,
+    });
     res.status(error.status || 500).json({
       success: false,
       message: error.message || "Failed to verify PAN",

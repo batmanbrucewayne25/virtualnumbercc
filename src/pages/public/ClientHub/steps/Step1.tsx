@@ -9,12 +9,14 @@ import { saveAuthToken } from "@/utils/auth";
 interface Step1Props {
   resellerId: string;
   brandName?: string;
+  allowExistingCustomer?: boolean;
   onSignUp: () => void;
   onLogin: () => void;
 }
 
-const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
+const Step1 = ({ resellerId, brandName, allowExistingCustomer, onSignUp, onLogin }: Step1Props) => {
   const [showLogin, setShowLogin] = useState(false);
+  const [showExistingUserModal, setShowExistingUserModal] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -155,12 +157,65 @@ const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
         className="btn btn-primary w-100 radius-12 mb-12"
         onClick={(e) => {
           e.preventDefault();
-          onSignUp();
+          if (allowExistingCustomer) {
+            setShowExistingUserModal(true);
+          } else {
+            onSignUp();
+          }
         }}
       >
-        Get My Virtual Number
+        Get Your Virtual Number
       </button>
- 
+
+      {/* Modal: Are you an existing user? (when allow_existing_customer is true) */}
+      {showExistingUserModal && (
+        <div
+          className="modal d-block"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          tabIndex={-1}
+          role="dialog"
+          aria-labelledby="existingUserModalLabel"
+          aria-modal="true"
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-16">
+              <div className="modal-header border-0 pb-0">
+                <h5 className="modal-title text-primary-light" id="existingUserModalLabel">
+                  Are you an existing {brandName || "Client Hub"} user?
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  onClick={() => setShowExistingUserModal(false)}
+                />
+              </div>
+              <div className="modal-footer border-0 pt-16 justify-content-center gap-12">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary radius-12"
+                  onClick={() => {
+                    setShowExistingUserModal(false);
+                    onSignUp();
+                  }}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary radius-12"
+                  onClick={() => {
+                    setShowExistingUserModal(false);
+                    onSignUp();
+                  }}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

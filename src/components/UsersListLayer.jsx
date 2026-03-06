@@ -391,9 +391,9 @@ const UsersListLayer = () => {
                     <th scope="col">Purchase Date</th>
                     <th scope="col">Expiry Date</th>
                     <th scope="col">Payment Mode</th> */}
-                    <th scope="col" className="text-end">
+                    {/* <th scope="col" className="text-end">
                       WalletAmount
-                    </th>
+                    </th> */}
                     {/* <th scope="col">Days Left</th> */}
                     {/* <th scope="col" className="text-center">
                       Renew
@@ -425,7 +425,7 @@ const UsersListLayer = () => {
                       </td>
                       <td className="text-center">
                         <span className="text-sm fw-medium text-primary-600">
-                          {getVirtualNumberCount(customer)}
+                          {getVirtualNumberCount(customer)} / {customer.max_virtual_numbers ?? "-"}
                         </span>
                       </td>
                       {/* <td>
@@ -445,11 +445,11 @@ const UsersListLayer = () => {
                           {getPaymentMode(customer)}
                         </span>
                       </td> */}
-                      <td className="text-end">
+                      {/* <td className="text-end">
                         <span className="text-sm fw-medium text-success-600">
                           {formatCurrency(getAmount(customer))}
                         </span>
-                      </td>
+                      </td> */}
                       {/* <td>
                         <span
                           className={`text-sm fw-medium ${

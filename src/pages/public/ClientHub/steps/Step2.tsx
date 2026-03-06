@@ -6,14 +6,18 @@ import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/grap
 interface Step2Props {
   resellerId: string;
   onBack: () => void;
-  onSuccess: (data: { email: string; phone: string; password: string }) => void;
+  onSuccess: (data: { firstName: string; lastName: string; email: string; phone: string; password: string }) => void;
 }
 
 const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
+  const [firstName, setFirstName] = useState<string>("");
+  const [lastName, setLastName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
+  const [firstNameError, setFirstNameError] = useState<string>("");
+  const [lastNameError, setLastNameError] = useState<string>("");
   const [emailError, setEmailError] = useState<string>("");
   const [phoneError, setPhoneError] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -42,10 +46,22 @@ const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
 
   const handleContinue = async () => {
     setError("");
+    setFirstNameError("");
+    setLastNameError("");
     setEmailError("");
     setPhoneError("");
 
     // Validate all fields
+    if (!firstName?.trim()) {
+      setFirstNameError("First name is required.");
+      setError("Please fill all required fields.");
+      return;
+    }
+    if (!lastName?.trim()) {
+      setLastNameError("Last name is required.");
+      setError("Please fill all required fields.");
+      return;
+    }
     if (!email || !phone || !password || !confirmPassword) {
       setError("Please fill all required fields.");
       return;
@@ -93,9 +109,11 @@ const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
         }
       }
 
-      // Create customer record
+      // Create customer record (DB columns: first_name, last_name)
       const result = await createMstCustomer({
         reseller_id: resellerId,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         email,
         phone,
         password_hash: password,
@@ -123,7 +141,7 @@ const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
 
       // Call onSuccess to proceed to next step
       if (onSuccess) {
-        onSuccess({ email, phone, password });
+        onSuccess({ firstName: firstName.trim(), lastName: lastName.trim(), email, phone, password });
       } else {
         console.error("onSuccess callback is not defined");
         setError("An error occurred. Please try again.");
@@ -155,6 +173,41 @@ const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
       <h4 className="mb-12">Create Account</h4>
 
       {error && <div className="alert alert-danger mb-12">{error}</div>}
+
+      <div className="row">
+        <div className="col-md-6 mb-16">
+          <label className="form-label text-sm mb-8">
+            First Name <span className="text-danger">*</span>
+          </label>
+          <input
+            className={`form-control h-56-px ${firstNameError ? "is-invalid" : ""}`}
+            type="text"
+            placeholder="Enter first name"
+            value={firstName}
+            onChange={(e) => {
+              setFirstName(e.target.value);
+              if (firstNameError) setFirstNameError("");
+            }}
+          />
+          {firstNameError && <div className="text-danger small mt-4">{firstNameError}</div>}
+        </div>
+        <div className="col-md-6 mb-16">
+          <label className="form-label text-sm mb-8">
+            Last Name <span className="text-danger">*</span>
+          </label>
+          <input
+            className={`form-control h-56-px ${lastNameError ? "is-invalid" : ""}`}
+            type="text"
+            placeholder="Enter last name"
+            value={lastName}
+            onChange={(e) => {
+              setLastName(e.target.value);
+              if (lastNameError) setLastNameError("");
+            }}
+          />
+          {lastNameError && <div className="text-danger small mt-4">{lastNameError}</div>}
+        </div>
+      </div>
 
       <div className="mb-16">
         <label className="form-label text-sm mb-8">

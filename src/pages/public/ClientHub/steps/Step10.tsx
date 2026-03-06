@@ -54,7 +54,13 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
     setLoading(false);
   };
 
-  const profileName = formData.gstData?.business_name || formData.aadhaarData?.full_name || "N/A";
+  const profileName =
+    (formData.firstName && formData.lastName
+      ? `${formData.firstName} ${formData.lastName}`.trim()
+      : "") ||
+    formData.gstData?.business_name ||
+    formData.aadhaarData?.full_name ||
+    "N/A";
 
   return (
     <>
@@ -67,6 +73,18 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
       <div className="card border mb-16">
         <div className="card-body p-16">
           <h6 className="mb-16 fw-semibold">Account Information</h6>
+          {(formData.firstName || formData.lastName) && (
+            <>
+              <div className="mb-8">
+                <span className="text-secondary-light text-sm">First Name:</span>
+                <span className="ms-8 fw-medium">{formData.firstName || "—"}</span>
+              </div>
+              <div className="mb-8">
+                <span className="text-secondary-light text-sm">Last Name:</span>
+                <span className="ms-8 fw-medium">{formData.lastName || "—"}</span>
+              </div>
+            </>
+          )}
           <div className="mb-8">
             <span className="text-secondary-light text-sm">Email:</span>
             <span className="ms-8 fw-medium">{formData.email || "N/A"}</span>

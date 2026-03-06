@@ -16,9 +16,9 @@ router.post('/profile-image', optionalAuthMiddleware, uploadProfileImageMulter.s
 /**
  * @route   POST /api/upload/logo
  * @desc    Upload reseller logo
- * @access  Private (Reseller only)
+ * @access  Private (Reseller only) or during signup with email in query
  */
-router.post('/logo', authMiddleware, uploadLogoMulter.single('logo'), uploadLogo);
+router.post('/logo', optionalAuthMiddleware, uploadLogoMulter.single('logo'), uploadLogo);
 
 /**
  * @route   POST /api/upload/signature

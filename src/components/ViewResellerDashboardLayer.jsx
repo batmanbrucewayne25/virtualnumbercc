@@ -11,6 +11,7 @@ import { getAllMstWalletTransactions } from "@/hasura/mutations/wallet";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
+import { getNumberLimitsByResellerId } from "@/hasura/mutations/numberLimits";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import AlertModal from "./AlertModal";
 
@@ -90,6 +91,7 @@ const ViewResellerDashboardLayer = () => {
   const [validity, setValidity] = useState(null);
   const [domainData, setDomainData] = useState(null);
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
+  const [numberLimits, setNumberLimits] = useState(null);
 
   useEffect(() => {
     // Get current user role
@@ -140,6 +142,19 @@ const ViewResellerDashboardLayer = () => {
           }
         } catch (domainErr) {
           console.warn("Error fetching domain:", domainErr);
+        }
+
+        // Fetch number limits (virtual number limit)
+        try {
+          const limitsResult = await getNumberLimitsByResellerId(id);
+          if (limitsResult.success && limitsResult.data) {
+            setNumberLimits(limitsResult.data);
+          } else {
+            setNumberLimits(null);
+          }
+        } catch (limitsErr) {
+          console.warn("Error fetching number limits:", limitsErr);
+          setNumberLimits(null);
         }
       } else {
         setError(result.message || "Reseller not found");
@@ -816,17 +831,25 @@ const ViewResellerDashboardLayer = () => {
                     </div>
                   )}
 
-                  {reseller?.grace_period_days !== null &&
-                    reseller?.grace_period_days !== undefined && (
-                      <div className="mb-16 d-flex align-items-center gap-2">
-                        <label className="form-label text-xs text-secondary-light mb-4">
-                          Grace Period (Days)
-                        </label>
-                        <p className="text-md fw-medium text-primary-light mb-0">
-                          {reseller.grace_period_days}
-                        </p>
-                      </div>
-                    )}
+                  {(numberLimits?.max_virtual_numbers != null || isSuperAdmin) && (
+                    <div className="mb-16 d-flex align-items-center gap-2">
+                      <label className="form-label text-xs text-secondary-light mb-4">
+                        Virtual Number Limit
+                      </label>
+                      <p className="text-md fw-medium text-primary-light mb-0">
+                        {numberLimits?.max_virtual_numbers ?? "-"}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mb-16 d-flex align-items-center gap-2">
+                    <label className="form-label text-xs text-secondary-light mb-4">
+                      Grace Period (Days)
+                    </label>
+                    <p className="text-md fw-medium text-primary-light mb-0">
+                      {reseller?.grace_period_days != null ? reseller.grace_period_days : "-"}
+                    </p>
+                  </div>
 
                   {/* {reseller?.current_step !== null &&
                     reseller?.current_step !== undefined && (
@@ -939,7 +962,7 @@ const ViewResellerDashboardLayer = () => {
                         Validity Days
                       </label>
                       <p className="text-md fw-medium text-primary-light mb-0">
-                        {validity.validity_days || "-"}
+                        {validity.validity_days - 1 || "-"}
                       </p>
                     </div>
 

@@ -26,6 +26,7 @@ export const getAllApprovedCustomers = async (filters?: {
       status
       kyc_status
       approval
+      max_virtual_numbers
       created_at
       mst_reseller {
         id
@@ -177,6 +178,7 @@ export const getApprovedCustomersByReseller = async (
       status
       kyc_status
       approval
+      max_virtual_numbers
       created_at
       mst_virtual_numbers {
         id
@@ -293,6 +295,8 @@ export const getCustomerWithTransactions = async (customerId: string) => {
       reseller_id
       email
       phone
+      firstName
+      lastName
       business_email
       profile_name
       profile_image
@@ -304,6 +308,7 @@ export const getCustomerWithTransactions = async (customerId: string) => {
       dob_match_verified
       gender
       gstin
+      gstin_status
       business_name
       address
       status

@@ -454,10 +454,8 @@ const ViewCustomerLayer = () => {
                   <p className="text-sm fw-medium mb-0">
                     <span
                       className={`badge ${
-                        customer.status === "active"
+                        customer.status === "active" || customer.status === "approved"
                           ? "bg-success"
-                          : customer.status === "approved"
-                          ? "bg-primary"
                           : customer.status === "pending_payment"
                           ? "bg-info"
                           : customer.status === "rejected"
@@ -542,7 +540,11 @@ const ViewCustomerLayer = () => {
                     </div>
                   ) : (
                     <p className="text-sm fw-medium mb-0">
-                      {customer.pan_number || "N/A"}
+                      {isAdmin
+                        ? (customer.pan_number || "N/A")
+                        : customer.pan_number
+                          ? "****" + customer.pan_number.slice(-4)
+                          : "N/A"}
                     </p>
                   )}
                 </div>
@@ -609,12 +611,22 @@ const ViewCustomerLayer = () => {
               <div className="d-flex flex-column gap-2">
                 <div>
                   <span className="text-xs text-secondary-light">
+                    Aadhaar Name:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.pan_full_name || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light">
                     Aadhaar Number:
                   </span>
                   <p className="text-sm fw-medium mb-0">
-                    {customer.aadhaar_number
-                      ? "****" + customer.aadhaar_number.slice(-4)
-                      : "N/A"}
+                    {isAdmin
+                      ? (customer.aadhaar_number || "N/A")
+                      : customer.aadhaar_number
+                        ? "****" + customer.aadhaar_number.slice(-4)
+                        : "N/A"}
                   </p>
                 </div>
                 <div>
@@ -694,6 +706,18 @@ const ViewCustomerLayer = () => {
                 GST Details
               </h6>
               <div className="d-flex flex-column gap-2">
+                <div>
+                  <span className="text-xs text-secondary-light">GST Status:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.gstin_status ? (
+                      <span className={`badge ${customer.gstin_status === "Active" ? "bg-success" : "bg-warning"}`}>
+                        {customer.gstin_status}
+                      </span>
+                    ) : (
+                      "N/A"
+                    )}
+                  </p>
+                </div>
                 <div>
                   <span className="text-xs text-secondary-light">GSTIN:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -806,8 +830,11 @@ const ViewCustomerLayer = () => {
           <div className="d-flex justify-content-between align-items-center mb-16">
             <h6 className="text-sm text-secondary-light mb-0">
               Virtual Numbers List
+              <span className="text-primary-600 fw-medium ms-2">
+                ({(customer.mst_virtual_numbers?.length || 0)} / {customer.max_virtual_numbers ?? "-"})
+              </span>
             </h6>
-            {(userRole === 'admin' || userRole === 'super_admin' || userRole === 'reseller') && (
+            {(customer?.max_virtual_numbers > customer?.mst_virtual_numbers?.length) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"

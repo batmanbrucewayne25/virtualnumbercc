@@ -143,7 +143,12 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${API_BASE_URL}/upload/logo`, {
+      // During signup there is no token; pass email so server can identify reseller
+      const uploadUrl = token
+        ? `${API_BASE_URL}/upload/logo`
+        : `${API_BASE_URL}/upload/logo?email=${encodeURIComponent(email)}`;
+
+      const response = await fetch(uploadUrl, {
         method: "POST",
         headers,
         body: uploadFormData,

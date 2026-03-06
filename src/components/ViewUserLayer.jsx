@@ -5,6 +5,7 @@ import {
   getCustomerWithTransactions,
   suspendCustomer,
 } from "@/hasura/mutations/user";
+import { updateMstCustomer } from "@/hasura/mutations/customer";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import ApproveCustomerModal from "./ApproveCustomerModal";
 import AlertModal from "./AlertModal";
@@ -24,6 +25,12 @@ const ViewUserLayer = () => {
   const [editingVirtualNumber, setEditingVirtualNumber] = useState(null);
   const [editCallForwardNumber, setEditCallForwardNumber] = useState("");
   const [updatingCallForward, setUpdatingCallForward] = useState(false);
+  const [editingField, setEditingField] = useState(null);
+  const [editValues, setEditValues] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const isAdminUser = userRole === "admin" || userRole === "super_admin";
 
   useEffect(() => {
     fetchCustomer();
@@ -202,29 +209,78 @@ const ViewUserLayer = () => {
     return `₹${Number(amount).toFixed(2)}`;
   };
 
-  // Check if virtual number can be edited (within 24 hours)
+  const handleEditField = (field, currentValue) => {
+    setEditingField(field);
+    setEditValues({ [field]: currentValue ?? "" });
+    setError("");
+  };
+
+  const handleCancelEditField = () => {
+    setEditingField(null);
+    setEditValues({});
+  };
+
+  const handleSaveField = async (field) => {
+    if (!customer || !id) return;
+    setSaving(true);
+    setError("");
+    setSuccessMessage("");
+    try {
+      const updateData = {};
+      const value = editValues[field];
+      if (field === "pan_dob") {
+        updateData.pan_dob = value || null;
+      } else if (field === "gender") {
+        updateData.gender = value || null;
+      } else if (field === "pan_number") {
+        updateData.pan_number = value ? String(value).toUpperCase() : null;
+      }
+      const result = await updateMstCustomer(id, updateData);
+      if (result.success) {
+        setSuccessMessage(`${field === "pan_dob" ? "Date of Birth" : field === "pan_number" ? "PAN Number" : "Gender"} updated successfully`);
+        setEditingField(null);
+        setEditValues({});
+        await fetchCustomer();
+        setTimeout(() => setSuccessMessage(""), 3000);
+      } else {
+        setError(result.message || "Failed to update");
+      }
+    } catch (err) {
+      console.error("Error updating field:", err);
+      setError(err?.message || "An error occurred while updating");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Edit window: 48 hours for admin/super_admin, 24 hours for reseller
+  const getEditWindowHours = () => {
+    const isAdmin = userRole === "admin" || userRole === "super_admin";
+    return isAdmin ? 48 : 24;
+  };
+
+  // Check if virtual number can be edited (within edit window)
   const canEditCallForwarding = (virtualNumber) => {
     if (!virtualNumber.created_at && !virtualNumber.purchase_date) return false;
+    const editWindowHours = getEditWindowHours();
     const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
     const now = new Date();
     const diffHours = (now - createdDate) / (1000 * 60 * 60);
-    return diffHours <= 24;
+    return diffHours <= editWindowHours;
   };
 
   // Get tooltip message for edit button
   const getEditTooltipMessage = (virtualNumber) => {
+    const editWindowHours = getEditWindowHours();
+    const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
+    const now = new Date();
+    const diffHours = (now - createdDate) / (1000 * 60 * 60);
     if (canEditCallForwarding(virtualNumber)) {
-      const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
-      const now = new Date();
-      const diffHours = (now - createdDate) / (1000 * 60 * 60);
-      const hoursLeft = Math.floor(24 - diffHours);
+      const hoursLeft = Math.floor(editWindowHours - diffHours);
       return `Edit call forwarding number (${hoursLeft} hours remaining)`;
     } else {
-      const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
-      const now = new Date();
-      const diffHours = (now - createdDate) / (1000 * 60 * 60);
-      const hoursElapsed = Math.floor(diffHours - 24);
-      return `Edit disabled: 24-hour edit window has passed (${hoursElapsed} hours ago)`;
+      const hoursElapsed = Math.floor(diffHours - editWindowHours);
+      return `Edit disabled: ${editWindowHours}-hour edit window has passed (${hoursElapsed} hours ago)`;
     }
   };
 
@@ -414,6 +470,18 @@ const ViewUserLayer = () => {
               )}
             </button>
           )}
+          {isAdminUser && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => handleEditField("pan_number", customer.pan_number)}
+              disabled={saving}
+              title="Edit customer details"
+            >
+              <Icon icon="lucide:edit" className="icon me-2" />
+              Edit
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -425,6 +493,12 @@ const ViewUserLayer = () => {
         </div>
       </div>
       <div className="card-body p-24">
+        {successMessage && (
+          <div className="alert alert-success radius-8 mb-24" role="alert">
+            <Icon icon="material-symbols:check-circle-outline" className="icon me-2" />
+            {successMessage}
+          </div>
+        )}
         {error && (
           <div className="alert alert-danger radius-8 mb-24" role="alert">
             <Icon icon="material-symbols:error-outline" className="icon me-2" />
@@ -440,14 +514,14 @@ const ViewUserLayer = () => {
                 Basic Information
               </h6>
               <div className="d-flex flex-column gap-2">
-                <div>
+                {/* <div>
                   <span className="text-xs text-secondary-light">
                     Profile Name:
                   </span>
                   <p className="text-sm fw-medium mb-0">
                     {customer.profile_name || "N/A"}
                   </p>
-                </div>
+                </div> */}
                 <div>
                   <span className="text-xs text-secondary-light">Email:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -460,14 +534,14 @@ const ViewUserLayer = () => {
                     {customer.phone || "N/A"}
                   </p>
                 </div>
-                <div>
+                {/* <div>
                   <span className="text-xs text-secondary-light">
                     Business Email:
                   </span>
                   <p className="text-sm fw-medium mb-0">
                     {customer.business_email || "N/A"}
                   </p>
-                </div>
+                </div> */}
                 <div>
                   <span className="text-xs text-secondary-light">Status:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -497,12 +571,39 @@ const ViewUserLayer = () => {
               </h6>
               <div className="d-flex flex-column gap-2">
                 <div>
-                  <span className="text-xs text-secondary-light">
+                  <span className="text-xs text-secondary-light d-flex align-items-center gap-2">
                     PAN Number:
+                    {isAdminUser && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("pan_number", customer.pan_number)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit PAN Number"
+                      />
+                    )}
                   </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {customer.pan_number || "N/A"}
-                  </p>
+                  {editingField === "pan_number" ? (
+                    <div className="d-flex align-items-center gap-2 mt-2">
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        value={editValues.pan_number ?? ""}
+                        onChange={(e) => setEditValues({ pan_number: e.target.value.toUpperCase() })}
+                        disabled={saving}
+                        maxLength={10}
+                        placeholder="Enter PAN number"
+                      />
+                      <button type="button" className="btn btn-sm btn-success" onClick={() => handleSaveField("pan_number")} disabled={saving}>
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelEditField} disabled={saving}>Cancel</button>
+                    </div>
+                  ) : (
+                    <p className="text-sm fw-medium mb-0">
+                      {isAdminUser ? (customer.pan_number || "N/A") : customer.pan_number ? "****" + customer.pan_number.slice(-4) : "N/A"}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <span className="text-xs text-secondary-light">
@@ -513,12 +614,37 @@ const ViewUserLayer = () => {
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-secondary-light">
+                  <span className="text-xs text-secondary-light d-flex align-items-center gap-2">
                     Date of Birth:
+                    {isAdminUser && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("pan_dob", customer.pan_dob)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Date of Birth"
+                      />
+                    )}
                   </span>
-                  <p className="text-sm fw-medium mb-0">
-                    {formatDate(customer.pan_dob) || "N/A"}
-                  </p>
+                  {editingField === "pan_dob" ? (
+                    <div className="d-flex align-items-center gap-2 mt-2">
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={editValues.pan_dob ?? ""}
+                        onChange={(e) => setEditValues({ pan_dob: e.target.value })}
+                        disabled={saving}
+                      />
+                      <button type="button" className="btn btn-sm btn-success" onClick={() => handleSaveField("pan_dob")} disabled={saving}>
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelEditField} disabled={saving}>Cancel</button>
+                    </div>
+                  ) : (
+                    <p className="text-sm fw-medium mb-0">
+                      {formatDate(customer.pan_dob) || "N/A"}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -532,12 +658,75 @@ const ViewUserLayer = () => {
               <div className="d-flex flex-column gap-2">
                 <div>
                   <span className="text-xs text-secondary-light">
+                    Aadhaar Name:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.pan_full_name || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light">
                     Aadhaar Number:
                   </span>
                   <p className="text-sm fw-medium mb-0">
-                    {customer.aadhaar_number
-                      ? "****" + customer.aadhaar_number.slice(-4)
-                      : "N/A"}
+                    {isAdminUser ? (customer.aadhaar_number || "N/A") : customer.aadhaar_number ? "****" + customer.aadhaar_number.slice(-4) : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light">
+                    Aadhaar DOB:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.aadhaar_dob) || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light d-flex align-items-center gap-2">
+                    Gender:
+                    {isAdminUser && (
+                      <Icon
+                        icon="lucide:edit"
+                        className="icon text-xs cursor-pointer"
+                        onClick={() => handleEditField("gender", customer.gender)}
+                        style={{ cursor: editingField ? "not-allowed" : "pointer" }}
+                        title="Edit Gender"
+                      />
+                    )}
+                  </span>
+                  {editingField === "gender" ? (
+                    <div className="d-flex align-items-center gap-2 mt-2">
+                      <select
+                        className="form-control form-control-sm"
+                        value={editValues.gender ?? ""}
+                        onChange={(e) => setEditValues({ gender: e.target.value })}
+                        disabled={saving}
+                      >
+                        <option value="">Select gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      <button type="button" className="btn btn-sm btn-success" onClick={() => handleSaveField("gender")} disabled={saving}>
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={handleCancelEditField} disabled={saving}>Cancel</button>
+                    </div>
+                  ) : (
+                    <p className="text-sm fw-medium mb-0">
+                      {customer.gender || "N/A"}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light">GST Status:</span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.gstin_status ? (
+                      <span className={`badge ${customer.gstin_status === "Active" ? "bg-success" : "bg-warning"}`}>
+                        {customer.gstin_status}
+                      </span>
+                    ) : (
+                      "N/A"
+                    )}
                   </p>
                 </div>
                 <div>
@@ -557,6 +746,40 @@ const ViewUserLayer = () => {
               </div>
             </div>
           </div>
+
+          <div className="col-md-12">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                Additional Information
+              </h6>
+              <div className="d-flex flex-column gap-2">
+                <div>
+                  <span className="text-xs text-secondary-light">
+                    Max Virtual Numbers:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {customer.max_virtual_numbers ?? "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light">
+                    Created At:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.created_at) || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary-light">
+                    Updated At:
+                  </span>
+                  <p className="text-sm fw-medium mb-0">
+                    {formatDate(customer.updated_at) || "N/A"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Virtual Numbers List */}
@@ -564,8 +787,12 @@ const ViewUserLayer = () => {
           <div className="d-flex justify-content-between align-items-center mb-16">
             <h6 className="text-sm text-secondary-light mb-0">
               Virtual Numbers List
+              <span className="text-primary-600 fw-medium ms-2">
+                ({virtualNumbers.length} / {customer.max_virtual_numbers ?? "-"})
+              </span>
             </h6>
-            {(userRole === 'admin' || userRole === 'super_admin' || userRole === 'reseller') && (
+          
+            {( customer.max_virtual_numbers > customer?.mst_virtual_numbers?.length) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"

@@ -352,6 +352,7 @@ const EditSubscriptionPlanLayer = () => {
                     <input
                       type='number'
                       min='1'
+                      readOnly
                       className='form-control radius-8'
                       id='duration_days'
                       name='duration_days'

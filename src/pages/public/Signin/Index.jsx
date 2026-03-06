@@ -355,6 +355,10 @@ const SignInLayer = () => {
               </div>
             )}
           </form>
+
+          <p className="mt-32 text-center text-sm text-secondary-light mb-0">
+            2026 © {import.meta.env.VITE_BRAND_NAME || "Virtual Number"}. All Rights Reserved.
+          </p>
         </div>
       </div>
 

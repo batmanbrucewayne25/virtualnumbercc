@@ -37,6 +37,8 @@ const ClientHubLayer = ({
   const [loading, setLoading] = useState<boolean>(!isAdminMode); // Don't load if admin mode with resellerId provided
   const [error, setError] = useState<string>("");
   const [formData, setFormData] = useState<any>({
+    firstName: "",
+    lastName: "",
     email: "",
     phone: "",
     password: "",
@@ -323,6 +325,7 @@ const ClientHubLayer = ({
             <Step1
               resellerId={resellerId}
               brandName={resellerData?.brand_name || resellerData?.business_name}
+              allowExistingCustomer={resellerData?.allow_existing_customer === true}
               onSignUp={() => handleStepChange(2)}
               onLogin={() => {
                 // Login handled in Step1 component
@@ -449,6 +452,10 @@ const ClientHubLayer = ({
               </p>
             </div>
           )}
+
+          <p className="mt-32 text-center text-sm text-secondary-light mb-0">
+            2026 © {resellerData?.brand_name || resellerData?.business_name || "Client Hub"}. All Rights Reserved.
+          </p>
         </div>
       </div>
     </section>

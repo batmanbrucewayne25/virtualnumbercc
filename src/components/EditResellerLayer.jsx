@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId, upsertMstResellerDomain } from "@/hasura/mutations/resellerDomain";
+import { getNumberLimitsByResellerId, upsertNumberLimits } from "@/hasura/mutations/numberLimits";
 import { getAuthToken, getUserData } from "@/utils/auth";
 import SuccessModal from "./SuccessModal";
 
@@ -42,6 +43,8 @@ const EditResellerLayer = () => {
     custom_domain: "",
     profile_image: "",
     logo: "",
+    grace_period_days: "",
+    max_virtual_numbers: "",
   });
 
   const [domainData, setDomainData] = useState(null);
@@ -180,7 +183,18 @@ const EditResellerLayer = () => {
             validity_date: validityDate,
             profile_image: result.data.profile_image || "",
             logo: result.data.logo || "",
+            grace_period_days: result.data.grace_period_days != null ? String(result.data.grace_period_days) : "",
           }));
+
+          // Fetch number limits
+          try {
+            const limitsResult = await getNumberLimitsByResellerId(resellerId);
+            if (limitsResult.success && limitsResult.data?.max_virtual_numbers != null) {
+              setFormData((prev) => ({ ...prev, max_virtual_numbers: String(limitsResult.data.max_virtual_numbers) }));
+            }
+          } catch (limitsErr) {
+            console.warn("Error fetching number limits:", limitsErr);
+          }
 
           // Set image/logo previews from existing data
           if (result.data.profile_image) {
@@ -285,6 +299,7 @@ const EditResellerLayer = () => {
         // Only include profile_image and logo if they have values (to preserve existing values if not changed)
         ...(formData.profile_image ? { profile_image: formData.profile_image } : {}),
         ...(formData.logo ? { logo: formData.logo } : {}),
+        ...(formData.grace_period_days !== "" && !isNaN(parseInt(formData.grace_period_days, 10)) ? { grace_period_days: parseInt(formData.grace_period_days, 10) } : {}),
       };
       console.log('[EditReseller] Saving payload:', JSON.stringify(updatePayload, null, 2));
 
@@ -343,6 +358,17 @@ const EditResellerLayer = () => {
       } else if (newDomain === "" && currentDomain !== "") {
         // Domain field was cleared - keep existing record
         console.log("Domain field cleared, keeping existing domain record");
+      }
+
+      // Update number limits (virtual number limit) if provided
+      const maxVn = formData.max_virtual_numbers.trim() === "" ? null : parseInt(formData.max_virtual_numbers, 10);
+      if (maxVn !== null && !isNaN(maxVn) && maxVn >= 0) {
+        const limitsResult = await upsertNumberLimits(resellerId, maxVn);
+        if (!limitsResult.success) {
+          setError(limitsResult.message || "Reseller updated but failed to update Virtual Number limit.");
+          setLoading(false);
+          return;
+        }
       }
 
       setSuccess(true);
@@ -1075,6 +1101,56 @@ const EditResellerLayer = () => {
                       Update the reseller's validity expiry date. This will update the validity record and create a history entry.
                     </small>
                   </div>
+
+                  <div className='row'>
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label
+                          htmlFor='max_virtual_numbers'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          Virtual Number Limit
+                        </label>
+                        <input
+                          type='number'
+                          className='form-control radius-8'
+                          id='max_virtual_numbers'
+                          name='max_virtual_numbers'
+                          placeholder='e.g. 100'
+                          min={0}
+                          value={formData.max_virtual_numbers}
+                          onChange={handleChange}
+                        />
+                        <small className="text-xs text-secondary-light mt-4 d-block">
+                          Maximum virtual numbers this reseller can assign to customers.
+                        </small>
+                      </div>
+                    </div>
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label
+                          htmlFor='grace_period_days'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          Grace Period (Days)
+                        </label>
+                        <input
+                          type='number'
+                          className='form-control radius-8'
+                          id='grace_period_days'
+                          name='grace_period_days'
+                          placeholder='e.g. 30'
+                          min={0}
+                          value={formData.grace_period_days}
+                          onChange={handleChange}
+                        />
+                        <small className="text-xs text-secondary-light mt-4 d-block">
+                          Grace period in days after expiry.
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+
                   <hr className='my-24' />
                    <div className='mb-20'>
                     <label

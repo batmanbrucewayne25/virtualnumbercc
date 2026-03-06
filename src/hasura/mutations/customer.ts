@@ -57,6 +57,8 @@ export const createMstCustomer = async (data: {
   email: string;
   password_hash: string;
   phone: string;
+  first_name?: string;
+  last_name?: string;
   business_email?: string;
   profile_name?: string;
   profile_image?: string;
@@ -80,6 +82,8 @@ export const createMstCustomer = async (data: {
     $email: String!
     $password_hash: String!
     $phone: String!
+    $firstName: String
+    $lastName: String
     $business_email: String
     $profile_name: String
     $profile_image: String
@@ -103,6 +107,8 @@ export const createMstCustomer = async (data: {
       email: $email
       password_hash: $password_hash
       phone: $phone
+      firstName: $firstName
+      lastName: $lastName
       business_email: $business_email
       profile_name: $profile_name
       profile_image: $profile_image
@@ -143,6 +149,8 @@ export const createMstCustomer = async (data: {
       email: data.email,
       password_hash: data.password_hash,
       phone: data.phone,
+      firstName: data.first_name || data.firstName || null,
+      lastName: data.last_name || data.lastName || null,
       business_email: data.business_email || null,
       profile_name: data.profile_name || null,
       profile_image: data.profile_image || null,
@@ -221,6 +229,7 @@ export const getMstCustomerById = async (id: string) => {
       dob_match_verified
       gender
       gstin
+      gstin_status
       business_name
       max_virtual_numbers
       created_at
@@ -831,4 +840,45 @@ export const updateCustomerAadhaarStep = async ({
   console.log("UpdateCustomerAadhaarStep result:", result);
   
   return result;
+};
+
+/**
+ * Update customer GST step (save verified GST details to customer record)
+ */
+export const updateCustomerGstStep = async ({
+  email,
+  gstin,
+  business_name,
+}: {
+  email: string;
+  gstin?: string | null;
+  business_name?: string | null;
+}) => {
+  const UPDATE_GST = `mutation UpdateCustomerGstStep(
+    $email: String!
+    $gstin: String
+    $business_name: String
+  ) {
+    update_mst_customer(
+      where: { email: { _eq: $email } }
+      _set: {
+        gstin: $gstin
+        business_name: $business_name
+      }
+    ) {
+      affected_rows
+      returning {
+        id
+        email
+        gstin
+        business_name
+      }
+    }
+  }`;
+
+  return graphqlRequest(UPDATE_GST, {
+    email,
+    gstin: gstin ?? null,
+    business_name: business_name ?? null,
+  });
 };

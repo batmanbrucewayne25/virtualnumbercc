@@ -94,7 +94,6 @@ const SMTPSettings = () => {
       "port",
       "username",
       "password",
-      "from_email",
     ];
 
     for (let field of requiredFields) {
@@ -117,7 +116,7 @@ const SMTPSettings = () => {
         port: port,
         username: form.username.trim(),
         password: form.password, // Will be encrypted by backend
-        from_email: form.from_email.trim(),
+        from_email: (form.from_email && form.from_email.trim()) || form.username.trim() || null,
         from_name: form.from_name.trim() || null,
         is_active: form.is_active,
       });
@@ -241,26 +240,8 @@ const SMTPSettings = () => {
                   disabled={loading}
                   autoComplete="new-password"
                 />
-              </div>
             </div>
-
-            {/* From Email */}
-            <div className='col-sm-6'>
-              <div className='mb-20'>
-                <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                  From Email <span className='text-danger-600'>*</span>
-                </label>
-                <input
-                  type='email'
-                  name='from_email'
-                  className='form-control radius-8'
-                  value={form.from_email}
-                  onChange={handleChange}
-                  disabled={loading}
-                  autoComplete="off"
-                />
-              </div>
-            </div>
+          </div>
 
             {/* From Name */}
             <div className='col-sm-6'>
