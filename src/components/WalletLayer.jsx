@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { getMstWalletTransactions, getMstWalletByResellerId, creditWallet, debitWallet } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getUserData } from "@/utils/auth";
+import { formatDateTimeIST } from "@/utils/dateUtils";
 
 const WalletLayer = () => {
   const [transactions, setTransactions] = useState([]);
@@ -132,6 +133,7 @@ const WalletLayer = () => {
         setValidityDate("");
         setCreditModalOpen(false);
         fetchWalletData();
+        window.dispatchEvent(new CustomEvent("wallet-should-refresh"));
       } else {
         setError(result.message || "Failed to credit wallet");
       }
@@ -172,6 +174,7 @@ const WalletLayer = () => {
         setTransactionReference("");
         setDebitModalOpen(false);
         fetchWalletData();
+        window.dispatchEvent(new CustomEvent("wallet-should-refresh"));
       } else {
         setError(result.message || "Failed to debit wallet");
       }
@@ -197,17 +200,7 @@ const WalletLayer = () => {
     return matchesSearch && matchesType;
   });
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateTimeIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";

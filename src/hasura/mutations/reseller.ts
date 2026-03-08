@@ -135,6 +135,7 @@ export const getMstResellerById = async (id: string) => {
       approval
       rejection_reason
       grace_period_days
+      price_per_number
       current_step
       is_aadhaar_verified
       is_pan_verified
@@ -495,6 +496,7 @@ export const updateMstReseller = async (id: string, data: {
     logo: 'String',
     allow_existing_customer: 'Boolean',
     grace_period_days: 'Int',
+    price_per_number: 'numeric',
   };
 
   try {
@@ -716,6 +718,7 @@ export const approveMstReseller = async (
     $approval_date: timestamp!
     $approval: String!
     $grace_period_days: Int
+    $price_per_number: numeric
     $rejection_reason: String
   ) {
     update_mst_reseller_by_pk(
@@ -726,6 +729,7 @@ export const approveMstReseller = async (
         approval: $approval
         rejection_reason: $rejection_reason
         grace_period_days: $grace_period_days
+        price_per_number: $price_per_number
         status: true
       }
     ) {
@@ -735,6 +739,7 @@ export const approveMstReseller = async (
       approval
       rejection_reason
       grace_period_days
+      price_per_number
       status
     }
   }`;
@@ -751,6 +756,9 @@ export const approveMstReseller = async (
 
     if (data.grace_period_days !== undefined) {
       variables.grace_period_days = data.grace_period_days;
+    }
+    if (data.price_per_number !== undefined && data.price_per_number !== null) {
+      variables.price_per_number = Number(data.price_per_number);
     }
 
     // Update reseller approval status

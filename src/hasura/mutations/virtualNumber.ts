@@ -160,3 +160,60 @@ export const updateMstVirtualNumberCallForwarding = async (data: {
   }
 };
 
+/**
+ * Update virtual number purchase date (used as approval date for customer)
+ */
+export const updateMstVirtualNumberPurchaseDate = async (data: {
+  id: string;
+  purchase_date: string;
+}) => {
+  const MUTATION = `mutation UpdateMstVirtualNumberPurchaseDate(
+    $id: uuid!
+    $purchase_date: date!
+  ) {
+    update_mst_virtual_number_by_pk(
+      pk_columns: { id: $id }
+      _set: { purchase_date: $purchase_date }
+    ) {
+      id
+      purchase_date
+      updated_at
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, {
+      id: data.id,
+      purchase_date: data.purchase_date,
+    });
+
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to update approval date",
+        data: null,
+      };
+    }
+
+    if (result?.data?.update_mst_virtual_number_by_pk) {
+      return {
+        success: true,
+        data: result.data.update_mst_virtual_number_by_pk,
+        message: "Approval date updated successfully",
+      };
+    }
+
+    return {
+      success: false,
+      message: "Failed to update approval date",
+      data: null,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to update approval date",
+      data: null,
+    };
+  }
+};
+

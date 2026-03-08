@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { creditWallet, getAllMstWalletTransactions } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
+import { formatDateTimeIST } from "@/utils/dateUtils";
 
 const InvoiceListLayer = () => {
   const [walletModalOpen, setWalletModalOpen] = useState(false);
@@ -188,7 +189,8 @@ const InvoiceListLayer = () => {
       transaction.transaction_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       transaction.mst_wallet?.mst_reseller?.business_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       transaction.mst_wallet?.mst_reseller?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      `${transaction.mst_wallet?.mst_reseller?.first_name} ${transaction.mst_wallet?.mst_reseller?.last_name}`.toLowerCase().includes(searchTerm.toLowerCase());
+      `${transaction.mst_wallet?.mst_reseller?.first_name} ${transaction.mst_wallet?.mst_reseller?.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (transaction.mst_wallet?.mst_reseller?.phone && String(transaction.mst_wallet.mst_reseller.phone).includes(searchTerm.trim()));
 
     const matchesType =
       transactionTypeFilter === "all" ||
@@ -214,17 +216,7 @@ const InvoiceListLayer = () => {
     setItemsPerPage(Number(e.target.value));
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateTimeIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
@@ -254,7 +246,7 @@ const InvoiceListLayer = () => {
               type='text'
               name='#0'
               className='form-control form-control-sm w-auto'
-              placeholder='Search transactions'
+              placeholder='Search by description, reseller, phone...'
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />

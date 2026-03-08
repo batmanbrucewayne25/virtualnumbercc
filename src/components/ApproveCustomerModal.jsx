@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { getMstSubscriptionPlans } from "@/hasura/mutations/subscriptionPlan";
 import { getUserData, getAuthToken } from "@/utils/auth";
 
-const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, title = "Approve Customer" }) => {
+const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, title = "Approve Customer", apiError }) => {
   const [formData, setFormData] = useState({
     payment_method: "",
     subscription_plan_id: "",
@@ -118,6 +118,10 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
         setError("Please select a subscription plan");
         return;
       }
+      if (!formData.call_forwarding_number || !formData.call_forwarding_number.trim()) {
+        setError("Please enter Call Forwarding Number");
+        return;
+      }
     }
 
     onApprove(formData);
@@ -147,10 +151,10 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
                 </p>
               </div>
 
-              {error && (
+              {(apiError || error) && (
                 <div className='alert alert-danger radius-8 mb-24' role='alert'>
                   <Icon icon='material-symbols:error-outline' className='icon me-2' />
-                  {error}
+                  {apiError || error}
                 </div>
               )}
 
@@ -237,6 +241,9 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
                       required
                       disabled={loading}
                     />
+                    <p className="text-muted text-sm mt-8 mb-0">
+                      Your reseller price per number will be deducted from your wallet.
+                    </p>
                   </div>
 
                   <div className="mb-20">
@@ -309,44 +316,69 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
 
               {/* Online Payment Fields */}
               {formData.payment_method === "online" && (
-                <div className="mb-20">
-                  <label
-                    htmlFor='subscription_plan_id'
-                    className='form-label fw-semibold text-primary-light text-sm mb-8'
-                  >
-                    Subscription Plan <span className='text-danger-600'>*</span>
-                  </label>
-                  {loadingPlans ? (
-                    <div className="text-center py-3">
-                      <div className="spinner-border spinner-border-sm text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
+                <>
+                  <div className="mb-20">
+                    <label
+                      htmlFor='subscription_plan_id'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Subscription Plan <span className='text-danger-600'>*</span>
+                    </label>
+                    {loadingPlans ? (
+                      <div className="text-center py-3">
+                        <div className="spinner-border spinner-border-sm text-primary" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="text-sm text-muted mt-2">Loading plans...</p>
                       </div>
-                      <p className="text-sm text-muted mt-2">Loading plans...</p>
-                    </div>
-                  ) : subscriptionPlans.length === 0 ? (
-                    <div className="alert alert-warning radius-8">
-                      <Icon icon='material-symbols:warning-outline' className='icon me-2' />
-                      No active subscription plans found. Please create a subscription plan first.
-                    </div>
-                  ) : (
-                    <select
-                      className='form-select radius-8'
-                      id='subscription_plan_id'
-                      name='subscription_plan_id'
-                      value={formData.subscription_plan_id}
+                    ) : subscriptionPlans.length === 0 ? (
+                      <div className="alert alert-warning radius-8">
+                        <Icon icon='material-symbols:warning-outline' className='icon me-2' />
+                        No active subscription plans found. Please create a subscription plan first.
+                      </div>
+                    ) : (
+                      <select
+                        className='form-select radius-8'
+                        id='subscription_plan_id'
+                        name='subscription_plan_id'
+                        value={formData.subscription_plan_id}
+                        onChange={handleChange}
+                        required
+                        disabled={loading}
+                      >
+                        <option value="">Select Subscription Plan</option>
+                        {subscriptionPlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} ({plan.duration_days} days)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="mb-20">
+                    <label
+                      htmlFor='call_forwarding_number_online'
+                      className='form-label fw-semibold text-primary-light text-sm mb-8'
+                    >
+                      Call Forwarding Number <span className='text-danger-600'>*</span>
+                    </label>
+                    <input
+                      type='tel'
+                      className='form-control radius-8'
+                      id='call_forwarding_number_online'
+                      name='call_forwarding_number'
+                      placeholder='Enter call forwarding number'
+                      value={formData.call_forwarding_number}
                       onChange={handleChange}
                       required
                       disabled={loading}
-                    >
-                      <option value="">Select Subscription Plan</option>
-                      {subscriptionPlans.map((plan) => (
-                        <option key={plan.id} value={plan.id}>
-                          {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} ({plan.duration_days} days)
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                    />
+                    <small className="text-muted d-block mt-1">
+                      Phone number where calls to the virtual number will be forwarded
+                    </small>
+                  </div>
+                </>
               )}
             </div>
             <div className="modal-footer border-top">

@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSubscriptionPlanById } from "@/hasura/mutations/subscriptionPlan";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const ViewSubscriptionPlanLayer = () => {
   const { id } = useParams();
@@ -51,15 +52,7 @@ const ViewSubscriptionPlanLayer = () => {
     fetchPlan();
   }, [id]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const formatCurrency = (amount, currency = 'INR') => {
     if (amount === null || amount === undefined) return `${currency} 0.00`;

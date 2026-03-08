@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import ReactApexChart from "react-apexcharts";
 import { useState, useEffect } from "react";
 import { getResellerDashboardStats, getResellerDashboardCharts, getExpiringNumbers } from "@/utils/api";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const ResellerDashboardLayer = ({ expiryDate }) => {
   const [stats, setStats] = useState({
@@ -62,15 +63,7 @@ const ResellerDashboardLayer = ({ expiryDate }) => {
     return `₹${Number(amount).toFixed(2)}`;
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const calculateDaysLeft = (expiryDateVal) => {
     if (!expiryDateVal) return null;

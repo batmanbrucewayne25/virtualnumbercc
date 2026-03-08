@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSuperAdminById } from "@/hasura/mutations/admin";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const ViewAdminLayer = () => {
   const { id } = useParams();
@@ -53,15 +54,7 @@ const ViewAdminLayer = () => {
     fetchAdmin();
   }, [id]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   if (loading) {
     return (

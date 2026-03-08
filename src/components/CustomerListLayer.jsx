@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstCustomersByReseller, getAllMstCustomers } from "@/hasura/mutations/customer";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { formatDateIST } from "@/utils/dateUtils";
 import PermissionGuard from "@/components/PermissionGuard";
 
 const CustomerListLayer = () => {
@@ -96,15 +97,7 @@ const CustomerListLayer = () => {
     return notApproved && hasSignature && matchesSearch && matchesStatus;
   });
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const getStatusBadge = (status) => {
     const statusConfig = {

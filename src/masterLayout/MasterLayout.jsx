@@ -74,33 +74,69 @@ const MasterLayout = ({ children }) => {
   }, []);
 
   // Fetch wallet balance for resellers
-  useEffect(() => {
-    const fetchWalletBalance = async () => {
-      if (userRole === 'reseller') {
-        const userData = getUserData();
-        if (userData?.id) {
-          setWalletLoading(true);
-          try {
-            const result = await getMstWalletByResellerId(userData.id);
-            if (result.success && result.data) {
-              setWalletBalance(result.data.balance || 0);
-            } else {
-              setWalletBalance(0);
-            }
-          } catch (error) {
-            console.error("Error fetching wallet balance:", error);
+  const fetchWalletBalance = async () => {
+    const role = userRole;
+    if (role === 'reseller') {
+      const userData = getUserData();
+      if (userData?.id) {
+        setWalletLoading(true);
+        try {
+          const result = await getMstWalletByResellerId(userData.id);
+          if (result.success && result.data) {
+            setWalletBalance(result.data.balance || 0);
+          } else {
             setWalletBalance(0);
-          } finally {
-            setWalletLoading(false);
           }
+        } catch (error) {
+          console.error("Error fetching wallet balance:", error);
+          setWalletBalance(0);
+        } finally {
+          setWalletLoading(false);
         }
       }
-    };
+    }
+  };
 
+  useEffect(() => {
     if (userRole) {
       fetchWalletBalance();
     }
   }, [userRole]);
+
+  // Listen for wallet updates (e.g. after offline approve) so header balance updates without page refresh
+  useEffect(() => {
+    const onWalletShouldRefresh = () => {
+      const userData = getUserData();
+      const token = getAuthToken();
+      let role = userData?.role;
+      if (!role && token) {
+        try {
+          const payload = JSON.parse(atob(token.split(".")[1]));
+          role = payload.role || null;
+        } catch (e) {
+          role = null;
+        }
+      }
+      if (userData?.id && role === "reseller") {
+        setWalletLoading(true);
+        getMstWalletByResellerId(userData.id)
+          .then((result) => {
+            if (result.success && result.data) {
+              setWalletBalance(result.data.balance ?? 0);
+            } else {
+              setWalletBalance(0);
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching wallet balance:", error);
+            setWalletBalance(0);
+          })
+          .finally(() => setWalletLoading(false));
+      }
+    };
+    window.addEventListener("wallet-should-refresh", onWalletShouldRefresh);
+    return () => window.removeEventListener("wallet-should-refresh", onWalletShouldRefresh);
+  }, []);
 
   useEffect(() => {
     // Function to handle dropdown clicks

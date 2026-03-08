@@ -900,6 +900,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
             first_name
             last_name
             business_name
+            brand_name
           }
           mst_virtual_numbers(limit: 1, order_by: { created_at: desc }) {
             id
@@ -1041,6 +1042,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
 
       const reseller = customer.mst_reseller;
       const resellerName =
+        reseller?.brand_name ||
         reseller?.business_name ||
         (reseller?.first_name ? `${reseller.first_name} ${reseller.last_name}` : null) ||
         reseller?.email ||

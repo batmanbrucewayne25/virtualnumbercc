@@ -5,9 +5,11 @@ import {
   getMstCustomerById,
   updateMstCustomer,
 } from "@/hasura/mutations/customer";
+import { getMaxVirtualNumbersForCustomer } from "@/hasura/mutations/numberLimits";
 import ApproveCustomerModal from "./ApproveCustomerModal";
 import RejectCustomerModal from "./RejectCustomerModal";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { formatDateIST } from "@/utils/dateUtils";
 import AddVirtualNumberModal from "./AddVirtualNumberModal";
 import AlertModal from "./AlertModal";
 
@@ -71,6 +73,7 @@ const ViewCustomerLayer = () => {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [approveError, setApproveError] = useState("");
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -134,6 +137,7 @@ const ViewCustomerLayer = () => {
 
     setActionLoading(true);
     setError("");
+    setApproveError("");
 
     try {
       // Call backend API to approve customer
@@ -158,6 +162,11 @@ const ViewCustomerLayer = () => {
         // Refresh customer data
         await fetchCustomer();
         setApproveModalOpen(false);
+        setApproveError("");
+        // Refresh header wallet balance after a short delay so DB commit is visible
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("wallet-should-refresh"));
+        }, 300);
         setAlertModal({
           isOpen: true,
           title: "Success",
@@ -165,11 +174,11 @@ const ViewCustomerLayer = () => {
           type: "success"
         });
       } else {
-        setError(result.message || "Failed to approve customer");
+        setApproveError(result.message || "Failed to approve customer");
       }
     } catch (err) {
       console.error("Error approving customer:", err);
-      setError(err.message || "An error occurred while approving customer");
+      setApproveError(err.message || "An error occurred while approving customer");
     } finally {
       setActionLoading(false);
     }
@@ -221,15 +230,7 @@ const ViewCustomerLayer = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const handleEditField = (field, currentValue) => {
     setEditingField(field);
@@ -793,7 +794,7 @@ const ViewCustomerLayer = () => {
                     Max Virtual Numbers:
                   </span>
                   <p className="text-sm fw-medium mb-0">
-                    {customer.max_virtual_numbers || "N/A"}
+                    {getMaxVirtualNumbersForCustomer(customer) ?? "N/A"}
                   </p>
                 </div>
                 <div>
@@ -823,10 +824,10 @@ const ViewCustomerLayer = () => {
             <h6 className="text-sm text-secondary-light mb-0">
               Virtual Numbers List
               <span className="text-primary-600 fw-medium ms-2">
-                ({(customer.mst_virtual_numbers?.length || 0)} / {customer.max_virtual_numbers ?? "-"})
+                ({(customer.mst_virtual_numbers?.length || 0)} / {getMaxVirtualNumbersForCustomer(customer) ?? "-"})
               </span>
             </h6>
-            {(customer?.max_virtual_numbers > customer?.mst_virtual_numbers?.length) && (
+            {(getMaxVirtualNumbersForCustomer(customer) != null && getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0)) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
@@ -944,10 +945,12 @@ const ViewCustomerLayer = () => {
         isOpen={approveModalOpen}
         onClose={() => {
           setApproveModalOpen(false);
+          setApproveError("");
         }}
         customer={customer}
         onApprove={handleApprove}
         loading={actionLoading}
+        apiError={approveError}
       />
 
       {/* Reject Modal */}

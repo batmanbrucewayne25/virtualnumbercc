@@ -75,7 +75,6 @@ export const createMstCustomer = async (data: {
   gender?: string;
   gstin?: string;
   business_name?: string;
-  max_virtual_numbers?: number;
 }) => {
   const MUTATION = `mutation CreateMstCustomer(
     $reseller_id: uuid!
@@ -100,7 +99,6 @@ export const createMstCustomer = async (data: {
     $gender: String
     $gstin: String
     $business_name: String
-    $max_virtual_numbers: Int
   ) {
     insert_mst_customer_one(object: {
       reseller_id: $reseller_id
@@ -125,7 +123,6 @@ export const createMstCustomer = async (data: {
       gender: $gender
       gstin: $gstin
       business_name: $business_name
-      max_virtual_numbers: $max_virtual_numbers
       status: "pending"
       kyc_status: "pending"
     }) {
@@ -167,7 +164,6 @@ export const createMstCustomer = async (data: {
       gender: data.gender || null,
       gstin: data.gstin || null,
       business_name: data.business_name || null,
-      max_virtual_numbers: data.max_virtual_numbers || 3,
     });
 
     if (result?.errors) {
@@ -231,9 +227,14 @@ export const getMstCustomerById = async (id: string) => {
       gstin
       gstin_status
       business_name
-      max_virtual_numbers
       created_at
       updated_at
+      mst_reseller {
+        id
+        number_limits(limit: 1) {
+          max_virtual_numbers
+        }
+      }
       mst_virtual_numbers {
         id
         virtual_number
@@ -498,6 +499,12 @@ export const updateMstCustomer = async (
     gender?: string;
     pan_number?: string;
     pan_dob?: string;
+    pan_full_name?: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    gstin?: string;
+    gstin_status?: string;
     [key: string]: any;
   }
 ) => {
@@ -515,23 +522,54 @@ export const updateMstCustomer = async (
   const variables: any = { id };
   const variableDefs: string[] = ['$id: uuid!'];
 
-  // Add fields only if they have values
-  if (data.gender !== undefined && data.gender !== null && data.gender !== '') {
+  // Add fields only if they are present (allow null/empty to clear)
+  if (data.gender !== undefined) {
     setFields.push('gender: $gender');
-    variables.gender = data.gender;
+    variables.gender = data.gender && String(data.gender).trim() ? data.gender : null;
     variableDefs.push('$gender: String');
   }
-  if (data.pan_number !== undefined && data.pan_number !== null && data.pan_number !== '') {
+  if (data.pan_number !== undefined) {
     setFields.push('pan_number: $pan_number');
-    variables.pan_number = data.pan_number;
+    variables.pan_number = data.pan_number ? String(data.pan_number).toUpperCase().trim() : null;
     variableDefs.push('$pan_number: String');
   }
-  if (data.pan_dob !== undefined && data.pan_dob !== null && data.pan_dob !== '') {
+  if (data.pan_dob !== undefined) {
     setFields.push('pan_dob: $pan_dob');
-    variables.pan_dob = normalizeDate(data.pan_dob) || data.pan_dob;
+    variables.pan_dob = data.pan_dob ? (normalizeDate(data.pan_dob) || data.pan_dob) : null;
     variableDefs.push('$pan_dob: date');
   }
-
+  if (data.pan_full_name !== undefined) {
+    setFields.push('pan_full_name: $pan_full_name');
+    variables.pan_full_name = data.pan_full_name && String(data.pan_full_name).trim() ? data.pan_full_name : null;
+    variableDefs.push('$pan_full_name: String');
+  }
+  if (data.first_name !== undefined || data.firstName !== undefined) {
+    const val = (data.first_name ?? data.firstName) && String(data.first_name ?? data.firstName).trim() ? (data.first_name ?? data.firstName) : null;
+    setFields.push('firstName: $firstName');
+    variables.firstName = val;
+    variableDefs.push('$firstName: String');
+  }
+  if (data.last_name !== undefined || data.lastName !== undefined) {
+    const val = (data.last_name ?? data.lastName) && String(data.last_name ?? data.lastName).trim() ? (data.last_name ?? data.lastName) : null;
+    setFields.push('lastName: $lastName');
+    variables.lastName = val;
+    variableDefs.push('$lastName: String');
+  }
+  if (data.phone !== undefined) {
+    setFields.push('phone: $phone');
+    variables.phone = data.phone && String(data.phone).trim() ? data.phone : null;
+    variableDefs.push('$phone: String');
+  }
+  if (data.gstin !== undefined) {
+    setFields.push('gstin: $gstin');
+    variables.gstin = data.gstin && String(data.gstin).trim() ? data.gstin : null;
+    variableDefs.push('$gstin: String');
+  }
+  if (data.gstin_status !== undefined) {
+    setFields.push('gstin_status: $gstin_status');
+    variables.gstin_status = data.gstin_status && String(data.gstin_status).trim() ? data.gstin_status : null;
+    variableDefs.push('$gstin_status: String');
+  }
   // If no fields to update, return error
   if (setFields.length === 0) {
     return {
@@ -553,6 +591,12 @@ export const updateMstCustomer = async (
       gender
       pan_number
       pan_dob
+      pan_full_name
+      firstName
+      lastName
+      phone
+      gstin
+      gstin_status
       updated_at
     }
   }`;

@@ -89,6 +89,7 @@ import AdminAddCustomerPage from "./pages/AdminAddCustomerPage";
 import ViewCustomerPage from "./pages/ViewCustomerPage";
 import TransactionListPage from "./pages/TransactionListPage";
 import ViewUserPage from "./pages/ViewUserPage";
+import EditUserApprovalPage from "./pages/EditUserApprovalPage";
 import ResellerDashboardPage from "./pages/ResellerDashboardPage";
 import CustomDomainSettingsPage from "./pages/CustomDomainSettingsPage";
 import { PermissionProvider } from "@/contexts/PermissionContext";
@@ -158,6 +159,7 @@ function App() {
           <Route exact path='/transaction-list' element={<TransactionListPage />} />
           <Route exact path='/users-list' element={<UsersListPage />} />
           <Route exact path='/view-user/:id' element={<ViewUserPage />} />
+          <Route exact path='/edit-user/:id' element={<EditUserApprovalPage />} />
           <Route exact path='/reseller-dashboard' element={<ResellerDashboardPage />} />
           {/* <Route exact path='/alert' element={<AlertPage />} /> */}
           <Route exact path='/assign-role' element={<AssignRolePage />} />

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getMstSuperAdmins, deleteMstSuperAdmin } from "@/hasura/mutations/admin";
 import PermissionGuard from "@/components/PermissionGuard";
 import AlertModal from "./AlertModal";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const AdminListLayer = () => {
   const [admins, setAdmins] = useState([]);
@@ -80,15 +81,7 @@ const AdminListLayer = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   return (
     <div className='card h-100 p-0 radius-12'>

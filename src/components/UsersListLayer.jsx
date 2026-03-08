@@ -6,7 +6,9 @@ import {
   getAllApprovedCustomers,
 } from "@/hasura/mutations/user";
 import { getMstResellers } from "@/hasura/mutations/reseller";
+import { getMaxVirtualNumbersForCustomer } from "@/hasura/mutations/numberLimits";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { formatDateIST } from "@/utils/dateUtils";
 
 // Simple JWT decode function (or use jwt-decode library if available)
 const decodeJWT = (token) => {
@@ -40,23 +42,33 @@ const UsersListLayer = () => {
   const [selectedResellerId, setSelectedResellerId] = useState("all");
 
   useEffect(() => {
-    // Get user role from JWT token
     const token = getAuthToken();
-    if (token) {
-      try {
-        const decoded = decodeJWT(token);
-        if (decoded) {
-          setUserRole(decoded.role);
-          // If admin, fetch resellers for filter
-          if (decoded.role === "admin" || decoded.role === "super_admin") {
-            fetchResellers();
-          }
-        }
-      } catch (err) {
-        console.error("Error decoding token:", err);
-      }
+    if (!token) {
+      setError("Please log in to view customers.");
+      setLoading(false);
+      return;
     }
-    fetchCustomers();
+    let role = null;
+    try {
+      const decoded = decodeJWT(token);
+      if (decoded) {
+        role = decoded.role;
+        setUserRole(role);
+        if (role === "admin" || role === "super_admin") {
+          fetchResellers();
+        }
+      }
+    } catch (err) {
+      console.error("Error decoding token:", err);
+      setLoading(false);
+      return;
+    }
+    if (role == null) {
+      setLoading(false);
+      return;
+    }
+    // Pass role so first load uses decoded role immediately (avoids race with state update)
+    fetchCustomers(role);
   }, [startDate, endDate, expiringSoon, userRole, selectedResellerId]);
 
   const fetchResellers = async () => {
@@ -70,9 +82,10 @@ const UsersListLayer = () => {
     }
   };
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (roleOverride) => {
     setLoading(true);
     setError("");
+    const effectiveRole = roleOverride !== undefined ? roleOverride : userRole;
     try {
       const filters = {
         startDate: startDate || undefined,
@@ -83,11 +96,9 @@ const UsersListLayer = () => {
 
       let result;
 
-      // If user is admin/super_admin, fetch all customers
-      if (userRole === "admin" || userRole === "super_admin") {
+      if (effectiveRole === "admin" || effectiveRole === "super_admin") {
         result = await getAllApprovedCustomers(filters);
       } else {
-        // For resellers, fetch only their customers
         const userData = getUserData();
         if (!userData || !userData.id) {
           setError("Unable to determine reseller ID. Please log in again.");
@@ -122,15 +133,7 @@ const UsersListLayer = () => {
     setSelectedResellerId("all");
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
@@ -424,7 +427,7 @@ const UsersListLayer = () => {
                       </td>
                       <td className="text-center">
                         <span className="text-sm fw-medium text-primary-600">
-                          {getVirtualNumberCount(customer)} / {customer.max_virtual_numbers ?? "-"}
+                          {getVirtualNumberCount(customer)} / {getMaxVirtualNumbersForCustomer(customer) ?? "-"}
                         </span>
                       </td>
                       {/* <td>
@@ -472,7 +475,17 @@ const UsersListLayer = () => {
                         </button>
                       </td> */}
                       <td className="text-center">
-                        <div className="d-flex justify-content-center">
+                        <div className="d-flex justify-content-center gap-2">
+                          <Link
+                            to={`/edit-user/${customer.id}`}
+                            className="bg-warning-focus bg-hover-warning-200 text-warning-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                            title="Edit Profile"
+                          >
+                            <Icon
+                              icon="lucide:edit"
+                              className="icon text-xl"
+                            />
+                          </Link>
                           <Link
                             to={`/view-user/${customer.id}`}
                             className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"

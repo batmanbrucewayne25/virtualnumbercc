@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getAdminExpiringNumbers, getExpiringNumbers } from "@/utils/api";
 import { getAuthToken } from "@/utils/auth";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const ExpiringNumbersTable = () => {
   const [userRole, setUserRole] = useState(null);
@@ -60,15 +61,7 @@ const ExpiringNumbersTable = () => {
     fetchExpiringNumbers();
   }, [userRole]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const isSuperAdmin = userRole === 'admin' || userRole === 'super_admin';
 

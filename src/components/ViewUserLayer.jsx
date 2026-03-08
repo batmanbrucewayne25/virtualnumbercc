@@ -6,7 +6,9 @@ import {
   suspendCustomer,
 } from "@/hasura/mutations/user";
 import { updateMstCustomer } from "@/hasura/mutations/customer";
+import { getMaxVirtualNumbersForCustomer } from "@/hasura/mutations/numberLimits";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { formatDateIST, formatDateTimeIST, parseDateAsUTC } from "@/utils/dateUtils";
 import ApproveCustomerModal from "./ApproveCustomerModal";
 import AlertModal from "./AlertModal";
 import { updateMstVirtualNumberCallForwarding } from "@/hasura/mutations/virtualNumber";
@@ -17,6 +19,7 @@ const ViewUserLayer = () => {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [approveError, setApproveError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [showTransactions, setShowTransactions] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
@@ -141,6 +144,7 @@ const ViewUserLayer = () => {
 
     setActionLoading(true);
     setError("");
+    setApproveError("");
 
     try {
       // Call backend API to approve customer
@@ -165,6 +169,11 @@ const ViewUserLayer = () => {
         // Refresh customer data
         await fetchCustomer();
         setApproveModalOpen(false);
+        setApproveError("");
+        // Refresh header wallet balance after a short delay so DB commit is visible
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("wallet-should-refresh"));
+        }, 300);
         setAlertModal({
           isOpen: true,
           title: "Success",
@@ -172,37 +181,18 @@ const ViewUserLayer = () => {
           type: "success"
         });
       } else {
-        setError(result.message || "Failed to approve customer");
+        setApproveError(result.message || "Failed to approve customer");
       }
     } catch (err) {
       console.error("Error approving customer:", err);
-      setError(err.message || "An error occurred while approving customer");
+      setApproveError(err.message || "An error occurred while approving customer");
     } finally {
       setActionLoading(false);
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateIST;
+  const formatDateTime = formatDateTimeIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
@@ -260,19 +250,24 @@ const ViewUserLayer = () => {
   };
 
   // Check if virtual number can be edited (within edit window)
+  // created_at from API is UTC; parse as UTC so elapsed time vs "now" is correct (fixes wrong "hours remaining" in IST)
   const canEditCallForwarding = (virtualNumber) => {
-    if (!virtualNumber.created_at && !virtualNumber.purchase_date) return false;
+    const raw = virtualNumber.created_at || virtualNumber.purchase_date;
+    if (!raw) return false;
+    const createdDate = parseDateAsUTC(raw);
+    if (!createdDate) return false;
     const editWindowHours = getEditWindowHours();
-    const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
     const now = new Date();
     const diffHours = (now - createdDate) / (1000 * 60 * 60);
     return diffHours <= editWindowHours;
   };
 
-  // Get tooltip message for edit button
+  // Get tooltip message for edit button (use UTC for created_at so hours remaining is correct)
   const getEditTooltipMessage = (virtualNumber) => {
+    const raw = virtualNumber.created_at || virtualNumber.purchase_date;
+    const createdDate = parseDateAsUTC(raw);
+    if (!createdDate) return "Edit call forwarding number";
     const editWindowHours = getEditWindowHours();
-    const createdDate = new Date(virtualNumber.created_at || virtualNumber.purchase_date);
     const now = new Date();
     const diffHours = (now - createdDate) / (1000 * 60 * 60);
     if (canEditCallForwarding(virtualNumber)) {
@@ -470,18 +465,7 @@ const ViewUserLayer = () => {
               )}
             </button>
           )}
-          {isAdminUser && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => handleEditField("pan_number", customer.pan_number)}
-              disabled={saving}
-              title="Edit customer details"
-            >
-              <Icon icon="lucide:edit" className="icon me-2" />
-              Edit
-            </button>
-          )}
+          
           <button
             type="button"
             className="btn btn-secondary btn-sm d-flex align-items-center gap-1"
@@ -758,7 +742,7 @@ const ViewUserLayer = () => {
                     Max Virtual Numbers:
                   </span>
                   <p className="text-sm fw-medium mb-0">
-                    {customer.max_virtual_numbers ?? "N/A"}
+                    {getMaxVirtualNumbersForCustomer(customer) ?? "N/A"}
                   </p>
                 </div>
                 <div>
@@ -788,11 +772,11 @@ const ViewUserLayer = () => {
             <h6 className="text-sm text-secondary-light mb-0">
               Virtual Numbers List
               <span className="text-primary-600 fw-medium ms-2">
-                ({virtualNumbers.length} / {customer.max_virtual_numbers ?? "-"})
+                ({virtualNumbers.length} / {getMaxVirtualNumbersForCustomer(customer) ?? "-"})
               </span>
             </h6>
           
-            {( customer.max_virtual_numbers > customer?.mst_virtual_numbers?.length) && (
+            {(getMaxVirtualNumbersForCustomer(customer) != null && getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0)) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
@@ -946,11 +930,13 @@ const ViewUserLayer = () => {
           isOpen={approveModalOpen}
           onClose={() => {
             setApproveModalOpen(false);
+            setApproveError("");
           }}
           customer={customer}
           onApprove={handleApprove}
           loading={actionLoading}
           title="Add Virtual Number"
+          apiError={approveError}
         />
 
         {/* Alert Modal */}

@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getAllTransactions, getTransactionStats } from "@/services/razorpayApi";
+import { formatDateTimeIST } from "@/utils/dateUtils";
 
 const ResellerPaymentsLayer = () => {
   const [transactions, setTransactions] = useState([]);
@@ -66,17 +67,7 @@ const ResellerPaymentsLayer = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateTimeIST;
 
   const formatCurrency = (amount, currency = "INR") => {
     if (amount === null || amount === undefined) return "₹0.00";

@@ -1,16 +1,9 @@
 import { Icon } from "@iconify/react";
 import { Link } from "react-router-dom";
+import { formatDateIST } from "@/utils/dateUtils";
 // eslint-disable-next-line react/prop-types
 const Breadcrumb = ({ title, expiryDate }) => {
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const calculateDaysLeft = (expiryDate) => {
     if (!expiryDate) return null;

@@ -184,3 +184,17 @@ export const getNumberLimitsByResellerId = async (resellerId: string) => {
     };
   }
 };
+
+/**
+ * Get effective max virtual numbers for a customer from reseller's number_limits.
+ * Use this instead of customer.max_virtual_numbers.
+ */
+export function getMaxVirtualNumbersForCustomer(customer: {
+  mst_reseller?: { number_limits?: Array<{ max_virtual_numbers?: number | null }> } | null;
+  reseller_max_virtual_numbers?: number | null;
+} | null | undefined): number | null | undefined {
+  if (!customer) return undefined;
+  const fromLimits = customer.mst_reseller?.number_limits?.[0]?.max_virtual_numbers;
+  if (fromLimits !== undefined && fromLimits !== null) return fromLimits;
+  return customer.reseller_max_virtual_numbers ?? undefined;
+}

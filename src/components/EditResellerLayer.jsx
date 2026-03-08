@@ -45,6 +45,7 @@ const EditResellerLayer = () => {
     logo: "",
     grace_period_days: "",
     max_virtual_numbers: "",
+    price_per_number: "",
   });
 
   const [domainData, setDomainData] = useState(null);
@@ -184,6 +185,7 @@ const EditResellerLayer = () => {
             profile_image: result.data.profile_image || "",
             logo: result.data.logo || "",
             grace_period_days: result.data.grace_period_days != null ? String(result.data.grace_period_days) : "",
+            price_per_number: result.data.price_per_number != null && result.data.price_per_number !== "" ? String(result.data.price_per_number) : "",
           }));
 
           // Fetch number limits
@@ -229,8 +231,18 @@ const EditResellerLayer = () => {
   };
 
   const validateForm = () => {
-    if (!formData.first_name || !formData.last_name || !formData.email || !formData.phone || !formData.business_name || !formData.business_email || !formData.business_address) {
-      setError("Please fill all required fields.");
+    const requiredFields = [
+      { key: "first_name", label: "First Name" },
+      { key: "last_name", label: "Last Name" },
+      { key: "email", label: "Email" },
+      { key: "phone", label: "Phone" },
+      { key: "business_name", label: "Business Name" },
+      { key: "business_address", label: "Business Address" },
+    ];
+    const missing = requiredFields.filter((f) => !formData[f.key] || String(formData[f.key]).trim() === "");
+    if (missing.length > 0) {
+      const missingLabels = missing.map((f) => f.label).join(", ");
+      setError(`Please fill the following required fields: ${missingLabels}.`);
       return false;
     }
 
@@ -300,6 +312,7 @@ const EditResellerLayer = () => {
         ...(formData.profile_image ? { profile_image: formData.profile_image } : {}),
         ...(formData.logo ? { logo: formData.logo } : {}),
         ...(formData.grace_period_days !== "" && !isNaN(parseInt(formData.grace_period_days, 10)) ? { grace_period_days: parseInt(formData.grace_period_days, 10) } : {}),
+        ...(formData.price_per_number !== "" && !isNaN(parseFloat(formData.price_per_number)) ? { price_per_number: parseFloat(formData.price_per_number) } : {}),
       };
       console.log('[EditReseller] Saving payload:', JSON.stringify(updatePayload, null, 2));
 
@@ -1146,6 +1159,33 @@ const EditResellerLayer = () => {
                         />
                         <small className="text-xs text-secondary-light mt-4 d-block">
                           Grace period in days after expiry.
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className='row'>
+                    <div className='col-sm-6'>
+                      <div className='mb-20'>
+                        <label
+                          htmlFor='price_per_number'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          Price Per Number (₹)
+                        </label>
+                        <input
+                          type='number'
+                          step='0.01'
+                          min={0}
+                          className='form-control radius-8'
+                          id='price_per_number'
+                          name='price_per_number'
+                          placeholder='e.g. 99.00'
+                          value={formData.price_per_number}
+                          onChange={handleChange}
+                        />
+                        <small className="text-xs text-secondary-light mt-4 d-block">
+                          Price per virtual number for customers.
                         </small>
                       </div>
                     </div>

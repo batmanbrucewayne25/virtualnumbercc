@@ -6,6 +6,7 @@ import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import { getAuthToken, getUserData } from "@/utils/auth";
+import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
 
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
   const apiUrl = getApiBaseUrl();
@@ -103,27 +104,8 @@ const ViewResellerLayer = () => {
     fetchReseller();
   }, [id]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateIST;
+  const formatDateTime = formatDateTimeIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";

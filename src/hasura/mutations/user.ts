@@ -26,7 +26,6 @@ export const getAllApprovedCustomers = async (filters?: {
       status
       kyc_status
       approval
-      max_virtual_numbers
       created_at
       mst_reseller {
         id
@@ -34,6 +33,9 @@ export const getAllApprovedCustomers = async (filters?: {
         brand_name
         first_name
         last_name
+        number_limits(limit: 1) {
+          max_virtual_numbers
+        }
       }
       mst_virtual_numbers {
         id
@@ -178,8 +180,13 @@ export const getApprovedCustomersByReseller = async (
       status
       kyc_status
       approval
-      max_virtual_numbers
       created_at
+      mst_reseller {
+        id
+        number_limits(limit: 1) {
+          max_virtual_numbers
+        }
+      }
       mst_virtual_numbers {
         id
         virtual_number
@@ -314,9 +321,14 @@ export const getCustomerWithTransactions = async (customerId: string) => {
       status
       kyc_status
       approval
-      max_virtual_numbers
       created_at
       updated_at
+      mst_reseller {
+        id
+        number_limits(limit: 1) {
+          max_virtual_numbers
+        }
+      }
       mst_virtual_numbers {
         id
         virtual_number

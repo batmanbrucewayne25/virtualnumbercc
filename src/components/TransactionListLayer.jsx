@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getMstTransactionsByReseller } from "@/hasura/mutations/transaction";
 import { getUserData } from "@/utils/auth";
+import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
 import * as XLSX from "xlsx";
 import AlertModal from "./AlertModal";
 
@@ -81,7 +82,7 @@ const TransactionListLayer = () => {
         "Transaction Type": txn.transaction_type || "-",
         "Payment Date": txn.payment_date || "-",
         "Created At": txn.created_at
-          ? new Date(txn.created_at).toLocaleString()
+          ? formatDateTimeIST(txn.created_at)
           : "-",
         "Failure Reason": txn.failure_reason || "-",
       }));
@@ -140,27 +141,8 @@ const TransactionListLayer = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateIST;
+  const formatDateTime = formatDateTimeIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";

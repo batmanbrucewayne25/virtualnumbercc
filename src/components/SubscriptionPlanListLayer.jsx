@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstSubscriptionPlans, deleteMstSubscriptionPlan } from "@/hasura/mutations/subscriptionPlan";
 import { getUserData, getAuthToken } from "@/utils/auth";
+import { formatDateIST } from "@/utils/dateUtils";
 import AlertModal from "./AlertModal";
 
 const SubscriptionPlanListLayer = () => {
@@ -114,15 +115,7 @@ const SubscriptionPlanListLayer = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const formatCurrency = (amount, currency = 'INR') => {
     if (amount === null || amount === undefined) return `${currency} 0.00`;

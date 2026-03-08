@@ -141,6 +141,130 @@ export class CustomerService {
   }
 
   /**
+   * Get reseller wallet by reseller ID
+   * @param {string} resellerId
+   * @returns {Promise<object|null>}
+   */
+  static async getResellerWallet(resellerId) {
+    try {
+      const client = getHasuraClient();
+      const query = `
+        query GetResellerWallet($reseller_id: uuid!) {
+          mst_wallet(
+            where: { reseller_id: { _eq: $reseller_id } }
+            limit: 1
+          ) {
+            id
+            reseller_id
+            balance
+            debit_amount
+          }
+        }
+      `;
+      const data = await client.client.request(query, {
+        reseller_id: resellerId,
+      });
+      if (data.mst_wallet && data.mst_wallet.length > 0) {
+        return data.mst_wallet[0];
+      }
+      return null;
+    } catch (error) {
+      console.error("Error fetching reseller wallet:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Debit amount from reseller wallet and create wallet transaction record
+   * @param {string} resellerId
+   * @param {number} amount
+   * @param {string} description
+   * @param {string|null} reference
+   * @returns {Promise<boolean>}
+   */
+  static async debitResellerWallet(resellerId, amount, description, reference) {
+    const wallet = await this.getResellerWallet(resellerId);
+    if (!wallet) {
+      throw new Error("Wallet not found");
+    }
+    const balanceBefore = Number(String(wallet.balance).replace(/,/g, "")) || 0;
+    const amountNum = Number(amount) || 0;
+    if (amountNum <= 0) {
+      throw new Error("Invalid debit amount");
+    }
+    if (balanceBefore < amountNum) {
+      throw new Error(
+        `Insufficient wallet balance. Required: ₹${amountNum.toFixed(2)} (price per number). Your balance: ₹${balanceBefore.toFixed(2)}.`
+      );
+    }
+    const balanceAfter = balanceBefore - amountNum;
+    const existingDebitAmount = Number(wallet.debit_amount) || 0;
+    const client = getHasuraClient();
+
+    const insertTransactionMutation = `
+      mutation CreateMstWalletTransaction(
+        $wallet_id: uuid!
+        $transaction_type: String!
+        $amount: numeric!
+        $balance_before: numeric!
+        $balance_after: numeric!
+        $description: String
+        $reference: String
+      ) {
+        insert_mst_wallet_transaction_one(object: {
+          wallet_id: $wallet_id
+          transaction_type: $transaction_type
+          amount: $amount
+          balance_before: $balance_before
+          balance_after: $balance_after
+          description: $description
+          reference: $reference
+        }) {
+          id
+        }
+      }
+    `;
+    await client.client.request(insertTransactionMutation, {
+      wallet_id: wallet.id,
+      transaction_type: "DEBIT",
+      amount: amountNum,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      description: description || "Wallet debit",
+      reference: reference || null,
+    });
+
+    const updateMutation = `
+      mutation UpdateMstWallet(
+        $id: uuid!
+        $balance: numeric!
+        $debit_amount: numeric!
+        $last_transaction_at: timestamp!
+      ) {
+        update_mst_wallet_by_pk(
+          pk_columns: { id: $id }
+          _set: {
+            balance: $balance
+            debit_amount: $debit_amount
+            last_transaction_at: $last_transaction_at
+          }
+        ) {
+          id
+          balance
+        }
+      }
+    `;
+    await client.client.request(updateMutation, {
+      id: wallet.id,
+      balance: balanceAfter,
+      debit_amount: existingDebitAmount + amountNum,
+      last_transaction_at: new Date().toISOString(),
+    });
+
+    return true;
+  }
+
+  /**
    * Create virtual number for customer
    * @param {string} customerId
    * @param {string} virtualNumber
@@ -338,6 +462,8 @@ export class CustomerService {
               last_name
               email
               business_name
+              brand_name
+              price_per_number
             }
           }
         }
@@ -468,6 +594,7 @@ export class CustomerService {
       }
       const reseller = customer.mst_reseller;
       const resellerName =
+        reseller?.brand_name ||
         reseller?.business_name ||
         (reseller?.first_name && reseller?.last_name
           ? `${reseller.first_name} ${reseller.last_name}`
@@ -569,20 +696,30 @@ export class CustomerService {
         throw new Error("Reseller not found");
       }
 
-      if (payment_method === "offline") {
-        // Offline payment flow
-        // 1. Get admin wallet (assuming reseller_id in approvalData is actually admin_id)
-        // For now, we'll skip wallet debit as the exact admin wallet structure is unclear
-        // TODO: Implement proper admin wallet debit logic based on actual schema
+      // When admin approves, use customer's reseller for wallet, virtual number, transaction, and emails
+      const effectiveResellerId = customer.reseller_id || reseller_id;
 
-        // 2. Generate virtual number
+      if (payment_method === "offline") {
+        // Offline payment flow: debit customer's reseller wallet by price_per_number (not payment amount)
+        const amountToDebit = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+        if (amountToDebit <= 0) {
+          throw new Error("Price per number is not set for this reseller");
+        }
+        await this.debitResellerWallet(
+          effectiveResellerId,
+          amountToDebit,
+          "Customer approval - offline payment",
+          payment_reference_number || null
+        );
+
+        // Generate virtual number
         const virtualNumber = await this.generateVirtualNumber();
 
-        // 3. Create virtual number record (pass reseller_id, customer phone for call forwarding, and optional subscription_plan_id)
+        // 3. Create virtual number record (pass customer's reseller_id)
         const virtualNumberRecord = await this.createVirtualNumber(
           customer_id,
           virtualNumber,
-          reseller_id,
+          effectiveResellerId,
           customer.phone, // Set call forwarding number to customer's mobile number
           subscription_plan_id || null // Optional subscription plan ID
         );
@@ -590,7 +727,7 @@ export class CustomerService {
         // 4. Create transaction record
         await this.createTransaction({
           customer_id: customer_id,
-          reseller_id: reseller_id,
+          reseller_id: effectiveResellerId,
           virtual_number_id: virtualNumberRecord?.id || null,
           transaction_type: "payment",
           payment_mode: "offline",
@@ -604,24 +741,27 @@ export class CustomerService {
         // 5. Update customer status
         await this.updateCustomerStatus(customer_id, "approved", "verified");
 
-        // 6. Get reseller SMTP config for sending emails
-        const resellerSmtpConfig = await getResellerSmtpConfig(reseller_id);
+        // 6. Get reseller SMTP config for sending emails (customer's reseller)
+        const resellerSmtpConfig = await getResellerSmtpConfig(effectiveResellerId);
 
-        // 7. Send emails using reseller SMTP config
+        // 7. Send emails using reseller SMTP config (brand name if set, else reseller name)
+        const resellerDisplayName =
+          reseller.brand_name ||
+          reseller.business_name ||
+          `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
+          "Reseller";
         await sendVirtualNumberEmail(
           customer.email,
           customer.profile_name || customer.email,
           virtualNumber,
-          reseller.business_name ||
-            `${reseller.first_name} ${reseller.last_name}`,
+          resellerDisplayName,
           resellerSmtpConfig // Pass reseller SMTP config
         );
 
         // Send to admin (reseller email)
         await sendVirtualNumberEmail(
           reseller.email,
-          reseller.business_name ||
-            `${reseller.first_name} ${reseller.last_name}`,
+          resellerDisplayName,
           virtualNumber,
           customer.profile_name || customer.email,
           resellerSmtpConfig // Pass reseller SMTP config
@@ -649,7 +789,7 @@ export class CustomerService {
         // links (which don't embed customer_id in Razorpay's own notes).
         await this.createTransaction({
           customer_id: customer_id,
-          reseller_id: reseller_id,
+          reseller_id: effectiveResellerId,
           virtual_number_id: null, // Will be updated after payment
           transaction_type: "payment",
           payment_mode: "online",
@@ -662,7 +802,7 @@ export class CustomerService {
           customer_name: customer.profile_name || null,
           notes: {
             customer_id: customer_id,
-            reseller_id: reseller_id,
+            reseller_id: effectiveResellerId,
             subscription_plan_id: subscription_plan_id,
             plan_name: subscriptionPlan.plan_name,
           },
@@ -675,8 +815,8 @@ export class CustomerService {
           "verified"
         );
 
-        // 4. Get reseller SMTP config for sending emails
-        const resellerSmtpConfig = await getResellerSmtpConfig(reseller_id);
+        // 4. Get reseller SMTP config for sending emails (customer's reseller)
+        const resellerSmtpConfig = await getResellerSmtpConfig(effectiveResellerId);
 
         // 5. Generate Razorpay payment link
         let razorpayLink = null;
@@ -731,7 +871,7 @@ export class CustomerService {
             // Create payment link WITHOUT Razorpay's email notification
             // We send the email ourselves using reseller's SMTP config below
             const paymentLinkResult = await createRazorpayPaymentLink(
-              reseller_id,
+              effectiveResellerId,
               {
                 amount: Number(subscriptionPlan.amount) || 0,
                 currency: subscriptionPlan.currency || "INR",
@@ -750,7 +890,7 @@ export class CustomerService {
                   customer_id: customer_id,
                   subscription_plan_id: subscription_plan_id,
                   razorpay_plan_id: subscriptionPlan.razorpay_plan_id,
-                  reseller_id: reseller_id,
+                  reseller_id: effectiveResellerId,
                 },
               }
             );
@@ -781,14 +921,18 @@ export class CustomerService {
           );
         }
 
+        const resellerDisplayName =
+          reseller.brand_name ||
+          reseller.business_name ||
+          `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
+          "Reseller";
         await sendRazorpayLinkEmail(
           customer.email,
           customer.profile_name || customer.email,
           razorpayLink,
           subscriptionPlan.plan_name,
           subscriptionPlan.amount,
-          reseller.business_name ||
-            `${reseller.first_name} ${reseller.last_name}`,
+          resellerDisplayName,
           resellerSmtpConfig // Pass reseller SMTP config
         );
 

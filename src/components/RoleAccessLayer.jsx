@@ -10,6 +10,7 @@ import {
 } from "@/hasura/mutations/role";
 import { getMstPermissions } from "@/hasura/mutations/permission";
 import AlertModal from "./AlertModal";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const RoleAccessLayer = () => {
   const [roles, setRoles] = useState([]);
@@ -293,15 +294,7 @@ const RoleAccessLayer = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   return (
     <>

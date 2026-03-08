@@ -45,24 +45,27 @@ export const approveCustomer = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get reseller_id from authenticated user
-  // The auth middleware sets req.user with userId, email, and role
-  const resellerId = req.user?.userId;
-
-  // Verify user is a reseller (not admin)
-  if (!resellerId) {
+  // Require authenticated user (reseller or admin)
+  const userId = req.user?.userId;
+  const role = req.user?.role;
+  if (!userId) {
     return res.status(401).json({
       success: false,
-      message: 'Unable to determine reseller ID. Please log in again.'
+      message: 'Please log in again.'
     });
   }
 
-  if (req.user?.role !== 'reseller') {
+  const isReseller = role === 'reseller';
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  if (!isReseller && !isAdmin) {
     return res.status(403).json({
       success: false,
-      message: 'Only resellers can approve customers.'
+      message: 'Only resellers or admins can approve customers.'
     });
   }
+
+  // Reseller: use their ID; Admin: service will use customer's reseller_id from loaded customer
+  const resellerId = isReseller ? userId : null;
 
   try {
     const result = await CustomerService.approveCustomer({
@@ -82,9 +85,12 @@ export const approveCustomer = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error approving customer:', error);
-    res.status(500).json({
+    const msg = error.message || 'Failed to approve customer';
+    const isWalletError =
+      msg.startsWith('Insufficient wallet balance') || msg === 'Wallet not found';
+    res.status(isWalletError ? 400 : 500).json({
       success: false,
-      message: error.message || 'Failed to approve customer'
+      message: msg
     });
   }
 });

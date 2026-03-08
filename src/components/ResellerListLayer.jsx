@@ -10,6 +10,7 @@ import ConfirmToggleStatusModal from "./ConfirmToggleStatusModal";
 import DeleteResellerModal from "./DeleteResellerModal";
 import PermissionGuard from "@/components/PermissionGuard";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import { formatDateIST } from "@/utils/dateUtils";
 
 const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
   const apiUrl = getApiBaseUrl();
@@ -348,15 +349,7 @@ const ResellerListLayer = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const formatDate = formatDateIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";

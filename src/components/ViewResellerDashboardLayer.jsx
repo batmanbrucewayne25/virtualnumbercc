@@ -13,6 +13,7 @@ import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getNumberLimitsByResellerId } from "@/hasura/mutations/numberLimits";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
 import AlertModal from "./AlertModal";
 
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
@@ -249,27 +250,8 @@ const ViewResellerDashboardLayer = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = formatDateIST;
+  const formatDateTime = formatDateTimeIST;
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
@@ -848,6 +830,17 @@ const ViewResellerDashboardLayer = () => {
                     </label>
                     <p className="text-md fw-medium text-primary-light mb-0">
                       {reseller?.grace_period_days != null ? reseller.grace_period_days : "-"}
+                    </p>
+                  </div>
+
+                  <div className="mb-16 d-flex align-items-center gap-2">
+                    <label className="form-label text-xs text-secondary-light mb-4">
+                      Price Per Number (₹)
+                    </label>
+                    <p className="text-md fw-medium text-primary-light mb-0">
+                      {reseller?.price_per_number != null
+                        ? `₹${Number(reseller.price_per_number).toFixed(2)}`
+                        : "-"}
                     </p>
                   </div>
 

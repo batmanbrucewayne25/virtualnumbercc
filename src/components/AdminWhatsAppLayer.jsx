@@ -3,10 +3,12 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getMstWhatsappConfigByAdminId, upsertMstWhatsappConfigByAdminId } from "@/hasura/mutations/adminWhatsappConfig";
 
+const DEFAULT_WHATSAPP_API_URL = "https://graph.facebook.com/v24.0";
+
 const AdminWhatsAppLayer = () => {
   const [form, setForm] = useState({
     api_key: "",
-    api_url: "",
+    api_url: DEFAULT_WHATSAPP_API_URL,
     phone_number_id: "",
     business_account_id: "",
     is_active: true,
@@ -52,7 +54,7 @@ const AdminWhatsAppLayer = () => {
       if (result.success && result.data) {
         setForm({
           api_key: result.data.api_key || "", // Populate API key from response
-          api_url: result.data.api_url || "",
+          api_url: result.data.api_url || DEFAULT_WHATSAPP_API_URL,
           phone_number_id: result.data.phone_number_id || "",
           business_account_id: result.data.business_account_id || "",
           is_active: result.data.is_active !== undefined ? result.data.is_active : true,
@@ -198,11 +200,12 @@ const AdminWhatsAppLayer = () => {
                   className='form-control radius-8'
                   id='api_url'
                   name='api_url'
-                  placeholder='https://graph.facebook.com/v18.0'
+                  placeholder='https://graph.facebook.com/v24.0'
                   value={form.api_url}
                   onChange={handleChange}
                   disabled={loading}
                   autoComplete="off"
+                  readOnly={true}
                 />
               </div>
             </div>
