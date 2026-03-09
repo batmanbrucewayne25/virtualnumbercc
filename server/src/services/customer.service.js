@@ -736,6 +736,30 @@ export class CustomerService {
       // When admin approves, use customer's reseller for wallet, virtual number, transaction, and emails
       const effectiveResellerId = customer.reseller_id || reseller_id;
 
+      // ── Wallet balance check (blocks both offline and online approval) ────────
+      // For offline: wallet is debited immediately on approval.
+      // For online: wallet is debited after webhook — but we block here so the
+      //   reseller cannot send a payment link they cannot fulfil.
+      const pricePerNumber = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+      if (pricePerNumber <= 0) {
+        throw new Error(
+          "price_per_number is not configured for this reseller. Please set it before approving customers."
+        );
+      }
+      const resellerWallet = await this.getResellerWallet(effectiveResellerId);
+      if (!resellerWallet) {
+        throw new Error(
+          "Reseller wallet not found. Please contact the administrator."
+        );
+      }
+      const walletBalance = Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
+      if (walletBalance < pricePerNumber) {
+        throw new Error(
+          `Insufficient wallet balance. Required: ₹${pricePerNumber.toFixed(2)} (price per number). ` +
+          `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet before approving this customer.`
+        );
+      }
+
       if (payment_method === "offline") {
         // Offline payment flow: debit customer's reseller wallet by price_per_number (not payment amount)
         const amountToDebit = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
