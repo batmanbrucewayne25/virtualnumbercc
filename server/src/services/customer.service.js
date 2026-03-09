@@ -465,6 +465,17 @@ export class CustomerService {
               brand_name
               price_per_number
             }
+            mst_virtual_numbers(limit: 1) {
+              id
+            }
+            mst_transactions(
+              where: { status: { _in: ["pending", "success", "authorized"] } }
+              limit: 1
+              order_by: { created_at: desc }
+            ) {
+              id
+              status
+            }
           }
         }
       `;
@@ -688,6 +699,32 @@ export class CustomerService {
       const customer = await this.getCustomerById(customer_id);
       if (!customer) {
         throw new Error("Customer not found");
+      }
+
+      // Guard: block re-approval — check status, existing VN, and existing transactions
+      // Status check
+      const nonApprovableStatuses = ["active", "approved", "pending_payment"];
+      if (nonApprovableStatuses.includes(customer.status)) {
+        throw new Error(
+          `Customer cannot be approved again — current status is "${customer.status}". ` +
+          `If payment was sent but not completed, ask the customer to use the existing payment link.`
+        );
+      }
+      // VN check — strongest guard, regardless of status
+      if (customer.mst_virtual_numbers?.length > 0) {
+        throw new Error(
+          "Customer already has a virtual number assigned — approval blocked to prevent duplicate assignment."
+        );
+      }
+      // Transaction check — catches cases where status was manually reset in DB
+      // but a pending/success transaction already exists for this customer
+      const existingTxn = customer.mst_transactions?.[0];
+      if (existingTxn) {
+        throw new Error(
+          `Customer already has a ${existingTxn.status} transaction (id: ${existingTxn.id}) — ` +
+          `approval blocked to prevent duplicate virtual number assignment. ` +
+          `If this is a test, reset the transaction status or use a different customer.`
+        );
       }
 
       // Get reseller details for admin email

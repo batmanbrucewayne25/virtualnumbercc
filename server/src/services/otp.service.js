@@ -815,9 +815,10 @@ export class OTPService {
       const apiUrl = `${whatsappConfig.api_url}/${whatsappConfig.phone_number_id}/messages`;
       const accessToken = whatsappConfig.api_key;
 
-      // Build template payload
-      // The template 'botbeeotp' appears to have a URL button that requires a parameter
-      // WhatsApp button parameters have a max length of 15 characters
+      // Build template payload.
+      // The 'botbeeotp' template has:
+      //   - A body with one variable: the OTP code
+      //   - A URL button at index 0 that requires one dynamic parameter (the OTP, appended to the button URL)
       const components = [
         {
           type: "body",
@@ -828,10 +829,6 @@ export class OTPService {
             },
           ],
         },
-        // Add button component if template has buttons
-        // For URL buttons, the parameter must be max 15 characters
-        // This is typically a short code or ID, not the full URL
-        // The full URL is configured in the template in Meta Business Manager
         {
           type: "button",
           sub_type: "url",
@@ -839,7 +836,7 @@ export class OTPService {
           parameters: [
             {
               type: "text",
-              text: "verify", // Short parameter (max 15 chars) - update this to match your template's expected parameter
+              text: otp, // OTP appended to the button URL as the dynamic suffix
             },
           ],
         },
@@ -873,16 +870,19 @@ export class OTPService {
         data: response.data,
       };
     } catch (error) {
+      const errorData = error.response?.data?.error || error.response?.data;
       console.error(
         "Error sending WhatsApp OTP:",
-        error.response?.data || error.message
+        JSON.stringify(errorData || error.message, null, 2)
       );
       return {
         success: false,
         message:
-          error.response?.data?.error?.message ||
+          errorData?.message ||
           error.message ||
           "Failed to send WhatsApp OTP",
+        errorCode: errorData?.code,
+        errorDetails: errorData?.error_data?.details,
       };
     }
   }

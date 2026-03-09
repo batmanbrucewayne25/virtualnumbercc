@@ -511,6 +511,54 @@ export async function findPendingTransaction(
     }
   }
 
+  // --- Attempt 5: match by customer_id WITHOUT payment_id IS NULL filter ---
+  // Covers the case where payment.authorized fired first and already set razorpay_payment_id
+  // on the pending transaction. All previous attempts require payment_id IS NULL, so they miss it.
+  // This attempt finds it even when payment_id is already populated.
+  if (customerId) {
+    try {
+      const noPaymentIdFilter = `
+        query FindPendingTransactionNoPaymentIdFilter(
+          $reseller_id: uuid!
+          $customer_id: uuid!
+        ) {
+          mst_transaction(
+            where: {
+              reseller_id: { _eq: $reseller_id }
+              status: { _in: ["pending", "authorized"] }
+              customer_id: { _eq: $customer_id }
+            }
+            order_by: { created_at: desc }
+            limit: 1
+          ) {
+            id
+            transaction_number
+            customer_id
+            customer_email
+            amount
+            status
+            reseller_id
+            razorpay_order_id
+            razorpay_payment_id
+            created_at
+          }
+        }
+      `;
+      const result = await client.client.request(noPaymentIdFilter, {
+        reseller_id: resellerId,
+        customer_id: customerId,
+      });
+      if (result.mst_transaction?.length > 0) {
+        console.log(
+          `[findPendingTransaction] Found by customer_id (no payment_id filter, authorized-first path)=${customerId}: ${result.mst_transaction[0].id} status=${result.mst_transaction[0].status} payment_id=${result.mst_transaction[0].razorpay_payment_id}`
+        );
+        return result.mst_transaction[0];
+      }
+    } catch (error) {
+      console.error("[findPendingTransaction] customer_id no-payment-id-filter lookup error:", error.message);
+    }
+  }
+
   console.log(
     `[findPendingTransaction] No pending transaction found for customer=${customerId} email=${customerEmail} amount=${amount} reseller=${resellerId}`
   );
@@ -876,7 +924,166 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
  * @param {string} transactionId - Transaction UUID (to link virtual number)
  * @returns {Promise<boolean>} true on full success
  */
+
+/**
+ * Debit the reseller wallet by price_per_number for an online payment.
+ * Has its own idempotency: if mst_wallet_transaction already has a row with
+ * reference=transactionId, the debit is skipped (prevents double-charging on
+ * webhook retries or re-entrant calls from idempotency guards).
+ * Non-fatal — logs CRITICAL on failure but never throws.
+ */
+async function _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId) {
+  console.log(`[postPayment][walletDebit] --- START ---`);
+  console.log(`[postPayment][walletDebit] resellerId param=${resellerId}`);
+  console.log(`[postPayment][walletDebit] transactionId=${transactionId}`);
+  console.log(`[postPayment][walletDebit] reseller from DB=`, JSON.stringify(customer?.mst_reseller));
+
+  try {
+    const reseller = customer?.mst_reseller;
+    const pricePerNumber = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+    const effectiveResellerId = resellerId || reseller?.id;
+
+    console.log(`[postPayment][walletDebit] effectiveResellerId=${effectiveResellerId}, pricePerNumber=${pricePerNumber}`);
+
+    if (!effectiveResellerId) {
+      console.error(`[postPayment][walletDebit] CRITICAL: No reseller_id available — wallet not debited`);
+      return;
+    }
+    if (pricePerNumber <= 0) {
+      console.error(`[postPayment][walletDebit] CRITICAL: price_per_number is 0 or not set on mst_reseller for reseller ${effectiveResellerId} — wallet not debited. Set price_per_number in DB.`);
+      return;
+    }
+
+    // Idempotency: check if this transactionId was already debited
+    if (transactionId) {
+      const idempotencyQuery = `
+        query CheckWalletTxnExists($reference: String!) {
+          mst_wallet_transaction(where: { reference: { _eq: $reference } }, limit: 1) {
+            id
+          }
+        }
+      `;
+      const idempotencyResult = await client.client.request(idempotencyQuery, { reference: transactionId });
+      if (idempotencyResult?.mst_wallet_transaction?.length > 0) {
+        console.log(`[postPayment][walletDebit] Already debited for transactionId=${transactionId} (mst_wallet_transaction.id=${idempotencyResult.mst_wallet_transaction[0].id}) — skipping`);
+        return;
+      }
+    }
+
+    // Fetch wallet from mst_wallet table
+    console.log(`[postPayment][walletDebit] Fetching mst_wallet for reseller_id=${effectiveResellerId}`);
+    const walletQuery = `
+      query GetResellerWalletForDebit($reseller_id: uuid!) {
+        mst_wallet(where: { reseller_id: { _eq: $reseller_id } }, limit: 1) {
+          id
+          balance
+          debit_amount
+        }
+      }
+    `;
+    const walletData = await client.client.request(walletQuery, { reseller_id: effectiveResellerId });
+    const wallet = walletData?.mst_wallet?.[0];
+
+    console.log(`[postPayment][walletDebit] mst_wallet rows returned=`, JSON.stringify(walletData?.mst_wallet));
+
+    if (!wallet) {
+      console.error(`[postPayment][walletDebit] CRITICAL: No row in mst_wallet for reseller_id=${effectiveResellerId} — wallet not debited`);
+      return;
+    }
+
+    const balanceBefore = Number(String(wallet.balance).replace(/,/g, "")) || 0;
+    const existingDebitAmount = Number(wallet.debit_amount) || 0;
+
+    console.log(`[postPayment][walletDebit] wallet.id=${wallet.id}, balanceBefore=${balanceBefore}, pricePerNumber=${pricePerNumber}`);
+
+    if (balanceBefore < pricePerNumber) {
+      console.error(
+        `[postPayment][walletDebit] CRITICAL: Insufficient balance for reseller ${effectiveResellerId}. ` +
+        `Required: ₹${pricePerNumber.toFixed(2)}, Available: ₹${balanceBefore.toFixed(2)} — manual reconciliation required.`
+      );
+      return;
+    }
+
+    const balanceAfter = balanceBefore - pricePerNumber;
+    console.log(`[postPayment][walletDebit] balanceAfter=${balanceAfter}`);
+
+    // Step A: Insert audit record into mst_wallet_transaction
+    console.log(`[postPayment][walletDebit] Inserting into mst_wallet_transaction...`);
+    const insertWalletTxnMutation = `
+      mutation CreateWalletTxnOnlinePayment(
+        $wallet_id: uuid!
+        $amount: numeric!
+        $balance_before: numeric!
+        $balance_after: numeric!
+        $description: String
+        $reference: String
+      ) {
+        insert_mst_wallet_transaction_one(object: {
+          wallet_id: $wallet_id
+          transaction_type: "DEBIT"
+          amount: $amount
+          balance_before: $balance_before
+          balance_after: $balance_after
+          description: $description
+          reference: $reference
+        }) {
+          id
+        }
+      }
+    `;
+    const walletTxnResult = await client.client.request(insertWalletTxnMutation, {
+      wallet_id: wallet.id,
+      amount: pricePerNumber,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      description: `Customer online payment - virtual number assigned`,
+      reference: transactionId || null,
+    });
+    console.log(`[postPayment][walletDebit] mst_wallet_transaction insert result=`, JSON.stringify(walletTxnResult));
+
+    // Step B: Update mst_wallet balance
+    console.log(`[postPayment][walletDebit] Updating mst_wallet (id=${wallet.id}) balance to ${balanceAfter}`);
+    const updateWalletMutation = `
+      mutation UpdateWalletOnlinePayment(
+        $id: uuid!
+        $balance: numeric!
+        $debit_amount: numeric!
+        $last_transaction_at: timestamp!
+      ) {
+        update_mst_wallet_by_pk(
+          pk_columns: { id: $id }
+          _set: {
+            balance: $balance
+            debit_amount: $debit_amount
+            last_transaction_at: $last_transaction_at
+          }
+        ) {
+          id
+          balance
+        }
+      }
+    `;
+    const updateWalletResult = await client.client.request(updateWalletMutation, {
+      id: wallet.id,
+      balance: balanceAfter,
+      debit_amount: existingDebitAmount + pricePerNumber,
+      last_transaction_at: new Date().toISOString(),
+    });
+    console.log(`[postPayment][walletDebit] mst_wallet update result=`, JSON.stringify(updateWalletResult));
+
+    console.log(
+      `[postPayment][walletDebit] SUCCESS: Debited ₹${pricePerNumber.toFixed(2)} from reseller ${effectiveResellerId}. ` +
+      `mst_wallet.balance: ₹${balanceBefore.toFixed(2)} → ₹${balanceAfter.toFixed(2)}`
+    );
+  } catch (walletErr) {
+    console.error(`[postPayment][walletDebit] CRITICAL: Exception during wallet deduction:`, walletErr);
+  }
+  console.log(`[postPayment][walletDebit] --- END ---`);
+}
+
 async function updateCustomerStatusAfterPayment(customerId, resellerId, transactionId = null) {
+  console.log(`[postPayment] CALLED — customerId=${customerId} resellerId=${resellerId} transactionId=${transactionId}`);
+
   if (!customerId) {
     console.warn("[postPayment] customerId is null — cannot complete post-payment flow");
     return false;
@@ -901,6 +1108,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
             last_name
             business_name
             brand_name
+            price_per_number
           }
           mst_virtual_numbers(limit: 1, order_by: { created_at: desc }) {
             id
@@ -911,6 +1119,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
         mst_transaction(where: { id: { _eq: $txn_id } }, limit: 1) {
           id
           virtual_number_id
+          status
         }
       }
     `;
@@ -924,27 +1133,66 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
       return false;
     }
 
+    console.log(`[postPayment] customer.status=${customer.status} existing_vn_count=${customer.mst_virtual_numbers?.length} reseller.price_per_number=${customer.mst_reseller?.price_per_number}`);
+
     // ── 2. Idempotency guards ─────────────────────────────────────────────────
-    // Guard A: transaction already has a virtual number linked (DB-level, race-safe)
+    // Guard A: transaction already has a VN linked, or is already claimed/processing
     const txnRecord = customerResult?.mst_transaction?.[0];
-    if (transactionId && txnRecord?.virtual_number_id) {
+    if (transactionId && (txnRecord?.virtual_number_id || txnRecord?.status === "processing_vn")) {
       console.log(
-        `[postPayment] Transaction ${transactionId} already has virtual_number_id=${txnRecord.virtual_number_id} — skipping`
+        `[postPayment] Guard A hit — Transaction ${transactionId} already claimed (vn_id=${txnRecord.virtual_number_id}, status=${txnRecord.status}) — skipping VN creation, attempting wallet debit`
       );
+      await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
       return true;
     }
 
-    // Guard B: customer already active with a virtual number (covers no-transactionId path)
-    const alreadyActive =
-      customer.status === "active" && customer.mst_virtual_numbers?.length > 0;
-    if (alreadyActive) {
+    // Guard B: customer already has a virtual number — skip regardless of status.
+    // A customer should never receive a second VN even if their status was reset.
+    const hasExistingVN = customer.mst_virtual_numbers?.length > 0;
+    if (hasExistingVN) {
       console.log(
-        `[postPayment] Customer ${customerId} is already active with a virtual number — skipping`
+        `[postPayment] Guard B hit — Customer ${customerId} already has a virtual number (status=${customer.status}) — skipping VN creation, but will attempt wallet debit`
       );
+      // Still attempt wallet debit in case it didn't run yet
+      await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
       return true;
     }
 
-    // ── 3. Generate virtual number ───────────────────────────────────────────
+    // ── 3. Claim the transaction slot atomically BEFORE creating VN ──────────
+    // Use a conditional UPDATE on mst_transaction as a DB-level mutex.
+    // The condition: virtual_number_id IS NULL AND status != 'success'.
+    // Only the FIRST concurrent postPayment call satisfies this — it sets
+    // a sentinel value (status='processing') so every subsequent concurrent
+    // call gets affected_rows=0 and bails out immediately.
+    // This is race-safe because Postgres row-locks the transaction row on UPDATE.
+    if (transactionId) {
+      const claimTxnMutation = `
+        mutation ClaimTransactionForVN($txn_id: uuid!) {
+          update_mst_transaction(
+            where: {
+              id: { _eq: $txn_id }
+              virtual_number_id: { _is_null: true }
+              status: { _nin: ["processing_vn", "success"] }
+            }
+            _set: { status: "processing_vn" }
+          ) {
+            affected_rows
+          }
+        }
+      `;
+      const claimResult = await client.client.request(claimTxnMutation, {
+        txn_id: transactionId,
+      });
+
+      if ((claimResult?.update_mst_transaction?.affected_rows ?? 0) === 0) {
+        console.log(`[postPayment] Claim lost — transaction ${transactionId} already claimed by concurrent call — skipping VN creation, attempting wallet debit`);
+        await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+        return true;
+      }
+      console.log(`[postPayment] Claim won on transaction ${transactionId} — proceeding with VN creation`);
+    }
+
+    // ── 4. Generate and insert virtual number ────────────────────────────────
     const randomDigits = Math.floor(1000000000 + Math.random() * 9000000000);
     const virtualNumber = `+91${randomDigits}`;
     const purchaseDate = new Date().toISOString().split("T")[0];
@@ -992,14 +1240,17 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
     }
     console.log(`[postPayment] Virtual number ${virtualNumber} created for customer ${customerId}`);
 
-    // ── 4. Link virtual number to transaction ─────────────────────────────────
+    // ── 5. Debit reseller wallet by price_per_number ──────────────────────────
+    await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+
+    // ── 6. Link VN to transaction + restore status to success ────────────────
     if (transactionId && vnRecord.id) {
       try {
         const linkMutation = `
           mutation LinkVirtualNumberToTransaction($txn_id: uuid!, $vn_id: uuid!) {
             update_mst_transaction_by_pk(
               pk_columns: { id: $txn_id }
-              _set: { virtual_number_id: $vn_id }
+              _set: { virtual_number_id: $vn_id, status: "success" }
             ) { id }
           }
         `;
@@ -1008,34 +1259,23 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
           vn_id: vnRecord.id,
         });
       } catch (linkErr) {
-        // Non-fatal: log but continue
         console.warn(`[postPayment] Could not link virtual number to transaction: ${linkErr.message}`);
       }
     }
 
-    // ── 5. Update customer status ─────────────────────────────────────────────
+    // ── 7. Activate customer ──────────────────────────────────────────────────
     const statusMutation = `
       mutation ActivateCustomer($customer_id: uuid!) {
         update_mst_customer_by_pk(
           pk_columns: { id: $customer_id }
           _set: { status: "active", kyc_status: "verified", approval: "approved" }
-        ) {
-          id
-          status
-          updated_at
-        }
+        ) { id }
       }
     `;
-    const statusResult = await client.client.request(statusMutation, {
-      customer_id: customerId,
-    });
-
-    if (!statusResult?.update_mst_customer_by_pk) {
-      throw new Error("Customer status update returned null");
-    }
+    await client.client.request(statusMutation, { customer_id: customerId });
     console.log(`[postPayment] Customer ${customerId} activated`);
 
-    // ── 6. Send virtual-number email (best-effort) ────────────────────────────
+    // ── 7. Send virtual-number email (best-effort) ────────────────────────────
     try {
       const { sendVirtualNumberEmail } = await import("../../services/emailService.js");
       const { getResellerSmtpConfig } = await import("./smtpConfig.service.js");
@@ -1478,12 +1718,17 @@ export async function processPaymentCaptured(resellerId, payload) {
         }
 
         // Trigger full post-payment flow (virtual number + activation + email)
+        // Skip if VN already linked — guards against retries calling postPayment twice
         if (updateResult.success && resolvedCustomerId) {
-          await updateCustomerStatusAfterPayment(
-            resolvedCustomerId,
-            effectiveResellerId,
-            existingTransaction.id
-          );
+          if (existingTransaction.virtual_number_id) {
+            console.log(`[processPaymentCaptured] STEP2 VN already linked (vn_id=${existingTransaction.virtual_number_id}) — skipping postPayment`);
+          } else {
+            await updateCustomerStatusAfterPayment(
+              resolvedCustomerId,
+              effectiveResellerId,
+              existingTransaction.id
+            );
+          }
         } else if (updateResult.success && !resolvedCustomerId) {
           console.warn(`[processPaymentCaptured] STEP2 could not resolve customer_id — post-payment skipped`);
         }
@@ -1501,14 +1746,19 @@ export async function processPaymentCaptured(resellerId, payload) {
         return updateResult;
       }
 
-      // Transaction already exists and is "success", ensure post-payment ran
-      const resolvedCustomerId =
-        existingTransaction.customer_id ||
-        (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
+      // Transaction already exists and is "success"
+      // Only call postPayment if VN is not yet linked — prevents duplicate VN on Razorpay retries
+      if (!existingTransaction.virtual_number_id) {
+        const resolvedCustomerId =
+          existingTransaction.customer_id ||
+          (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
 
-      if (resolvedCustomerId) {
-        // Idempotent — will skip if customer is already active
-        await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, existingTransaction.id);
+        if (resolvedCustomerId) {
+          console.log(`[processPaymentCaptured] STEP2 txn is success but VN not linked yet — running postPayment`);
+          await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, existingTransaction.id);
+        }
+      } else {
+        console.log(`[processPaymentCaptured] STEP2 txn is success and VN already linked (vn_id=${existingTransaction.virtual_number_id}) — skipping postPayment (Razorpay retry)`);
       }
 
       if (eventId) {
@@ -1603,11 +1853,15 @@ export async function processPaymentCaptured(resellerId, payload) {
       if (eventId) {
         await recordWebhookEvent(eventId, effectiveResellerId, finalCheck.id, payload);
       }
-      // Ensure post-payment ran on the found transaction
-      const resolvedCustomerId = finalCheck.customer_id ||
-        (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
-      if (resolvedCustomerId) {
-        await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, finalCheck.id);
+      // Ensure post-payment ran on the found transaction — skip if VN already linked
+      if (!finalCheck.virtual_number_id) {
+        const resolvedCustomerId = finalCheck.customer_id ||
+          (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
+        if (resolvedCustomerId) {
+          await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, finalCheck.id);
+        }
+      } else {
+        console.log(`[processPaymentCaptured] STEP5 race-condition path — VN already linked (vn_id=${finalCheck.virtual_number_id}) — skipping postPayment`);
       }
       return {
         success: true,
