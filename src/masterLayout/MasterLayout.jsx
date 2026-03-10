@@ -297,8 +297,6 @@ const MasterLayout = ({ children }) => {
     setMobileMenu(!mobileMenu);
   };
 
-  const navigate = useNavigate();
-
   const logout = (e) => {
     e.preventDefault();
     clearAuth();
