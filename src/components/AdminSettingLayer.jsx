@@ -1,20 +1,44 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { getMstAdminSetting, createMstAdminSetting, updateMstAdminSetting } from "@/hasura/mutations/adminSetting";
 
 const AdminSettingLayer = () => {
   const [formData, setFormData] = useState({
     site_name: "",
     site_email: "",
     site_phone: "",
-    site_address: "",
-    currency: "INR",
-    timezone: "Asia/Kolkata",
     maintenance_mode: false,
   });
+  const [settingId, setSettingId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadLoading, setLoadLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      setLoadLoading(true);
+      setError("");
+      try {
+        const result = await getMstAdminSetting();
+        if (result.success && result.data) {
+          const row = result.data;
+          setSettingId(row.id);
+          setFormData({
+            site_name: row.site_name ?? "",
+            site_email: row.site_email ?? "",
+            site_phone: row.site_phone ?? "",
+            maintenance_mode: row.maintenance_mode ?? false,
+          });
+        }
+      } catch (err) {
+        setError(err.message || "Failed to load admin settings");
+      } finally {
+        setLoadLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -32,14 +56,30 @@ const AdminSettingLayer = () => {
     setSuccess("");
 
     try {
-      // TODO: Implement API call to save admin settings
-      // For now, just simulate success
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      setSuccess("Admin settings saved successfully!");
-      setTimeout(() => {
-        setSuccess("");
-      }, 3000);
+      const payload = {
+        site_name: formData.site_name || null,
+        site_email: formData.site_email || null,
+        site_phone: formData.site_phone || null,
+        maintenance_mode: formData.maintenance_mode,
+      };
+      if (settingId) {
+        const result = await updateMstAdminSetting(settingId, payload);
+        if (result.success) {
+          setSuccess(result.message || "Admin settings saved successfully!");
+          setTimeout(() => setSuccess(""), 3000);
+        } else {
+          setError(result.message || "Failed to save admin settings");
+        }
+      } else {
+        const result = await createMstAdminSetting(payload);
+        if (result.success && result.data) {
+          setSettingId(result.data.id);
+          setSuccess(result.message || "Admin settings saved successfully!");
+          setTimeout(() => setSuccess(""), 3000);
+        } else {
+          setError(result.message || "Failed to save admin settings");
+        }
+      }
     } catch (err) {
       setError(err.message || "Failed to save admin settings");
     } finally {
@@ -86,7 +126,14 @@ const AdminSettingLayer = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        {loadLoading && (
+          <div className='text-center py-24 text-secondary-light'>
+            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+            Loading settings...
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: loadLoading ? "none" : "block" }}>
           <div className='row'>
             <div className='col-md-6'>
               <div className='mb-20'>
@@ -104,7 +151,7 @@ const AdminSettingLayer = () => {
                   placeholder='Enter site name'
                   value={formData.site_name}
                   onChange={handleChange}
-                  disabled={loading}
+                  disabled={loading || loadLoading}
                 />
               </div>
             </div>
@@ -125,7 +172,7 @@ const AdminSettingLayer = () => {
                   placeholder='Enter site email'
                   value={formData.site_email}
                   onChange={handleChange}
-                  disabled={loading}
+                  disabled={loading || loadLoading}
                 />
               </div>
             </div>
@@ -146,76 +193,7 @@ const AdminSettingLayer = () => {
                   placeholder='Enter site phone'
                   value={formData.site_phone}
                   onChange={handleChange}
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            <div className='col-md-6'>
-              <div className='mb-20'>
-                <label
-                  htmlFor='currency'
-                  className='form-label fw-semibold text-primary-light text-sm mb-8'
-                >
-                  Currency
-                </label>
-                <select
-                  className='form-select radius-8'
-                  id='currency'
-                  name='currency'
-                  value={formData.currency}
-                  onChange={handleChange}
-                  disabled={loading}
-                >
-                  <option value='INR'>INR (₹)</option>
-                  <option value='USD'>USD ($)</option>
-                  <option value='EUR'>EUR (€)</option>
-                  <option value='GBP'>GBP (£)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className='col-md-6'>
-              <div className='mb-20'>
-                <label
-                  htmlFor='timezone'
-                  className='form-label fw-semibold text-primary-light text-sm mb-8'
-                >
-                  Timezone
-                </label>
-                <select
-                  className='form-select radius-8'
-                  id='timezone'
-                  name='timezone'
-                  value={formData.timezone}
-                  onChange={handleChange}
-                  disabled={loading}
-                >
-                  <option value='Asia/Kolkata'>Asia/Kolkata (IST)</option>
-                  <option value='UTC'>UTC</option>
-                  <option value='America/New_York'>America/New_York (EST)</option>
-                  <option value='Europe/London'>Europe/London (GMT)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className='col-md-12'>
-              <div className='mb-20'>
-                <label
-                  htmlFor='site_address'
-                  className='form-label fw-semibold text-primary-light text-sm mb-8'
-                >
-                  Site Address
-                </label>
-                <textarea
-                  className='form-control radius-8'
-                  id='site_address'
-                  name='site_address'
-                  rows='3'
-                  placeholder='Enter site address'
-                  value={formData.site_address}
-                  onChange={handleChange}
-                  disabled={loading}
+                  disabled={loading || loadLoading}
                 />
               </div>
             </div>
@@ -230,7 +208,7 @@ const AdminSettingLayer = () => {
                     name='maintenance_mode'
                     checked={formData.maintenance_mode}
                     onChange={handleChange}
-                    disabled={loading}
+                    disabled={loading || loadLoading}
                   />
                   <label
                     className='form-check-label fw-semibold text-primary-light text-sm'
@@ -250,14 +228,14 @@ const AdminSettingLayer = () => {
             <button
               type='button'
               className='btn btn-secondary radius-8'
-              disabled={loading}
+              disabled={loading || loadLoading}
             >
               Cancel
             </button>
             <button
               type='submit'
               className='btn btn-primary radius-8'
-              disabled={loading}
+              disabled={loading || loadLoading}
             >
               {loading ? (
                 <>

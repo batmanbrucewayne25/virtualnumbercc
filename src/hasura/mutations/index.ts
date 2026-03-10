@@ -385,6 +385,9 @@ export default {
   completeSignupStep,
 };
 
+// Export admin setting mutations
+export * from "./adminSetting";
+
 // Export customer mutations
 export * from "./customer";
 

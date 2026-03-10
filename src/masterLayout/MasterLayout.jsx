@@ -6,6 +6,8 @@ import ThemeToggleButton from "../helper/ThemeToggleButton";
 import { clearAuth, getAuthToken, getUserData } from "@/utils/auth";
 import PermissionGuard from "@/components/PermissionGuard";
 import { getMstWalletByResellerId } from "@/hasura/mutations/wallet";
+import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
+import { getMstResellerById } from "@/hasura/mutations/reseller";
 
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads";
 const DEFAULT_TITLE = "Virtual Number";
@@ -19,7 +21,11 @@ const MasterLayout = ({ children }) => {
   const [walletBalance, setWalletBalance] = useState(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [resellerLogoError, setResellerLogoError] = useState(false);
+  const [showValidityModal, setShowValidityModal] = useState(false);
+  const [pricePerNumber, setPricePerNumber] = useState(null);
+  const [lowBalanceAlertDismissed, setLowBalanceAlertDismissed] = useState(false);
   const location = useLocation(); // Hook to get the current route
+  const navigate = useNavigate();
 
   // Get user role and name from JWT token and localStorage
   useEffect(() => {
@@ -137,6 +143,45 @@ const MasterLayout = ({ children }) => {
     window.addEventListener("wallet-should-refresh", onWalletShouldRefresh);
     return () => window.removeEventListener("wallet-should-refresh", onWalletShouldRefresh);
   }, []);
+
+  // Reseller: fetch validity and price_per_number; show validity-expired modal when applicable
+  useEffect(() => {
+    if (userRole !== "reseller") return;
+    const userData = getUserData();
+    if (!userData?.id) return;
+
+    const checkValidityAndReseller = async () => {
+      try {
+        const [validityResult, resellerResult] = await Promise.all([
+          getResellerValidity(userData.id),
+          getMstResellerById(userData.id),
+        ]);
+
+        if (resellerResult.success && resellerResult.data?.price_per_number != null) {
+          const p = Number(resellerResult.data.price_per_number);
+          setPricePerNumber(isNaN(p) ? null : p);
+        }
+
+        if (validityResult.success && validityResult.data) {
+          const v = validityResult.data;
+          const endDate = v.validity_end_date ? new Date(v.validity_end_date) : null;
+          const now = new Date();
+          const isExpiredByDate = endDate && endDate < now;
+          const isExpiredStatus = v.status === "EXPIRED" || v.status === "SUSPENDED";
+          if (isExpiredByDate || isExpiredStatus) {
+            // Do not show validity modal when already on wallet page
+            if (location.pathname !== "/wallet") {
+              setShowValidityModal(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error checking reseller validity or price:", err);
+      }
+    };
+
+    checkValidityAndReseller();
+  }, [userRole, location.pathname]);
 
   useEffect(() => {
     // Function to handle dropdown clicks
@@ -2419,6 +2464,31 @@ const MasterLayout = ({ children }) => {
         </div>
 
         {/* dashboard-main-body */}
+        {userRole === "reseller" &&
+          pricePerNumber != null &&
+          Number(pricePerNumber) > 0 &&
+          walletBalance !== null &&
+          Number(walletBalance) < Number(pricePerNumber) &&
+          !lowBalanceAlertDismissed && (
+            <div className="px-24 py-16">
+              <div className="alert alert-warning alert-dismissible fade show d-flex align-items-center justify-content-between flex-wrap gap-2" role="alert">
+                <span>
+                  Your wallet balance is below the price per number. Recharge to approve new customers.
+                </span>
+                <div className="d-flex align-items-center gap-2">
+                  <Link to="/wallet" className="btn btn-sm btn-primary">
+                    Recharge
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    aria-label="Close"
+                    onClick={() => setLowBalanceAlertDismissed(true)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         <div className='dashboard-main-body'>{children}</div>
 
         {/* Footer section */}
@@ -2435,6 +2505,47 @@ const MasterLayout = ({ children }) => {
           </div>
         </footer>
       </main>
+
+      {/* Validity expired modal for reseller */}
+      {userRole === "reseller" && showValidityModal && (
+        <div className="modal fade show d-block" tabIndex={-1} style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Recharge required</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  onClick={() => setShowValidityModal(false)}
+                />
+              </div>
+              <div className="modal-body">
+                Your validity has expired. Please recharge to extend your account.
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowValidityModal(false)}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setShowValidityModal(false);
+                    navigate("/wallet");
+                  }}
+                >
+                  Go to Wallet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

@@ -12,6 +12,28 @@ function isLocalhost(hostOrDomain) {
   return h === 'localhost' || h === '127.0.0.1' || h.includes('localhost');
 }
 
+/**
+ * Fetch maintenance_mode from mst_admin_setting (first row)
+ * @param {object} client - Hasura client
+ * @returns {Promise<boolean>}
+ */
+async function getMaintenanceMode(client) {
+  try {
+    const result = await client.client.request(`
+      query GetMaintenanceMode {
+        mst_admin_setting(limit: 1, order_by: { created_at: desc }) {
+          maintenance_mode
+        }
+      }
+    `);
+    const row = result?.mst_admin_setting?.[0];
+    return row?.maintenance_mode ?? false;
+  } catch (err) {
+    console.error('Error fetching maintenance mode:', err);
+    return false;
+  }
+}
+
 export const getResellerByDomain = asyncHandler(async (req, res) => {
   const { domain } = req.query;
   const requestHost = req.get('host') || '';
@@ -43,6 +65,7 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
       });
       const reseller = resellerResult.mst_reseller_by_pk;
       if (reseller && reseller.status === true) {
+        const maintenanceMode = await getMaintenanceMode(client);
         return res.json({
           success: true,
           data: {
@@ -52,6 +75,7 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
             businessName: reseller.business_name || null,
             logo: reseller.logo || null,
             domain: 'localhost',
+            maintenanceMode,
           },
         });
       }
@@ -148,6 +172,7 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
         });
       }
 
+      const maintenanceMode = await getMaintenanceMode(client);
       return res.json({
         success: true,
         data: {
@@ -157,6 +182,7 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
           businessName: reseller.business_name || null,
           logo: reseller.logo || null,
           domain: domainRecord.domain,
+          maintenanceMode,
         },
       });
     }

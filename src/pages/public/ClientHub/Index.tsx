@@ -36,6 +36,7 @@ const ClientHubLayer = ({
   const [resellerData, setResellerData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(!isAdminMode); // Don't load if admin mode with resellerId provided
   const [error, setError] = useState<string>("");
+  const [maintenanceMode, setMaintenanceMode] = useState<boolean>(false);
   const [formData, setFormData] = useState<any>({
     firstName: "",
     lastName: "",
@@ -98,6 +99,7 @@ const ClientHubLayer = ({
               const result = await response.json();
               if (result.success && result.data) {
                 finalResellerId = result.data.resellerId;
+                setMaintenanceMode(result.data.maintenanceMode === true);
               } else {
                 setError(result.message || "Domain not found or not approved");
                 setLoading(false);
@@ -314,6 +316,12 @@ const ClientHubLayer = ({
               </h5>
             )}
           </div>
+
+          {maintenanceMode && (
+            <div className="alert alert-info mb-16" role="alert">
+              The site is currently in maintenance mode. Some features may be limited.
+            </div>
+          )}
 
           {/* STEP INDICATOR */}
           <p className="text-sm text-secondary-light mb-16">

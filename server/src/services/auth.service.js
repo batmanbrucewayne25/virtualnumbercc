@@ -256,22 +256,11 @@ export class AuthService {
         };
       }
 
-      // Check status - if EXPIRED or SUSPENDED, block login
-      if (validity.status === "EXPIRED" || validity.status === "SUSPENDED") {
+      // Only block login when explicitly SUSPENDED; allow when EXPIRED or date-expired so reseller can log in and see recharge popup
+      if (validity.status === "SUSPENDED") {
         return {
           isValid: false,
-          message: "Your account has expired. Please contact admin.",
-        };
-      }
-
-      // Check if validity has expired by date (even if status is still ACTIVE)
-      const validityEndDate = new Date(validity.validity_end_date);
-      const now = new Date();
-
-      if (validityEndDate < now) {
-        return {
-          isValid: false,
-          message: "Your account has expired. Please contact admin.",
+          message: "Your account has been suspended. Please contact admin.",
         };
       }
 
