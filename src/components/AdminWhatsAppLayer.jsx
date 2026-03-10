@@ -205,7 +205,6 @@ const AdminWhatsAppLayer = () => {
                   onChange={handleChange}
                   disabled={loading}
                   autoComplete="off"
-                  readOnly={true}
                 />
               </div>
             </div>

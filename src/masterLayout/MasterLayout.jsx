@@ -525,6 +525,21 @@ const MasterLayout = ({ children }) => {
                   </li>
                 </PermissionGuard>
 
+                {/* Virtual Numbers - Admin Only */}
+                <PermissionGuard module="Reseller" action="view">
+                  <li>
+                    <NavLink
+                      to='/virtual-numbers-list'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <Icon icon='mdi:phone-outline' className='menu-icon' />
+                      <span>Virtual Numbers</span>
+                    </NavLink>
+                  </li>
+                </PermissionGuard>
+
                 {/* Users List - Admin Only (Super Admin can view all resellers' users) */}
                 <li>
                   <NavLink

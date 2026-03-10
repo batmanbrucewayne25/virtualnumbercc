@@ -13,6 +13,7 @@ import AdminListPage from "./pages/AdminListPage";
 import ViewAdminPage from "./pages/ViewAdminPage";
 import EditAdminPage from "./pages/EditAdminPage";
 import ResellerListPage from "./pages/ResellerListPage";
+import VirtualNumbersListPage from "./pages/VirtualNumbersListPage";
 import ViewResellerPage from "./pages/ViewResellerPage";
 import EditResellerPage from "./pages/EditResellerPage";
 import AdminAddResellerPage from "./pages/AdminAddResellerPage";
@@ -146,6 +147,7 @@ function App() {
           <Route exact path='/view-admin/:id' element={<ViewAdminPage />} />
           <Route exact path='/edit-admin/:id' element={<EditAdminPage />} />
           <Route exact path='/reseller-list' element={<ResellerListPage />} />
+          <Route exact path='/virtual-numbers-list' element={<VirtualNumbersListPage />} />
           <Route exact path='/add-reseller' element={<AdminAddResellerPage />} />
           <Route exact path='/view-reseller/:id' element={<ViewResellerPage />} />
           <Route exact path='/edit-reseller/:id' element={<EditResellerPage />} />

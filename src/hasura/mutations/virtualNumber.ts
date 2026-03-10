@@ -1,6 +1,98 @@
 import { graphqlRequest } from "@/hasura";
 
 /**
+ * Get all virtual numbers (for admin) with customer and reseller details
+ */
+export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) => {
+  const resellerId = filters?.resellerId;
+
+  const QUERY = resellerId
+    ? `query GetMstVirtualNumbersByReseller($reseller_id: uuid!) {
+        mst_virtual_number(
+          where: { reseller_id: { _eq: $reseller_id } }
+          order_by: { created_at: desc }
+        ) {
+          id
+          virtual_number
+          call_forwarding_number
+          purchase_date
+          expiry_date
+          status
+          created_at
+          mst_customer {
+            id
+            profile_name
+            email
+            phone
+          }
+          mst_reseller {
+            id
+            first_name
+            last_name
+            business_name
+            brand_name
+            email
+          }
+        }
+      }`
+    : `query GetMstVirtualNumbers {
+        mst_virtual_number(
+          order_by: { created_at: desc }
+        ) {
+          id
+          virtual_number
+          call_forwarding_number
+          purchase_date
+          expiry_date
+          status
+          created_at
+          mst_customer {
+            id
+            profile_name
+            email
+            phone
+          }
+          mst_reseller {
+            id
+            first_name
+            last_name
+            business_name
+            brand_name
+            email
+          }
+        }
+      }`;
+
+  try {
+    const variables = resellerId ? { reseller_id: resellerId } : {};
+    const result = await graphqlRequest(QUERY, variables);
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to fetch virtual numbers",
+        data: [],
+      };
+    }
+    if (result?.data?.mst_virtual_number) {
+      return {
+        success: true,
+        data: result.data.mst_virtual_number,
+      };
+    }
+    return {
+      success: false,
+      data: [],
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to fetch virtual numbers",
+      data: [],
+    };
+  }
+};
+
+/**
  * Create a virtual number for a customer
  */
 export const createMstVirtualNumber = async (data: {
