@@ -2,6 +2,74 @@ import { CustomerService } from '../services/customer.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 /**
+ * @desc    Send renewal payment email for a virtual number (online payment link)
+ * @route   POST /api/customer/send-renewal-payment-email
+ * @access  Protected (Admin or Reseller)
+ */
+export const sendRenewalPaymentEmail = asyncHandler(async (req, res) => {
+  const { virtual_number_id, subscription_plan_id } = req.body;
+
+  if (!virtual_number_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide virtual_number_id'
+    });
+  }
+
+  if (!subscription_plan_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please select a subscription plan for renewal'
+    });
+  }
+
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Please log in again.'
+    });
+  }
+
+  const isReseller = role === 'reseller';
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  if (!isReseller && !isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only resellers or admins can send renewal payment links.'
+    });
+  }
+
+  const resellerId = isReseller ? userId : null;
+
+  try {
+    const result = await CustomerService.sendRenewalPaymentEmail(
+      virtual_number_id,
+      subscription_plan_id,
+      resellerId
+    );
+
+    return res.json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error sending renewal payment email:', error);
+    const msg = error.message || 'Failed to send renewal payment email';
+    const isWalletError =
+      msg.startsWith('Insufficient wallet balance') ||
+      msg.includes('wallet not found') ||
+      msg.includes('price_per_number');
+    return res.status(isWalletError ? 400 : 500).json({
+      success: false,
+      message: msg
+    });
+  }
+});
+
+/**
  * @desc    Approve customer with payment processing
  * @route   POST /api/customer/approve
  */
