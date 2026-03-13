@@ -1,5 +1,8 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { sendResellerApprovalEmail } from '../../services/emailService.js';
+import {
+  sendResellerApprovalEmail,
+  sendResellerRejectionEmail,
+} from '../../services/emailService.js';
 import { sendResellerApprovalWhatsApp } from '../services/whatsapp.service.js';
 
 /**
@@ -76,6 +79,53 @@ export const sendResellerApprovalNotifications = asyncHandler(async (req, res) =
     message: allSuccess
       ? 'Notifications sent successfully'
       : 'Some notifications failed to send',
+    results,
+  });
+});
+
+/**
+ * @desc    Send reseller rejection notification (email with reason)
+ * @route   POST /api/notifications/reseller-rejection
+ * @access  Private (Admin only)
+ */
+export const sendResellerRejectionNotifications = asyncHandler(async (req, res) => {
+  const { email, resellerName, rejectionReason } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required',
+    });
+  }
+
+  if (!rejectionReason || typeof rejectionReason !== 'string') {
+    return res.status(400).json({
+      success: false,
+      message: 'Rejection reason is required',
+    });
+  }
+
+  const results = { email: null };
+
+  try {
+    const emailResult = await sendResellerRejectionEmail(
+      email,
+      resellerName || email,
+      rejectionReason
+    );
+    results.email = emailResult;
+  } catch (error) {
+    console.error('Error sending rejection email:', error);
+    results.email = {
+      success: false,
+      message: error.message || 'Failed to send email',
+    };
+  }
+
+  const success = results.email?.success === true;
+  res.status(success ? 200 : 207).json({
+    success,
+    message: success ? 'Rejection notification sent' : 'Failed to send rejection notification',
     results,
   });
 });

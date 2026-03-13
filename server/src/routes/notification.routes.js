@@ -1,5 +1,8 @@
 import express from 'express';
-import { sendResellerApprovalNotifications } from '../controllers/notification.controller.js';
+import {
+  sendResellerApprovalNotifications,
+  sendResellerRejectionNotifications,
+} from '../controllers/notification.controller.js';
 
 const router = express.Router();
 
@@ -9,6 +12,13 @@ const router = express.Router();
  * @access  Private (Admin only)
  */
 router.post('/reseller-approval', sendResellerApprovalNotifications);
+
+/**
+ * @route   POST /api/notifications/reseller-rejection
+ * @desc    Send reseller rejection email with reason
+ * @access  Private (Admin only)
+ */
+router.post('/reseller-rejection', sendResellerRejectionNotifications);
 
 export default router;
 

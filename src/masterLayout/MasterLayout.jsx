@@ -609,7 +609,7 @@ const MasterLayout = ({ children }) => {
                   </NavLink>
                 </li>
 
-                {/* Wallet Ledger - Admin Only */}
+                {/* Wallet Ledger & Wallet Requests - Admin Only */}
                 <PermissionGuard module="Wallet" action="view">
                   <li>
                     <NavLink
@@ -620,6 +620,17 @@ const MasterLayout = ({ children }) => {
                     >
                       <Icon icon="hugeicons:invoice-03" className="menu-icon" />
                       <span>Wallet Ledger</span>
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to="/wallet-requests"
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <Icon icon="mdi:wallet-plus" className="menu-icon" />
+                      <span>Wallet Requests</span>
                     </NavLink>
                   </li>
                 </PermissionGuard>
@@ -820,6 +831,45 @@ const MasterLayout = ({ children }) => {
                   </NavLink>
                 </li>
 
+                {/* Virtual Numbers - Reseller sees only their customers' numbers */}
+                <li>
+                  <NavLink
+                    to='/virtual-numbers-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='mdi:phone-outline' className='menu-icon' />
+                    <span>Virtual Numbers</span>
+                  </NavLink>
+                </li>
+
+                {/* Wallet - Reseller */}
+                <li>
+                  <NavLink
+                    to='/wallet'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='solar:wallet-money-bold' className='menu-icon' />
+                    <span>Wallet</span>
+                  </NavLink>
+                </li>
+
+                {/* Wallet Ledger - Reseller (filtered to own data) */}
+                <li>
+                  <NavLink
+                    to='/invoice-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='hugeicons:invoice-03' className='menu-icon' />
+                    <span>Wallet Ledger</span>
+                  </NavLink>
+                </li>
+
               </>
             )}
 
@@ -843,6 +893,17 @@ const MasterLayout = ({ children }) => {
                     >
                       <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
                       My Profile
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to='/allowed-customers'
+                      className={(navData) =>
+                        navData.isActive ? "active-page" : ""
+                      }
+                    >
+                      <i className='ri-circle-fill circle-icon text-primary-600 w-auto' />{" "}
+                      Allowed Customers
                     </NavLink>
                   </li>
                   <li>
@@ -2529,7 +2590,7 @@ const MasterLayout = ({ children }) => {
                 >
                   Close
                 </button>
-                <button
+                {/* <button
                   type="button"
                   className="btn btn-primary"
                   onClick={() => {
@@ -2538,7 +2599,7 @@ const MasterLayout = ({ children }) => {
                   }}
                 >
                   Go to Wallet
-                </button>
+                </button> */}
               </div>
             </div>
           </div>

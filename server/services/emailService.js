@@ -12,6 +12,7 @@ import { getPasswordResetTemplate } from "../mailtemplate/passwordReset.js";
 import { getVirtualNumberAssignedTemplate } from "../mailtemplate/virtualNumberAssigned.js";
 import { getRazorpayLinkTemplate } from "../mailtemplate/razorpayLink.js";
 import { getCustomerRejectionTemplate } from "../mailtemplate/customerRejection.js";
+import { getResellerRejectionTemplate } from "../mailtemplate/resellerRejection.js";
 
 // Load environment variables if not already loaded
 const __filename = fileURLToPath(import.meta.url);
@@ -729,6 +730,72 @@ Virtual Number Team
     };
   } catch (error) {
     console.error("Error sending reseller approval email:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to send email",
+    };
+  }
+};
+
+/**
+ * Send reseller rejection email (admin-to-reseller; uses admin SMTP)
+ * @param {string} email - Reseller email
+ * @param {string} resellerName - Reseller name for greeting
+ * @param {string} rejectionReason - Reason for rejection
+ */
+export const sendResellerRejectionEmail = async (
+  email,
+  resellerName,
+  rejectionReason
+) => {
+  try {
+    let smtpConfig = null;
+    let fromEmail = SMTP_FROM_EMAIL || SMTP_USER;
+    let fromName = SMTP_FROM_NAME || "Virtual Number";
+
+    try {
+      const { getFirstAdminSmtpConfig } = await import(
+        "../src/services/smtpConfig.service.js"
+      );
+      smtpConfig = await getFirstAdminSmtpConfig();
+      if (smtpConfig) {
+        fromEmail = smtpConfig.from_email || smtpConfig.username || fromEmail;
+        fromName = smtpConfig.from_name || fromName;
+      }
+    } catch (err) {
+      console.warn(
+        "Could not fetch SMTP config from database, using env variables:",
+        err
+      );
+    }
+
+    const transporter = createTransporter(smtpConfig);
+
+    if (!transporter) {
+      console.error("Email transporter not available. SMTP not configured.");
+      return {
+        success: false,
+        message: "Email service not configured. Please contact administrator.",
+      };
+    }
+
+    const template = getResellerRejectionTemplate(resellerName, rejectionReason);
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: email,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Reseller rejection email sent:", info.messageId);
+    return {
+      success: true,
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    console.error("Error sending reseller rejection email:", error);
     return {
       success: false,
       message: error.message || "Failed to send email",

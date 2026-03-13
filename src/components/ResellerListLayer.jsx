@@ -184,6 +184,33 @@ const ResellerListLayer = () => {
       const result = await rejectMstReseller(selectedReseller.id, userData.id, rejectionReason);
       
       if (result.success) {
+        const resellerName = selectedReseller.business_name || `${selectedReseller.first_name || ""} ${selectedReseller.last_name || ""}`.trim() || selectedReseller.email;
+        try {
+          const API_BASE_URL = getApiBaseUrl();
+          const response = await fetch(`${API_BASE_URL}/notifications/reseller-rejection`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${typeof window !== "undefined" ? (localStorage.getItem("authToken") || "") : ""}`,
+            },
+            body: JSON.stringify({
+              email: selectedReseller.email,
+              resellerName,
+              rejectionReason,
+            }),
+          });
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.warn("[Reseller Rejection] Notification API error:", response.status, errorText);
+          } else {
+            const notificationResult = await response.json();
+            if (!notificationResult.success) {
+              console.warn("[Reseller Rejection] Failed to send rejection email:", notificationResult.message);
+            }
+          }
+        } catch (apiError) {
+          console.warn("[Reseller Rejection] Error calling rejection notification API:", apiError);
+        }
         setSuccess("Reseller rejected successfully! Email notification sent.");
         setTimeout(() => {
           setSuccess("");
@@ -191,9 +218,6 @@ const ResellerListLayer = () => {
           setSelectedReseller(null);
           fetchResellers();
         }, 2000);
-        
-        // TODO: Send rejection email notification
-        // await sendRejectionEmail(selectedReseller.email, rejectionReason);
       } else {
         setError(result.message || "Failed to reject reseller");
       }

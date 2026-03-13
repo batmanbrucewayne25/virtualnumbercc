@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getMstWalletTransactions, getMstWalletByResellerId, creditWallet, debitWallet } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
+import { insertWalletRequest } from "@/hasura/mutations/walletRequest";
 import { getUserData } from "@/utils/auth";
 import { formatDateTimeIST } from "@/utils/dateUtils";
 
@@ -23,6 +24,12 @@ const WalletLayer = () => {
   const [transactionDescription, setTransactionDescription] = useState("");
   const [transactionReference, setTransactionReference] = useState("");
   const [validityDate, setValidityDate] = useState("");
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestAmount, setRequestAmount] = useState("");
+  const [requestReference, setRequestReference] = useState("");
+  const [requestDescription, setRequestDescription] = useState("");
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState("");
 
   useEffect(() => {
     checkUserRole();
@@ -207,6 +214,40 @@ const WalletLayer = () => {
     return `₹${Number(amount).toFixed(2)}`;
   };
 
+  const handleRequestSubmit = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(requestAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Please enter a valid amount");
+      return;
+    }
+    setRequestSubmitting(true);
+    setError("");
+    try {
+      const result = await insertWalletRequest(selectedResellerId, {
+        amount,
+        reference: requestReference.trim() || null,
+        description: requestDescription.trim() || null,
+      });
+      if (result.success) {
+        setRequestSuccess("Request submitted. Admin will review it.");
+        setTimeout(() => {
+          setRequestModalOpen(false);
+          setRequestAmount("");
+          setRequestReference("");
+          setRequestDescription("");
+          setRequestSuccess("");
+        }, 2000);
+      } else {
+        setError(result.message || "Failed to submit request");
+      }
+    } catch (err) {
+      setError(err?.message || "Failed to submit request");
+    } finally {
+      setRequestSubmitting(false);
+    }
+  };
+
   return (
     <>
       <div className='row gy-4'>
@@ -249,7 +290,7 @@ const WalletLayer = () => {
                   <option value='DEBIT'>Debit</option>
                 </select>
               </div>
-              {selectedResellerId && (
+              {selectedResellerId && isAdmin && (
                 <div className='d-flex gap-2'>
                   <button
                     type='button'
@@ -268,6 +309,22 @@ const WalletLayer = () => {
                     Debit
                   </button>
                 </div>
+              )}
+              {selectedResellerId && !isAdmin && (
+                <button
+                  type='button'
+                  className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+                  onClick={() => {
+                    setRequestAmount("");
+                    setRequestReference("");
+                    setRequestDescription("");
+                    setRequestSuccess("");
+                    setRequestModalOpen(true);
+                  }}
+                >
+                  <Icon icon='mdi:wallet-plus' className='icon text-xl line-height-1' />
+                  Request Wallet amount
+                </button>
               )}
             </div>
             <div className='card-body p-24'>
@@ -440,6 +497,103 @@ const WalletLayer = () => {
           </div>
         </div>
       </div>
+
+      {/* Request Wallet amount Modal - Reseller */}
+      {requestModalOpen && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">Request Wallet amount</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setRequestModalOpen(false);
+                    setRequestAmount("");
+                    setRequestReference("");
+                    setRequestDescription("");
+                    setRequestSuccess("");
+                    setError("");
+                  }}
+                  disabled={requestSubmitting}
+                  aria-label="Close"
+                />
+              </div>
+              <form onSubmit={handleRequestSubmit}>
+                <div className="modal-body p-24">
+                  {requestSuccess && (
+                    <div className="alert alert-success radius-8 mb-24" role="alert">
+                      {requestSuccess}
+                    </div>
+                  )}
+                  {error && (
+                    <div className="alert alert-danger radius-8 mb-24" role="alert">
+                      <Icon icon="material-symbols:error-outline" className="icon me-2" />
+                      {error}
+                    </div>
+                  )}
+                  <div className="mb-20">
+                    <label className="form-label fw-semibold text-primary-light text-sm mb-8">
+                      Amount (₹) <span className="text-danger-600">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="form-control radius-8"
+                      placeholder="Enter amount to request"
+                      value={requestAmount}
+                      onChange={(e) => setRequestAmount(e.target.value)}
+                      required
+                      disabled={requestSubmitting}
+                    />
+                  </div>
+                  <div className="mb-20">
+                    <label className="form-label fw-semibold text-primary-light text-sm mb-8">
+                      Reference
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control radius-8"
+                      placeholder="Enter reference (optional)"
+                      value={requestReference}
+                      onChange={(e) => setRequestReference(e.target.value)}
+                      disabled={requestSubmitting}
+                    />
+                  </div>
+                  <div className="mb-20">
+                    <label className="form-label fw-semibold text-primary-light text-sm mb-8">
+                      Description
+                    </label>
+                    <textarea
+                      className="form-control radius-8"
+                      rows="3"
+                      placeholder="Enter description (optional)"
+                      value={requestDescription}
+                      onChange={(e) => setRequestDescription(e.target.value)}
+                      disabled={requestSubmitting}
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer border-top">
+                  <button
+                    type="button"
+                    className="btn btn-secondary radius-8"
+                    onClick={() => setRequestModalOpen(false)}
+                    disabled={requestSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary radius-8" disabled={requestSubmitting}>
+                    {requestSubmitting ? "Submitting..." : "Submit Request"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Credit Modal */}
       {creditModalOpen && (

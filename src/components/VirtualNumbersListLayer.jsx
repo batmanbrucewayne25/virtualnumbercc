@@ -152,6 +152,11 @@ const VirtualNumbersListLayer = () => {
               : `Showing ${filteredVirtualNumbers.length} of ${virtualNumbers.length} virtual number(s) of 1 reseller`}
           </p>
         )}
+        {getUserData()?.role === "reseller" && (
+          <p className="text-muted small mb-3">
+            Showing {filteredVirtualNumbers.length} of {virtualNumbers.length} virtual number(s) (your customers)
+          </p>
+        )}
         {error && (
           <div className="alert alert-danger radius-8 mb-24" role="alert">
             <Icon icon="material-symbols:error-outline" className="icon me-2" />
@@ -180,9 +185,9 @@ const VirtualNumbersListLayer = () => {
                   <th scope="col">Virtual Number</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Call Forwarding Num</th>
-                  <th scope="col">Reseller Name</th>
+                  {getUserData()?.role === "admin" && <th scope="col">Reseller Name</th>}
                   <th scope="col">Exp Date</th>
-                  <th scope="col">Count</th>
+                  <th scope="col">Days Left</th>
                 </tr>
               </thead>
               <tbody>
@@ -205,20 +210,22 @@ const VirtualNumbersListLayer = () => {
                       )}
                     </td>
                     <td>{vn.call_forwarding_number || "-"}</td>
-                    <td>
-                      {vn.mst_reseller ? (
-                        <Link
-                          to={`/view-reseller/${vn.mst_reseller.id}`}
-                          className="text-decoration-none hover-text-primary"
-                        >
-                          {getResellerDisplayName(vn.mst_reseller)}
-                        </Link>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
+                    {getUserData()?.role === "admin" && (
+                      <td>
+                        {vn.mst_reseller ? (
+                          <Link
+                            to={`/view-reseller/${vn.mst_reseller.id}`}
+                            className="text-decoration-none hover-text-primary"
+                          >
+                            {getResellerDisplayName(vn.mst_reseller)}
+                          </Link>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    )}
                     <td>{formatDate(vn.expiry_date)}</td>
-                    <td>{getDaysLeft(vn.expiry_date)}</td>
+                    <td>{getDaysLeft(vn.expiry_date)} Days</td>
                   </tr>
                 ))}
               </tbody>

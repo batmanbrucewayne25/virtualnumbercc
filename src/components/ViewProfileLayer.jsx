@@ -47,12 +47,9 @@ const ViewProfileLayer = () => {
     gst_pan_number: "",
     gstin_status: "",
     custom_domain: "",
-    allow_existing_customer: false,
   });
 
   const [domainData, setDomainData] = useState(null);
-  const [allowExistingCustomerDropdown, setAllowExistingCustomerDropdown] = useState(false);
-  const [updatingAllowExistingCustomer, setUpdatingAllowExistingCustomer] = useState(false);
 
   useEffect(() => {
     // Get logged-in reseller ID
@@ -113,7 +110,6 @@ const ViewProfileLayer = () => {
           gst_pan_number: result.data.gst_pan_number || "",
           gstin_status: result.data.gstin_status || "",
           custom_domain: "",
-          allow_existing_customer: result.data.allow_existing_customer === true,
         });
 
         // Set profile image if available
@@ -346,29 +342,6 @@ const ViewProfileLayer = () => {
         logoInputRef.current.value = "";
       }
       setSelectedLogoFile(null);
-    }
-  };
-
-  const handleAllowExistingCustomerChange = async (value) => {
-    if (!resellerId) return;
-    setAllowExistingCustomerDropdown(false);
-    setUpdatingAllowExistingCustomer(true);
-    setError("");
-    try {
-      const result = await updateMstReseller(resellerId, { allow_existing_customer: value });
-      if (result?.success !== false && !result?.errors?.length) {
-        setFormData((prev) => ({ ...prev, allow_existing_customer: value }));
-        setSuccess(true);
-        setSuccessMessage("Allow Existing Customer updated successfully.");
-        setTimeout(() => { setSuccess(false); setSuccessMessage(""); }, 3000);
-      } else {
-        setError(result?.message || "Failed to update.");
-      }
-    } catch (err) {
-      console.error(err);
-      setError(err?.message || "Failed to update Allow Existing Customer.");
-    } finally {
-      setUpdatingAllowExistingCustomer(false);
     }
   };
 
@@ -760,60 +733,6 @@ const ViewProfileLayer = () => {
                       <p className='text-secondary-light mb-0'>{formData.gstin}</p>
                     </div>
                   )}
-                  <div className='col-sm-6 mb-20'>
-                    <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                      Allow Existing Customer
-                    </label>
-                    <div className='d-flex align-items-center gap-2'>
-                      <span className='text-secondary-light'>
-                        {formData.allow_existing_customer ? "Yes" : "No"}
-                      </span>
-                      <div className="position-relative">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-link text-primary p-0"
-                          onClick={() => setAllowExistingCustomerDropdown((v) => !v)}
-                          disabled={updatingAllowExistingCustomer}
-                          title="Edit"
-                          aria-label="Edit Allow Existing Customer"
-                        >
-                          <Icon icon="solar:pen-outline" className="icon" style={{ fontSize: "18px" }} />
-                        </button>
-                        {allowExistingCustomerDropdown && (
-                          <>
-                            <div
-                              className="position-fixed top-0 start-0 w-100 h-100"
-                              style={{ zIndex: 10 }}
-                              onClick={() => setAllowExistingCustomerDropdown(false)}
-                              aria-hidden="true"
-                            />
-                            <div
-                              className="dropdown-menu show position-absolute"
-                              style={{ zIndex: 11, minWidth: "120px" }}
-                            >
-                              <button
-                                type="button"
-                                className="dropdown-item"
-                                onClick={() => handleAllowExistingCustomerChange(true)}
-                              >
-                                Yes
-                              </button>
-                              <button
-                                type="button"
-                                className="dropdown-item"
-                                onClick={() => handleAllowExistingCustomerChange(false)}
-                              >
-                                No
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      {updatingAllowExistingCustomer && (
-                        <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true" />
-                      )}
-                    </div>
-                  </div>
                   {formData.gstin_status && (
                     <div className='col-sm-6 mb-20'>
                       <label className='form-label fw-semibold text-primary-light text-sm mb-8'>

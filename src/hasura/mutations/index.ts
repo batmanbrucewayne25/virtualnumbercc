@@ -399,3 +399,9 @@ export * from "./user";
 
 // Export CMS mutations
 export * from "./cms";
+
+// Export reseller allowed customer (Hasura CRUD)
+export * from "./resellerAllowedCustomer";
+
+// Export wallet request (Hasura CRUD)
+export * from "./walletRequest";

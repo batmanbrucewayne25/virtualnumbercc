@@ -2,14 +2,16 @@ import PasswordField from "@/components/Form/PasswordField";
 import { useState } from "react";
 import { checkMstCustomerExists, createMstCustomer } from "@/hasura/mutations/customer";
 import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
 interface Step2Props {
   resellerId: string;
+  allowExistingCustomer?: boolean;
   onBack: () => void;
   onSuccess: (data: { firstName: string; lastName: string; email: string; phone: string; password: string }) => void;
 }
 
-const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
+const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Props) => {
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
@@ -92,6 +94,28 @@ const Step2 = ({ resellerId, onBack, onSuccess }: Step2Props) => {
     // All validations passed
     setLoading(true);
     try {
+      // If reseller allows only existing (whitelist), check email/phone is in allowed list
+      if (allowExistingCustomer) {
+        const API_BASE_URL = getApiBaseUrl();
+        const checkRes = await fetch(`${API_BASE_URL}/reseller/check-allowed-customer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resellerId,
+            email: email.trim(),
+            phone: phone.trim(),
+          }),
+        });
+        const checkData = await checkRes.json();
+        if (!checkData.allowed) {
+          setError(
+            "Your email or phone is not in the list of allowed contacts for this reseller. Please contact the reseller."
+          );
+          setLoading(false);
+          return;
+        }
+      }
+
       // Check if email or phone already exists
       const checkResult = await checkMstCustomerExists(email, phone);
       

@@ -347,6 +347,7 @@ const ClientHubLayer = ({
           {step === 2 && resellerId && (
             <Step2
               resellerId={resellerId}
+              allowExistingCustomer={resellerData?.allow_existing_customer === true}
               onBack={() => handleStepChange(1)}
               onSuccess={handleStep2FormSuccess}
             />

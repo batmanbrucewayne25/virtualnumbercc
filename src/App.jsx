@@ -81,6 +81,8 @@ import UsersListPage from "./pages/UsersListPage";
 import VideoGeneratorPage from "./pages/VideoGeneratorPage";
 import ViewDetailsPage from "./pages/ViewDetailsPage";
 import ViewProfilePage from "./pages/ViewProfilePage";
+import AllowedCustomersPage from "./pages/AllowedCustomersPage";
+import WalletRequestsPage from "./pages/WalletRequestsPage";
 import VoiceGeneratorPage from "./pages/VoiceGeneratorPage";
 import WalletPage from "./pages/WalletPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
@@ -245,6 +247,8 @@ function App() {
           <Route exact path='/video-generator' element={<VideoGeneratorPage />} />
           {/* <Route exact path='/videos' element={<VideosPage />} /> */}
           <Route exact path='/view-profile' element={<ViewProfilePage />} />
+          <Route exact path='/allowed-customers' element={<AllowedCustomersPage />} />
+          <Route exact path='/wallet-requests' element={<WalletRequestsPage />} />
           <Route exact path='/custom-domain' element={<CustomDomainSettingsPage />} />
           <Route exact path='/voice-generator' element={<VoiceGeneratorPage />} />
           <Route exact path='/wallet' element={<WalletPage />} />
