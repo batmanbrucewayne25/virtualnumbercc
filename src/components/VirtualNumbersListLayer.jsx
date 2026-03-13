@@ -7,6 +7,7 @@ import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import RenewalPlanModal from "./RenewalPlanModal";
+import GracePeriodConfirmModal from "./GracePeriodConfirmModal";
 
 const RENEW_THRESHOLD_DAYS = 30;
 
@@ -18,11 +19,18 @@ const VirtualNumbersListLayer = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [renewingId, setRenewingId] = useState(null);
   const [renewalModalOpen, setRenewalModalOpen] = useState(false);
-  const [selectedVirtualNumberForRenewal, setSelectedVirtualNumberForRenewal] = useState(null);
+  const [selectedVirtualNumberForRenewal, setSelectedVirtualNumberForRenewal] =
+    useState(null);
   const [renewalError, setRenewalError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [resellerFilter, setResellerFilter] = useState("all");
   const [userRole, setUserRole] = useState(null);
+
+  const [gracePeriodModalOpen, setGracePeriodModalOpen] = useState(false);
+  const [selectedVnForGracePeriod, setSelectedVnForGracePeriod] =
+    useState(null);
+  const [gracePeriodLoading, setGracePeriodLoading] = useState(false);
+  const [gracePeriodError, setGracePeriodError] = useState("");
 
   useEffect(() => {
     const token = getAuthToken();
@@ -40,6 +48,7 @@ const VirtualNumbersListLayer = () => {
   }, []);
 
   const isReseller = userRole === "reseller";
+  const isAdmin = userRole === "admin" || userRole === "super_admin";
 
   useEffect(() => {
     fetchResellers();
@@ -67,7 +76,6 @@ const VirtualNumbersListLayer = () => {
       const userData = getUserData();
       const filters = {};
 
-      // Admin sees all; reseller sees only their numbers
       if (userData?.role === "reseller" && userData?.id) {
         filters.resellerId = userData.id;
       } else if (resellerFilter && resellerFilter !== "all") {
@@ -117,9 +125,40 @@ const VirtualNumbersListLayer = () => {
     return diffDays < 0 ? 0 : diffDays;
   };
 
-  const shouldShowRenewButton = (expiryDateStr) => {
+  const isGracePeriodActive = (gracePeriodEnd) => {
+    if (!gracePeriodEnd) return false;
+    return new Date(gracePeriodEnd) > new Date();
+  };
+
+  const formatGracePeriodEnd = (gracePeriodEnd) => {
+    if (!gracePeriodEnd) return "-";
+    const d = new Date(gracePeriodEnd);
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const shouldShowRenewButton = (expiryDateStr, gracePeriodEnd) => {
     const daysLeft = getDaysLeft(expiryDateStr);
-    return typeof daysLeft === "number" && daysLeft <= RENEW_THRESHOLD_DAYS && daysLeft >= 0;
+    if (typeof daysLeft !== "number") return false;
+
+    if (daysLeft > 0 && daysLeft <= RENEW_THRESHOLD_DAYS) return true;
+
+    if (daysLeft === 0 && isGracePeriodActive(gracePeriodEnd)) return true;
+
+    return false;
+  };
+
+  const isRenewDisabled = (expiryDateStr, gracePeriodEnd) => {
+    const daysLeft = getDaysLeft(expiryDateStr);
+    if (daysLeft === 0 && !isGracePeriodActive(gracePeriodEnd)) return true;
+    return false;
   };
 
   const handleRenewClick = (vn) => {
@@ -130,7 +169,9 @@ const VirtualNumbersListLayer = () => {
 
   const handleRenew = async (vn, subscriptionPlanId) => {
     if (!vn?.id || !vn?.mst_customer?.email) {
-      setRenewalError("Cannot send renewal: virtual number or customer email is missing.");
+      setRenewalError(
+        "Cannot send renewal: virtual number or customer email is missing.",
+      );
       return;
     }
 
@@ -144,38 +185,93 @@ const VirtualNumbersListLayer = () => {
 
     try {
       const API_BASE_URL = getApiBaseUrl();
-      const response = await fetch(`${API_BASE_URL}/customer/send-renewal-payment-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getAuthToken()}`,
+      const response = await fetch(
+        `${API_BASE_URL}/customer/send-renewal-payment-email`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${getAuthToken()}`,
+          },
+          body: JSON.stringify({
+            virtual_number_id: vn.id,
+            subscription_plan_id: subscriptionPlanId,
+          }),
         },
-        body: JSON.stringify({
-          virtual_number_id: vn.id,
-          subscription_plan_id: subscriptionPlanId,
-        }),
-      });
+      );
 
       const result = await response.json();
 
       if (result.success) {
-        setSuccessMessage(`Renewal payment link sent to ${vn.mst_customer?.email}.`);
+        setSuccessMessage(
+          `Renewal payment link sent to ${vn.mst_customer?.email}.`,
+        );
         setTimeout(() => setSuccessMessage(""), 5000);
         setRenewalModalOpen(false);
         setSelectedVirtualNumberForRenewal(null);
         fetchVirtualNumbers();
       } else {
-        setRenewalError(result.message || "Failed to send renewal payment email.");
+        setRenewalError(
+          result.message || "Failed to send renewal payment email.",
+        );
       }
     } catch (err) {
       console.error("Error sending renewal payment email:", err);
-      setRenewalError(err.message || "An error occurred while sending renewal payment email.");
+      setRenewalError(
+        err.message || "An error occurred while sending renewal payment email.",
+      );
     } finally {
       setRenewingId(null);
     }
   };
 
-  // Filter by search (client-side for virtual number, customer, call forwarding, reseller)
+  const handleGracePeriodClick = (vn) => {
+    setSelectedVnForGracePeriod(vn);
+    setGracePeriodError("");
+    setGracePeriodModalOpen(true);
+  };
+
+  const handleEnableGracePeriod = async (virtualNumberId) => {
+    setGracePeriodLoading(true);
+    setGracePeriodError("");
+
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(
+        `${API_BASE_URL}/customer/enable-grace-period`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${getAuthToken()}`,
+          },
+          body: JSON.stringify({ virtual_number_id: virtualNumberId }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSuccessMessage(
+          result.message || "Grace period enabled successfully.",
+        );
+        setTimeout(() => setSuccessMessage(""), 5000);
+        setGracePeriodModalOpen(false);
+        setSelectedVnForGracePeriod(null);
+        fetchVirtualNumbers();
+      } else {
+        setGracePeriodError(result.message || "Failed to enable grace period.");
+      }
+    } catch (err) {
+      console.error("Error enabling grace period:", err);
+      setGracePeriodError(
+        err.message || "An error occurred while enabling grace period.",
+      );
+    } finally {
+      setGracePeriodLoading(false);
+    }
+  };
+
   const filteredVirtualNumbers = virtualNumbers.filter((vn) => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
@@ -195,7 +291,9 @@ const VirtualNumbersListLayer = () => {
     );
   });
 
-  const uniqueResellerIds = [...new Set(virtualNumbers.map((vn) => vn.mst_reseller?.id).filter(Boolean))];
+  const uniqueResellerIds = [
+    ...new Set(virtualNumbers.map((vn) => vn.mst_reseller?.id).filter(Boolean)),
+  ];
   const resellerCount = uniqueResellerIds.length;
 
   return (
@@ -213,7 +311,7 @@ const VirtualNumbersListLayer = () => {
             />
             <Icon icon="ion:search-outline" className="icon" />
           </form>
-          {getUserData()?.role === "admin" && (
+          {isAdmin && (
             <select
               className="form-select form-select-sm w-auto ps-12 py-6 radius-12 h-40-px"
               value={resellerFilter}
@@ -230,16 +328,17 @@ const VirtualNumbersListLayer = () => {
         </div>
       </div>
       <div className="card-body p-24">
-        {getUserData()?.role === "admin" && (
+        {isAdmin && (
           <p className="text-muted small mb-3">
             {resellerFilter === "all"
               ? `Showing ${filteredVirtualNumbers.length} of ${virtualNumbers.length} virtual number(s) across ${resellerCount} reseller(s)`
               : `Showing ${filteredVirtualNumbers.length} of ${virtualNumbers.length} virtual number(s) of 1 reseller`}
           </p>
         )}
-        {getUserData()?.role === "reseller" && (
+        {isReseller && (
           <p className="text-muted small mb-3">
-            Showing {filteredVirtualNumbers.length} of {virtualNumbers.length} virtual number(s) (your customers)
+            Showing {filteredVirtualNumbers.length} of {virtualNumbers.length}{" "}
+            virtual number(s) (your customers)
           </p>
         )}
         {error && (
@@ -264,7 +363,10 @@ const VirtualNumbersListLayer = () => {
           </div>
         ) : filteredVirtualNumbers.length === 0 ? (
           <div className="text-center py-40">
-            <Icon icon="mdi:phone-off" className="icon text-6xl text-muted mb-3" />
+            <Icon
+              icon="mdi:phone-off"
+              className="icon text-6xl text-muted mb-3"
+            />
             <p className="text-muted">No virtual numbers found</p>
           </div>
         ) : (
@@ -276,83 +378,177 @@ const VirtualNumbersListLayer = () => {
                   <th scope="col">Virtual Number</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Call Forwarding Num</th>
-                  {getUserData()?.role === "admin" && <th scope="col">Reseller Name</th>}
+                  {isAdmin && <th scope="col">Reseller Name</th>}
                   <th scope="col">Exp Date</th>
-                  <th scope="col">Count</th>
-                  {isReseller && (
-                    <th scope="col" className="text-center">Action</th>
+                  <th scope="col">Days Left</th>
+                  {isAdmin && (
+                    <th scope="col" className="text-center">
+                      Action
+                    </th>
                   )}
+                  {isReseller && (
+                    <th scope="col" className="text-center">
+                      Action
+                    </th>
+                  )}
+                  <th scope="col">Grace Period</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredVirtualNumbers.map((vn, index) => (
-                  <tr key={vn.id}>
-                    <td>{index + 1}</td>
-                    <td>
-                      <span className="fw-medium">{vn.virtual_number || "-"}</span>
-                    </td>
-                    <td>
-                      {vn.mst_customer ? (
-                        <Link
-                          to={`/view-customer/${vn.mst_customer.id}`}
-                          className="text-decoration-none hover-text-primary"
-                        >
-                          {getCustomerDisplayName(vn.mst_customer)}
-                        </Link>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td>{vn.call_forwarding_number || "-"}</td>
-                    {getUserData()?.role === "admin" && (
+                {filteredVirtualNumbers.map((vn, index) => {
+                  const daysLeft = getDaysLeft(vn.expiry_date);
+                  const graceActive = isGracePeriodActive(vn.grace_period_end);
+
+                  return (
+                    <tr key={vn.id}>
+                      <td>{index + 1}</td>
                       <td>
-                        {vn.mst_reseller ? (
+                        <span className="fw-medium">
+                          {vn.virtual_number || "-"}
+                        </span>
+                      </td>
+                      <td>
+                        {vn.mst_customer ? (
                           <Link
-                            to={`/view-reseller/${vn.mst_reseller.id}`}
+                            to={`/view-customer/${vn.mst_customer.id}`}
                             className="text-decoration-none hover-text-primary"
                           >
-                            {getResellerDisplayName(vn.mst_reseller)}
+                            {getCustomerDisplayName(vn.mst_customer)}
                           </Link>
                         ) : (
                           "-"
                         )}
                       </td>
-                    )}
-                    <td>{formatDate(vn.expiry_date)}</td>
-                    <td>{getDaysLeft(vn.expiry_date)}</td>
-                    {isReseller && (
-                      <td className="text-center">
-                        {shouldShowRenewButton(vn.expiry_date) ? (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center gap-1"
-                            onClick={() => handleRenewClick(vn)}
-                            disabled={renewingId === vn.id}
-                            title="Send renewal payment link to customer email"
+                      <td>{vn.call_forwarding_number || "-"}</td>
+                      {isAdmin && (
+                        <td>
+                          {vn.mst_reseller ? (
+                            <Link
+                              to={`/view-reseller/${vn.mst_reseller.id}`}
+                              className="text-decoration-none hover-text-primary"
+                            >
+                              {getResellerDisplayName(vn.mst_reseller)}
+                            </Link>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      )}
+                      <td>{formatDate(vn.expiry_date)}</td>
+                      <td>{daysLeft}</td>
+
+                      {isAdmin && (
+                        <td className="text-center">
+                          {daysLeft === 0 && !graceActive ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center gap-1"
+                              onClick={() => handleGracePeriodClick(vn)}
+                              title="Enable 24-hour grace period for reseller to renew"
+                            >
+                              <Icon
+                                icon="mdi:shield-clock-outline"
+                                className="icon"
+                                style={{ fontSize: "1rem" }}
+                              />
+                              Extend
+                            </button>
+                          ) : daysLeft === 0 && graceActive ? (
+                            <span className="badge bg-success-focus text-success-main">
+                              <Icon
+                                icon="mdi:check-circle-outline"
+                                className="icon me-1"
+                                style={{ fontSize: "0.85rem" }}
+                              />
+                              Grace Active
+                            </span>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      )}
+
+                      {isReseller && (
+                        <td className="text-center">
+                          {shouldShowRenewButton(
+                            vn.expiry_date,
+                            vn.grace_period_end,
+                          ) ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center gap-1"
+                              onClick={() => handleRenewClick(vn)}
+                              disabled={
+                                renewingId === vn.id ||
+                                isRenewDisabled(
+                                  vn.expiry_date,
+                                  vn.grace_period_end,
+                                )
+                              }
+                              title={
+                                isRenewDisabled(
+                                  vn.expiry_date,
+                                  vn.grace_period_end,
+                                )
+                                  ? "Renewal disabled — contact admin to enable grace period"
+                                  : "Send renewal payment link to customer email"
+                              }
+                            >
+                              {renewingId === vn.id ? (
+                                <>
+                                  <span
+                                    className="spinner-border spinner-border-sm"
+                                    role="status"
+                                    aria-hidden="true"
+                                  />
+                                  Sending...
+                                </>
+                              ) : (
+                                <>
+                                  <Icon
+                                    icon="mdi:email-send-outline"
+                                    className="icon"
+                                    style={{ fontSize: "1rem" }}
+                                  />
+                                  Renew
+                                </>
+                              )}
+                            </button>
+                          ) : daysLeft === 0 ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center gap-1"
+                              disabled
+                              title="Renewal disabled — contact admin to enable grace period"
+                            >
+                              <Icon
+                                icon="mdi:email-send-outline"
+                                className="icon"
+                                style={{ fontSize: "1rem" }}
+                              />
+                              Renew
+                            </button>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      )}
+
+                      <td>
+                        {vn.grace_period_end ? (
+                          <span
+                            className={`badge ${graceActive ? "bg-warning-focus text-warning-main" : "bg-neutral-200 text-secondary-light"}`}
                           >
-                            {renewingId === vn.id ? (
-                              <>
-                                <span
-                                  className="spinner-border spinner-border-sm"
-                                  role="status"
-                                  aria-hidden="true"
-                                />
-                                Sending...
-                              </>
-                            ) : (
-                              <>
-                                <Icon icon="mdi:email-send-outline" className="icon" style={{ fontSize: "1rem" }} />
-                                Renew
-                              </>
-                            )}
-                          </button>
+                            {formatGracePeriodEnd(vn.grace_period_end)}
+                            {graceActive ? " (Active)" : " (Expired)"}
+                          </span>
                         ) : (
                           "-"
                         )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -371,6 +567,21 @@ const VirtualNumbersListLayer = () => {
             onRenew={handleRenew}
             loading={renewingId !== null}
             apiError={renewalError}
+          />
+        )}
+
+        {isAdmin && (
+          <GracePeriodConfirmModal
+            isOpen={gracePeriodModalOpen}
+            onClose={() => {
+              setGracePeriodModalOpen(false);
+              setSelectedVnForGracePeriod(null);
+              setGracePeriodError("");
+            }}
+            onConfirm={handleEnableGracePeriod}
+            virtualNumber={selectedVnForGracePeriod}
+            loading={gracePeriodLoading}
+            apiError={gracePeriodError}
           />
         )}
       </div>

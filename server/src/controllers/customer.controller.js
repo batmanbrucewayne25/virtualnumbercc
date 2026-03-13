@@ -164,6 +164,54 @@ export const approveCustomer = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Enable 24-hour grace period for a virtual number (admin only)
+ * @route   POST /api/customer/enable-grace-period
+ * @access  Protected (Admin only)
+ */
+export const enableGracePeriod = asyncHandler(async (req, res) => {
+  const { virtual_number_id } = req.body;
+
+  if (!virtual_number_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide virtual_number_id',
+    });
+  }
+
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Please log in again.',
+    });
+  }
+
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only admins can enable grace periods.',
+    });
+  }
+
+  try {
+    const result = await CustomerService.enableGracePeriod(virtual_number_id);
+    return res.json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    console.error('Error enabling grace period:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to enable grace period.',
+    });
+  }
+});
+
+/**
  * @desc    Reject customer (update status and send rejection email via reseller SMTP)
  * @route   POST /api/customer/reject
  * @access  Protected (Admin or Reseller - reseller only for own customers)

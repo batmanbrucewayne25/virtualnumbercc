@@ -2,7 +2,8 @@ import express from 'express';
 import {
   approveCustomer,
   rejectCustomer,
-  sendRenewalPaymentEmail
+  sendRenewalPaymentEmail,
+  enableGracePeriod
 } from '../controllers/customer.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
@@ -21,6 +22,13 @@ router.post('/approve', authMiddleware, approveCustomer);
  * @access  Protected (Admin or Reseller)
  */
 router.post('/send-renewal-payment-email', authMiddleware, sendRenewalPaymentEmail);
+
+/**
+ * @route   POST /api/customer/enable-grace-period
+ * @desc    Enable 24-hour grace period for a virtual number (admin only)
+ * @access  Protected (Admin only)
+ */
+router.post('/enable-grace-period', authMiddleware, enableGracePeriod);
 
 /**
  * @route   POST /api/customer/reject

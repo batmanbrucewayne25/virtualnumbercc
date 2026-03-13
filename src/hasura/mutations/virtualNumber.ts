@@ -18,6 +18,7 @@ export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) =>
           purchase_date
           expiry_date
           status
+          grace_period_end
           created_at
           mst_customer {
             id
@@ -45,6 +46,7 @@ export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) =>
           purchase_date
           expiry_date
           status
+          grace_period_end
           created_at
           mst_customer {
             id
