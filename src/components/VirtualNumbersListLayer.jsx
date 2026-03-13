@@ -8,7 +8,7 @@ import { formatDateIST } from "@/utils/dateUtils";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import RenewalPlanModal from "./RenewalPlanModal";
 
-const RENEW_THRESHOLD_DAYS = 20;
+const RENEW_THRESHOLD_DAYS = 30;
 
 const VirtualNumbersListLayer = () => {
   const [virtualNumbers, setVirtualNumbers] = useState([]);
