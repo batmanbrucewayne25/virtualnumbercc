@@ -1,5 +1,9 @@
 import express from 'express';
-import { approveCustomer, rejectCustomer } from '../controllers/customer.controller.js';
+import {
+  approveCustomer,
+  rejectCustomer,
+  sendRenewalPaymentEmail
+} from '../controllers/customer.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -10,6 +14,13 @@ const router = express.Router();
  * @access  Protected (Reseller)
  */
 router.post('/approve', authMiddleware, approveCustomer);
+
+/**
+ * @route   POST /api/customer/send-renewal-payment-email
+ * @desc    Send renewal payment link email for a virtual number (online payment)
+ * @access  Protected (Admin or Reseller)
+ */
+router.post('/send-renewal-payment-email', authMiddleware, sendRenewalPaymentEmail);
 
 /**
  * @route   POST /api/customer/reject

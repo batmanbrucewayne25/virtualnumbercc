@@ -9,9 +9,13 @@ import { updateMstCustomer } from "@/hasura/mutations/customer";
 import { getMaxVirtualNumbersForCustomer } from "@/hasura/mutations/numberLimits";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST, formatDateTimeIST, parseDateAsUTC } from "@/utils/dateUtils";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 import ApproveCustomerModal from "./ApproveCustomerModal";
+import RenewalPlanModal from "./RenewalPlanModal";
 import AlertModal from "./AlertModal";
 import { updateMstVirtualNumberCallForwarding } from "@/hasura/mutations/virtualNumber";
+
+const RENEW_THRESHOLD_DAYS = 20;
 
 const ViewUserLayer = () => {
   const { id } = useParams();
@@ -32,6 +36,10 @@ const ViewUserLayer = () => {
   const [editValues, setEditValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [renewingId, setRenewingId] = useState(null);
+  const [renewalModalOpen, setRenewalModalOpen] = useState(false);
+  const [selectedVirtualNumberForRenewal, setSelectedVirtualNumberForRenewal] = useState(null);
+  const [renewalError, setRenewalError] = useState("");
 
   const isAdminUser = userRole === "admin" || userRole === "super_admin";
 
@@ -193,6 +201,63 @@ const ViewUserLayer = () => {
 
   const formatDate = formatDateIST;
   const formatDateTime = formatDateTimeIST;
+
+  const shouldShowRenewButton = (daysLeft) => {
+    return typeof daysLeft === "number" && daysLeft <= RENEW_THRESHOLD_DAYS && daysLeft >= 0;
+  };
+
+  const handleRenewClick = (vn) => {
+    setSelectedVirtualNumberForRenewal(vn);
+    setRenewalError("");
+    setRenewalModalOpen(true);
+  };
+
+  const handleRenew = async (vn, subscriptionPlanId) => {
+    if (!vn?.id || !customer?.email) {
+      setRenewalError("Cannot send renewal: virtual number or customer email is missing.");
+      return;
+    }
+
+    if (!subscriptionPlanId) {
+      setRenewalError("Please select a subscription plan.");
+      return;
+    }
+
+    setRenewingId(vn.id);
+    setRenewalError("");
+
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/customer/send-renewal-payment-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          virtual_number_id: vn.id,
+          subscription_plan_id: subscriptionPlanId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSuccessMessage(`Renewal payment link sent to ${customer.email}.`);
+        setTimeout(() => setSuccessMessage(""), 5000);
+        setRenewalModalOpen(false);
+        setSelectedVirtualNumberForRenewal(null);
+        await fetchCustomer();
+      } else {
+        setRenewalError(result.message || "Failed to send renewal payment email.");
+      }
+    } catch (err) {
+      console.error("Error sending renewal payment email:", err);
+      setRenewalError(err.message || "An error occurred while sending renewal payment email.");
+    } finally {
+      setRenewingId(null);
+    }
+  };
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined) return "₹0.00";
@@ -892,24 +957,44 @@ const ViewUserLayer = () => {
                           </span>
                         </td>
                         <td className="text-center">
-                          {editingVirtualNumber?.id === vn.id ? null : (
-                            <span
-                              data-bs-toggle="tooltip"
-                              data-bs-placement="top"
-                              data-bs-title={getEditTooltipMessage(vn)}
-                              style={{ cursor: canEditCallForwarding(vn) ? 'pointer' : 'not-allowed' }}
-                            >
+                          <div className="d-flex gap-1 justify-content-center align-items-center flex-wrap">
+                            {shouldShowRenewButton(daysLeft) && (
                               <button
                                 type="button"
-                                className="btn btn-sm btn-outline-primary"
-                                onClick={() => handleEditCallForwarding(vn)}
-                                disabled={!canEditCallForwarding(vn)}
-                                style={{ pointerEvents: canEditCallForwarding(vn) ? 'auto' : 'none' }}
+                                className="btn btn-sm btn-primary d-inline-flex align-items-center gap-1"
+                                onClick={() => handleRenewClick(vn)}
+                                disabled={renewingId === vn.id}
+                                title="Send renewal payment link to customer email"
                               >
-                                <Icon icon="material-symbols:edit" className="icon" />
+                                {renewingId === vn.id ? (
+                                  <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                ) : (
+                                  <>
+                                    <Icon icon="mdi:email-send-outline" className="icon" style={{ fontSize: "1rem" }} />
+                                    Renew
+                                  </>
+                                )}
                               </button>
-                            </span>
-                          )}
+                            )}
+                            {editingVirtualNumber?.id === vn.id ? null : (
+                              <span
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                                data-bs-title={getEditTooltipMessage(vn)}
+                                style={{ cursor: canEditCallForwarding(vn) ? 'pointer' : 'not-allowed' }}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={() => handleEditCallForwarding(vn)}
+                                  disabled={!canEditCallForwarding(vn)}
+                                  style={{ pointerEvents: canEditCallForwarding(vn) ? 'auto' : 'none' }}
+                                >
+                                  <Icon icon="material-symbols:edit" className="icon" />
+                                </button>
+                              </span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -924,6 +1009,21 @@ const ViewUserLayer = () => {
             </div>
           )}
         </div>
+
+        {/* Renewal Plan Modal */}
+        <RenewalPlanModal
+          isOpen={renewalModalOpen}
+          onClose={() => {
+            setRenewalModalOpen(false);
+            setSelectedVirtualNumberForRenewal(null);
+            setRenewalError("");
+          }}
+          virtualNumber={selectedVirtualNumberForRenewal}
+          customer={customer}
+          onRenew={handleRenew}
+          loading={renewingId !== null}
+          apiError={renewalError}
+        />
 
         {/* Approve Customer Modal (for adding virtual number) */}
         <ApproveCustomerModal

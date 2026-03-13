@@ -264,6 +264,7 @@ export async function transactionExists(razorpayPaymentId, orderId = null) {
           amount
           reseller_id
           virtual_number_id
+          notes
         }
       }
     `;
@@ -296,6 +297,7 @@ export async function transactionExists(razorpayPaymentId, orderId = null) {
           amount
           reseller_id
           virtual_number_id
+          notes
         }
       }
     `;
@@ -926,6 +928,54 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
  */
 
 /**
+ * Extend virtual number expiry by N days (for renewal payments).
+ * Non-fatal — logs and returns on failure.
+ */
+async function _extendVirtualNumberExpiry(client, virtualNumberId, daysToAdd) {
+  try {
+    const getQuery = `
+      query GetVNExpiry($id: uuid!) {
+        mst_virtual_number_by_pk(id: $id) {
+          id
+          expiry_date
+        }
+      }
+    `;
+    const vnResult = await client.client.request(getQuery, { id: virtualNumberId });
+    const vn = vnResult?.mst_virtual_number_by_pk;
+    if (!vn || !vn.expiry_date) {
+      console.warn(`[postPayment][renewal] VN ${virtualNumberId} not found or no expiry_date`);
+      return;
+    }
+    const currentExpiry = new Date(vn.expiry_date);
+    const newExpiry = new Date(currentExpiry);
+    newExpiry.setDate(newExpiry.getDate() + daysToAdd);
+    const newExpiryStr = newExpiry.toISOString().split("T")[0];
+
+    const updateMutation = `
+      mutation ExtendVNExpiry($id: uuid!, $expiry_date: date!) {
+        update_mst_virtual_number_by_pk(
+          pk_columns: { id: $id }
+          _set: { expiry_date: $expiry_date }
+        ) {
+          id
+          expiry_date
+        }
+      }
+    `;
+    await client.client.request(updateMutation, {
+      id: virtualNumberId,
+      expiry_date: newExpiryStr,
+    });
+    console.log(
+      `[postPayment][renewal] Extended VN ${virtualNumberId} expiry: ${vn.expiry_date} -> ${newExpiryStr} (+${daysToAdd} days)`
+    );
+  } catch (err) {
+    console.error(`[postPayment][renewal] Failed to extend VN expiry:`, err);
+  }
+}
+
+/**
  * Debit the reseller wallet by price_per_number for an online payment.
  * Has its own idempotency: if mst_wallet_transaction already has a row with
  * reference=transactionId, the debit is skipped (prevents double-charging on
@@ -966,7 +1016,7 @@ async function _debitResellerWalletForOnlinePayment(client, customer, resellerId
       const idempotencyResult = await client.client.request(idempotencyQuery, { reference: transactionId });
       if (idempotencyResult?.mst_wallet_transaction?.length > 0) {
         console.log(`[postPayment][walletDebit] Already debited for transactionId=${transactionId} (mst_wallet_transaction.id=${idempotencyResult.mst_wallet_transaction[0].id}) — skipping`);
-        return;
+        return "already_debited";
       }
     }
 
@@ -1120,6 +1170,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
           id
           virtual_number_id
           status
+          notes
         }
       }
     `;
@@ -1139,10 +1190,18 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
     // Guard A: transaction already has a VN linked, or is already claimed/processing
     const txnRecord = customerResult?.mst_transaction?.[0];
     if (transactionId && (txnRecord?.virtual_number_id || txnRecord?.status === "processing_vn")) {
+      const isRenewal = txnRecord?.notes?.transaction_type === "renewal";
       console.log(
-        `[postPayment] Guard A hit — Transaction ${transactionId} already claimed (vn_id=${txnRecord.virtual_number_id}, status=${txnRecord.status}) — skipping VN creation, attempting wallet debit`
+        `[postPayment] Guard A hit — Transaction ${transactionId} already claimed (vn_id=${txnRecord.virtual_number_id}, status=${txnRecord.status}, renewal=${isRenewal}) — skipping VN creation, attempting wallet debit`
       );
-      await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+      const debitResult = await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+      // Extend expiry only for renewal AND only if wallet debit was new (not a retry)
+      if (isRenewal && debitResult !== "already_debited") {
+        const renewalVnId = txnRecord?.notes?.virtual_number_id || txnRecord?.virtual_number_id;
+        if (renewalVnId) {
+          await _extendVirtualNumberExpiry(client, renewalVnId, 360);
+        }
+      }
       return true;
     }
 
@@ -1150,11 +1209,19 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
     // A customer should never receive a second VN even if their status was reset.
     const hasExistingVN = customer.mst_virtual_numbers?.length > 0;
     if (hasExistingVN) {
+      const isRenewalB = txnRecord?.notes?.transaction_type === "renewal";
       console.log(
-        `[postPayment] Guard B hit — Customer ${customerId} already has a virtual number (status=${customer.status}) — skipping VN creation, but will attempt wallet debit`
+        `[postPayment] Guard B hit — Customer ${customerId} already has a virtual number (status=${customer.status}, renewal=${isRenewalB}) — skipping VN creation, but will attempt wallet debit`
       );
       // Still attempt wallet debit in case it didn't run yet
-      await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+      const debitResultB = await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+      // Renewal flow: extend expiry only if wallet debit was new (not a retry)
+      if (isRenewalB && transactionId && debitResultB !== "already_debited") {
+        const renewalVnId = txnRecord?.notes?.virtual_number_id;
+        if (renewalVnId) {
+          await _extendVirtualNumberExpiry(client, renewalVnId, 360);
+        }
+      }
       return true;
     }
 
@@ -1718,10 +1785,12 @@ export async function processPaymentCaptured(resellerId, payload) {
         }
 
         // Trigger full post-payment flow (virtual number + activation + email)
-        // Skip if VN already linked — guards against retries calling postPayment twice
+        // For renewals: VN is pre-linked — postPayment still needed for wallet debit + expiry extension.
+        // For initial payments: skip if VN already linked (guards against duplicate VN on retries).
+        const isRenewalTxn = existingTransaction.notes?.transaction_type === "renewal";
         if (updateResult.success && resolvedCustomerId) {
-          if (existingTransaction.virtual_number_id) {
-            console.log(`[processPaymentCaptured] STEP2 VN already linked (vn_id=${existingTransaction.virtual_number_id}) — skipping postPayment`);
+          if (existingTransaction.virtual_number_id && !isRenewalTxn) {
+            console.log(`[processPaymentCaptured] STEP2 VN already linked (vn_id=${existingTransaction.virtual_number_id}) — skipping postPayment (non-renewal retry)`);
           } else {
             await updateCustomerStatusAfterPayment(
               resolvedCustomerId,
@@ -1747,14 +1816,20 @@ export async function processPaymentCaptured(resellerId, payload) {
       }
 
       // Transaction already exists and is "success"
-      // Only call postPayment if VN is not yet linked — prevents duplicate VN on Razorpay retries
-      if (!existingTransaction.virtual_number_id) {
+      // For renewals: VN is pre-linked but postPayment still needed for wallet debit + expiry extension.
+      // For initial payments: skip postPayment if VN already linked (prevents duplicate VN on retries).
+      const isRenewalSuccessTxn = existingTransaction.notes?.transaction_type === "renewal";
+      if (!existingTransaction.virtual_number_id || isRenewalSuccessTxn) {
         const resolvedCustomerId =
           existingTransaction.customer_id ||
           (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
 
         if (resolvedCustomerId) {
-          console.log(`[processPaymentCaptured] STEP2 txn is success but VN not linked yet — running postPayment`);
+          if (!existingTransaction.virtual_number_id) {
+            console.log(`[processPaymentCaptured] STEP2 txn is success but VN not linked yet — running postPayment`);
+          } else {
+            console.log(`[processPaymentCaptured] STEP2 txn is success, renewal with VN pre-linked — running postPayment for wallet debit + expiry`);
+          }
           await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, existingTransaction.id);
         }
       } else {
@@ -1853,15 +1928,18 @@ export async function processPaymentCaptured(resellerId, payload) {
       if (eventId) {
         await recordWebhookEvent(eventId, effectiveResellerId, finalCheck.id, payload);
       }
-      // Ensure post-payment ran on the found transaction — skip if VN already linked
-      if (!finalCheck.virtual_number_id) {
+      // Ensure post-payment ran on the found transaction.
+      // For renewals: VN is pre-linked but postPayment still needed for wallet debit + expiry extension.
+      // For initial payments: skip if VN already linked (prevents duplicate VN).
+      const isRenewalRaceTxn = finalCheck.notes?.transaction_type === "renewal";
+      if (!finalCheck.virtual_number_id || isRenewalRaceTxn) {
         const resolvedCustomerId = finalCheck.customer_id ||
           (earlyEmail ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id : null);
         if (resolvedCustomerId) {
           await updateCustomerStatusAfterPayment(resolvedCustomerId, effectiveResellerId, finalCheck.id);
         }
       } else {
-        console.log(`[processPaymentCaptured] STEP5 race-condition path — VN already linked (vn_id=${finalCheck.virtual_number_id}) — skipping postPayment`);
+        console.log(`[processPaymentCaptured] STEP5 race-condition path — VN already linked (vn_id=${finalCheck.virtual_number_id}) — skipping postPayment (non-renewal retry)`);
       }
       return {
         success: true,

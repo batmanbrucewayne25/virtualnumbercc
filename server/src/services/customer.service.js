@@ -1010,4 +1010,200 @@ export class CustomerService {
       throw error;
     }
   }
+
+  /**
+   * Send renewal payment email for a virtual number (online payment flow).
+   * Uses the selected subscription plan to create a Razorpay payment link and sends it to the customer's email.
+   * Used when virtual number is expiring soon (e.g. less than 20 days).
+   *
+   * @param {string} virtualNumberId - Virtual number UUID
+   * @param {string} subscriptionPlanId - Subscription plan UUID (required)
+   * @param {string|null} resellerId - Reseller ID (for reseller role; admin passes null to use customer's reseller)
+   * @returns {Promise<object>} { success, message, razorpay_link? }
+   */
+  static async sendRenewalPaymentEmail(virtualNumberId, subscriptionPlanId, resellerId = null) {
+    try {
+      const client = getHasuraClient();
+
+      if (!subscriptionPlanId) {
+        throw new Error("Please select a subscription plan for renewal.");
+      }
+
+      const subscriptionPlan = await this.getSubscriptionPlanById(subscriptionPlanId);
+      if (!subscriptionPlan) {
+        throw new Error("Subscription plan not found");
+      }
+
+      const query = `
+        query GetVirtualNumberForRenewal($id: uuid!) {
+          mst_virtual_number_by_pk(id: $id) {
+            id
+            virtual_number
+            expiry_date
+            customer_id
+            reseller_id
+            mst_customer {
+              id
+              email
+              profile_name
+              phone
+              reseller_id
+            }
+            mst_reseller {
+              id
+              first_name
+              last_name
+              business_name
+              brand_name
+              email
+              price_per_number
+            }
+          }
+        }
+      `;
+
+      const result = await client.client.request(query, { id: virtualNumberId });
+      const vn = result?.mst_virtual_number_by_pk;
+
+      if (!vn) {
+        throw new Error("Virtual number not found");
+      }
+
+      const customer = vn.mst_customer;
+      const reseller = vn.mst_reseller;
+
+      if (!customer) {
+        throw new Error("Customer not found for this virtual number");
+      }
+      if (!reseller) {
+        throw new Error("Reseller not found for this virtual number");
+      }
+
+      const effectiveResellerId = resellerId || vn.reseller_id || reseller.id;
+
+      if (resellerId && vn.reseller_id !== resellerId) {
+        throw new Error("You do not have permission to send renewal for this virtual number.");
+      }
+
+      const pricePerNumber = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+
+      if (pricePerNumber <= 0) {
+        throw new Error(
+          "price_per_number is not configured for this reseller. Please set it before sending renewal payment links."
+        );
+      }
+
+      const resellerWallet = await this.getResellerWallet(effectiveResellerId);
+      if (!resellerWallet) {
+        throw new Error("Reseller wallet not found. Please contact the administrator.");
+      }
+      const walletBalance = Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
+
+      if (walletBalance < pricePerNumber) {
+        throw new Error(
+          `Insufficient wallet balance. Required: ₹${pricePerNumber.toFixed(2)} (price per number). ` +
+            `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet before sending renewal link.`
+        );
+      }
+
+      const planAmount = Number(parseFloat(String(subscriptionPlan.amount ?? 0))) || 0;
+      if (planAmount <= 0) {
+        throw new Error("Subscription plan amount is invalid.");
+      }
+
+      console.log(
+        `[sendRenewalPaymentEmail] Plan: ${subscriptionPlan.plan_name}, Amount: ₹${planAmount.toFixed(2)}, Duration: ${subscriptionPlan.duration_days} days`
+      );
+
+      const resellerSmtpConfig = await getResellerSmtpConfig(effectiveResellerId);
+
+      await this.createTransaction({
+        customer_id: customer.id,
+        reseller_id: effectiveResellerId,
+        virtual_number_id: vn.id,
+        transaction_type: "renewal",
+        payment_mode: "online",
+        payment_method: "razorpay",
+        amount: planAmount,
+        status: "pending",
+        reference_number: null,
+        payment_date: null,
+        customer_email: customer.email || null,
+        customer_name: customer.profile_name || null,
+        notes: {
+          customer_id: customer.id,
+          reseller_id: effectiveResellerId,
+          virtual_number_id: vn.id,
+          subscription_plan_id: subscriptionPlanId,
+          transaction_type: "renewal",
+        },
+      });
+
+      let razorpayLink = null;
+
+      // For renewal, always create a dynamic payment link so we can pass customer_id,
+      // virtual_number_id, etc. in notes for webhook matching. Static links may not support custom notes.
+      if (subscriptionPlan.razorpay_plan_id) {
+        const { createRazorpayPaymentLink } = await import("./razorpay.service.js");
+        const paymentLinkResult = await createRazorpayPaymentLink(effectiveResellerId, {
+          amount: planAmount,
+          currency: subscriptionPlan.currency || "INR",
+          description: `Renewal for virtual number ${vn.virtual_number} - ${subscriptionPlan.plan_name}`,
+          customer: {
+            name: customer.profile_name || customer.email,
+            email: customer.email,
+            contact: customer.phone || undefined,
+          },
+          notify: { email: false, sms: false },
+          notes: {
+            customer_id: customer.id,
+            reseller_id: effectiveResellerId,
+            virtual_number_id: vn.id,
+            subscription_plan_id: subscriptionPlanId,
+            transaction_type: "renewal",
+          },
+        });
+        razorpayLink =
+          paymentLinkResult?.short_url || `https://rzp.io/i/${paymentLinkResult?.id || ""}`;
+      }
+
+      // For renewal, we must use dynamic payment links (razorpay_plan_id) so the amount
+      // matches the selected plan. Static links (razorpay_link_id) have a fixed amount
+      // in Razorpay and would show the wrong amount to the customer.
+      if (!razorpayLink) {
+        throw new Error(
+          `Razorpay is not configured for renewal on plan "${subscriptionPlan.plan_name}". ` +
+            `Please add razorpay_plan_id to this subscription plan so we can create a payment link with the correct amount (₹${planAmount.toFixed(2)}). ` +
+            `Static payment links cannot be used for renewal as they have a fixed amount.`
+        );
+      }
+
+      const resellerDisplayName =
+        reseller.brand_name ||
+        reseller.business_name ||
+        `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
+        "Reseller";
+
+      const planDisplayName = `${subscriptionPlan.plan_name} (₹${planAmount.toFixed(2)} - ${subscriptionPlan.duration_days || 360} days) - Renewal for ${vn.virtual_number}`;
+
+      await sendRazorpayLinkEmail(
+        customer.email,
+        customer.profile_name || customer.email,
+        razorpayLink,
+        planDisplayName,
+        planAmount,
+        resellerDisplayName,
+        resellerSmtpConfig
+      );
+
+      return {
+        success: true,
+        razorpay_link: razorpayLink,
+        message: "Renewal payment link sent to customer email successfully.",
+      };
+    } catch (error) {
+      console.error("Error sending renewal payment email:", error);
+      throw error;
+    }
+  }
 }

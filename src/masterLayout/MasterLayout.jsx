@@ -818,6 +818,19 @@ const MasterLayout = ({ children }) => {
                   </NavLink>
                 </li>
 
+                {/* Virtual Numbers - Reseller Only (reuses admin VirtualNumbersListLayer) */}
+                <li>
+                  <NavLink
+                    to='/virtual-numbers-list'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='mdi:phone-outline' className='menu-icon' />
+                    <span>Virtual Numbers</span>
+                  </NavLink>
+                </li>
+
                 {/* Transactions - Reseller Only */}
                 <li>
                   <NavLink

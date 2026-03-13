@@ -3,16 +3,43 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstVirtualNumbers } from "@/hasura/mutations/virtualNumber";
 import { getMstResellers } from "@/hasura/mutations/reseller";
-import { getUserData } from "@/utils/auth";
+import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
+import { getApiBaseUrl } from "@/utils/apiUrl";
+import RenewalPlanModal from "./RenewalPlanModal";
+
+const RENEW_THRESHOLD_DAYS = 20;
 
 const VirtualNumbersListLayer = () => {
   const [virtualNumbers, setVirtualNumbers] = useState([]);
   const [resellers, setResellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [renewingId, setRenewingId] = useState(null);
+  const [renewalModalOpen, setRenewalModalOpen] = useState(false);
+  const [selectedVirtualNumberForRenewal, setSelectedVirtualNumberForRenewal] = useState(null);
+  const [renewalError, setRenewalError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [resellerFilter, setResellerFilter] = useState("all");
+  const [userRole, setUserRole] = useState(null);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    const userData = getUserData();
+    let role = userData?.role;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        role = payload.role || role;
+      } catch (err) {
+        console.error("Error decoding token:", err);
+      }
+    }
+    setUserRole(role);
+  }, []);
+
+  const isReseller = userRole === "reseller";
 
   useEffect(() => {
     fetchResellers();
@@ -90,6 +117,64 @@ const VirtualNumbersListLayer = () => {
     return diffDays < 0 ? 0 : diffDays;
   };
 
+  const shouldShowRenewButton = (expiryDateStr) => {
+    const daysLeft = getDaysLeft(expiryDateStr);
+    return typeof daysLeft === "number" && daysLeft <= RENEW_THRESHOLD_DAYS && daysLeft >= 0;
+  };
+
+  const handleRenewClick = (vn) => {
+    setSelectedVirtualNumberForRenewal(vn);
+    setRenewalError("");
+    setRenewalModalOpen(true);
+  };
+
+  const handleRenew = async (vn, subscriptionPlanId) => {
+    if (!vn?.id || !vn?.mst_customer?.email) {
+      setRenewalError("Cannot send renewal: virtual number or customer email is missing.");
+      return;
+    }
+
+    if (!subscriptionPlanId) {
+      setRenewalError("Please select a subscription plan.");
+      return;
+    }
+
+    setRenewingId(vn.id);
+    setRenewalError("");
+
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/customer/send-renewal-payment-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          virtual_number_id: vn.id,
+          subscription_plan_id: subscriptionPlanId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSuccessMessage(`Renewal payment link sent to ${vn.mst_customer?.email}.`);
+        setTimeout(() => setSuccessMessage(""), 5000);
+        setRenewalModalOpen(false);
+        setSelectedVirtualNumberForRenewal(null);
+        fetchVirtualNumbers();
+      } else {
+        setRenewalError(result.message || "Failed to send renewal payment email.");
+      }
+    } catch (err) {
+      console.error("Error sending renewal payment email:", err);
+      setRenewalError(err.message || "An error occurred while sending renewal payment email.");
+    } finally {
+      setRenewingId(null);
+    }
+  };
+
   // Filter by search (client-side for virtual number, customer, call forwarding, reseller)
   const filteredVirtualNumbers = virtualNumbers.filter((vn) => {
     if (!searchTerm.trim()) return true;
@@ -163,6 +248,12 @@ const VirtualNumbersListLayer = () => {
             {error}
           </div>
         )}
+        {successMessage && (
+          <div className="alert alert-success radius-8 mb-24" role="alert">
+            <Icon icon="mdi:check-circle-outline" className="icon me-2" />
+            {successMessage}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-40">
@@ -187,7 +278,10 @@ const VirtualNumbersListLayer = () => {
                   <th scope="col">Call Forwarding Num</th>
                   {getUserData()?.role === "admin" && <th scope="col">Reseller Name</th>}
                   <th scope="col">Exp Date</th>
-                  <th scope="col">Days Left</th>
+                  <th scope="col">Count</th>
+                  {isReseller && (
+                    <th scope="col" className="text-center">Action</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -225,12 +319,59 @@ const VirtualNumbersListLayer = () => {
                       </td>
                     )}
                     <td>{formatDate(vn.expiry_date)}</td>
-                    <td>{getDaysLeft(vn.expiry_date)} Days</td>
+                    <td>{getDaysLeft(vn.expiry_date)}</td>
+                    {isReseller && (
+                      <td className="text-center">
+                        {shouldShowRenewButton(vn.expiry_date) ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center gap-1"
+                            onClick={() => handleRenewClick(vn)}
+                            disabled={renewingId === vn.id}
+                            title="Send renewal payment link to customer email"
+                          >
+                            {renewingId === vn.id ? (
+                              <>
+                                <span
+                                  className="spinner-border spinner-border-sm"
+                                  role="status"
+                                  aria-hidden="true"
+                                />
+                                Sending...
+                              </>
+                            ) : (
+                              <>
+                                <Icon icon="mdi:email-send-outline" className="icon" style={{ fontSize: "1rem" }} />
+                                Renew
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+
+        {isReseller && (
+          <RenewalPlanModal
+            isOpen={renewalModalOpen}
+            onClose={() => {
+              setRenewalModalOpen(false);
+              setSelectedVirtualNumberForRenewal(null);
+              setRenewalError("");
+            }}
+            virtualNumber={selectedVirtualNumberForRenewal}
+            customer={selectedVirtualNumberForRenewal?.mst_customer}
+            onRenew={handleRenew}
+            loading={renewingId !== null}
+            apiError={renewalError}
+          />
         )}
       </div>
     </div>
