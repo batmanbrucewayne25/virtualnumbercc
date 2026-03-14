@@ -6,62 +6,60 @@ import { graphqlRequest } from "@/hasura";
 export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) => {
   const resellerId = filters?.resellerId;
 
+  const vnFields = `
+    id
+    virtual_number
+    call_forwarding_number
+    purchase_date
+    expiry_date
+    status
+    grace_period_end
+    created_at
+    mst_customer {
+      id
+      profile_name
+      email
+      phone
+    }
+    mst_reseller {
+      id
+      first_name
+      last_name
+      business_name
+      brand_name
+      email
+    }
+    mst_transactions(
+      where: { status: { _in: ["success", "captured"] } }
+      limit: 1
+      order_by: { created_at: desc }
+    ) {
+      amount
+      payment_mode
+    }
+    mst_wallet_transactions(
+      where: { transaction_type: { _eq: "DEBIT" } }
+      limit: 1
+      order_by: { created_at: desc }
+    ) {
+      amount
+    }
+  `;
+
   const QUERY = resellerId
     ? `query GetMstVirtualNumbersByReseller($reseller_id: uuid!) {
         mst_virtual_number(
           where: { reseller_id: { _eq: $reseller_id } }
           order_by: { created_at: desc }
         ) {
-          id
-          virtual_number
-          call_forwarding_number
-          purchase_date
-          expiry_date
-          status
-          grace_period_end
-          created_at
-          mst_customer {
-            id
-            profile_name
-            email
-            phone
-          }
-          mst_reseller {
-            id
-            first_name
-            last_name
-            business_name
-            brand_name
-            email
-          }
+          ${vnFields}
         }
       }`
     : `query GetMstVirtualNumbers {
         mst_virtual_number(
           order_by: { created_at: desc }
         ) {
-          id
-          virtual_number
-          call_forwarding_number
-          purchase_date
-          expiry_date
-          status
-          grace_period_end
-          created_at
-          mst_customer {
-            id
-            profile_name
-            email
-            phone
-          }
-          mst_reseller {
-            id
-            first_name
-            last_name
-            business_name
-            brand_name
-            email
-          }
+          ${vnFields}
         }
       }`;
 

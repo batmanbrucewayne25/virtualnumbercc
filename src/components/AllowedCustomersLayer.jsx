@@ -405,6 +405,14 @@ const AllowedCustomersLayer = () => {
             <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => { setAddEmail(""); setAddPhone(""); setError(""); setAddModalOpen(true); }}>
               Add contact
             </button>
+            <a
+              href="/sample-allowed-customers.csv"
+              download="sample-allowed-customers.csv"
+              className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+            >
+              <Icon icon="mdi:download" className="icon text-lg" />
+              Sample File
+            </a>
           </div>
 
           {listLoading ? (

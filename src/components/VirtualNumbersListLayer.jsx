@@ -378,6 +378,8 @@ const VirtualNumbersListLayer = () => {
                   <th scope="col">Virtual Number</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Call Forwarding Num</th>
+                  {isReseller && <th scope="col">Wallet Debited</th>}
+                  {isReseller && <th scope="col">Customer Paid</th>}
                   {isAdmin && <th scope="col">Reseller Name</th>}
                   <th scope="col">Exp Date</th>
                   <th scope="col">Days Left</th>
@@ -420,6 +422,24 @@ const VirtualNumbersListLayer = () => {
                         )}
                       </td>
                       <td>{vn.call_forwarding_number || "-"}</td>
+                      {isReseller && (
+                        <td>
+                          <span className="fw-medium">
+                            {vn.mst_wallet_transactions?.[0]?.amount != null
+                              ? `₹${Number(vn.mst_wallet_transactions[0].amount).toFixed(2)}`
+                              : "-"}
+                          </span>
+                        </td>
+                      )}
+                      {isReseller && (
+                        <td>
+                          <span className="fw-medium">
+                            {vn.mst_transactions?.[0]?.amount != null
+                              ? `₹${Number(vn.mst_transactions[0].amount).toFixed(2)}`
+                              : "-"}
+                          </span>
+                        </td>
+                      )}
                       {isAdmin && (
                         <td>
                           {vn.mst_reseller ? (
