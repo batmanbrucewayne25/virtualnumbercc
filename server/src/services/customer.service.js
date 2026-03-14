@@ -1214,4 +1214,106 @@ export class CustomerService {
       throw error;
     }
   }
+
+  /**
+   * Enable a 24-hour grace period for a virtual number (admin only).
+   * Sets grace_period_end to exactly 24 hours from the current timestamp.
+   * This temporarily re-enables the reseller's ability to send a renewal payment link
+   * even when the day count has reached 0.
+   *
+   * @param {string} virtualNumberId - Virtual number UUID
+   * @returns {Promise<object>} { success, message, grace_period_end, virtual_number }
+   */
+  static async enableGracePeriod(virtualNumberId) {
+    const client = getHasuraClient();
+
+    const fetchQuery = `
+      query GetVirtualNumberForGracePeriod($id: uuid!) {
+        mst_virtual_number_by_pk(id: $id) {
+          id
+          virtual_number
+          expiry_date
+          grace_period_end
+          customer_id
+          reseller_id
+          mst_customer {
+            id
+            email
+            phone
+            profile_name
+          }
+          mst_reseller {
+            id
+            first_name
+            last_name
+            business_name
+            brand_name
+            email
+          }
+        }
+      }
+    `;
+
+    const result = await client.client.request(fetchQuery, { id: virtualNumberId });
+    const vn = result?.mst_virtual_number_by_pk;
+
+    if (!vn) {
+      throw new Error("Virtual number not found.");
+    }
+
+    if (!vn.mst_customer) {
+      throw new Error("No customer is linked to this virtual number.");
+    }
+
+    if (!vn.mst_reseller) {
+      throw new Error("No reseller is linked to this virtual number.");
+    }
+
+    if (vn.grace_period_end) {
+      const existingEnd = new Date(vn.grace_period_end);
+      if (existingEnd > new Date()) {
+        throw new Error(
+          `Grace period is already active until ${existingEnd.toISOString()}. ` +
+          `Please wait for it to expire before enabling a new one.`
+        );
+      }
+    }
+
+    const gracePeriodEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const updateMutation = `
+      mutation EnableGracePeriod($id: uuid!, $grace_period_end: timestamptz!) {
+        update_mst_virtual_number_by_pk(
+          pk_columns: { id: $id }
+          _set: { grace_period_end: $grace_period_end }
+        ) {
+          id
+          virtual_number
+          grace_period_end
+        }
+      }
+    `;
+
+    const updateResult = await client.client.request(updateMutation, {
+      id: virtualNumberId,
+      grace_period_end: gracePeriodEnd,
+    });
+
+    const updated = updateResult?.update_mst_virtual_number_by_pk;
+    if (!updated) {
+      throw new Error("Failed to update grace period. Please try again.");
+    }
+
+    console.log(
+      `[enableGracePeriod] Admin enabled 24h grace period for VN ${vn.virtual_number} ` +
+      `(id=${virtualNumberId}). Expires at: ${gracePeriodEnd}`
+    );
+
+    return {
+      success: true,
+      message: `24-hour grace period enabled for ${vn.virtual_number}. Expires at ${new Date(gracePeriodEnd).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}.`,
+      grace_period_end: gracePeriodEnd,
+      virtual_number: vn.virtual_number,
+    };
+  }
 }
