@@ -62,7 +62,7 @@ const UnitCountOne = () => {
             setStats({
               totalResellers: 0,
               activeVirtualNumbers: result.data.activeNumbers || 0,
-              activeCustomers: 0, // Will be fetched separately if needed
+              activeCustomers: result.data.activeCustomers || 0,
               soonToExpireNumbers: result.data.expiringNumbers || 0,
               totalWalletRecharge: 0,
               walletBalance: result.data.walletBalance || 0,

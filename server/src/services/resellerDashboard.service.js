@@ -14,6 +14,7 @@ export class ResellerDashboardService {
       const [
         activeNumbersResult,
         expiringNumbersResult,
+        activeCustomersResult,
         walletResult,
         walletTransactionsResult,
       ] = await Promise.all([
@@ -53,6 +54,22 @@ export class ResellerDashboardService {
           today: new Date().toISOString().split('T')[0],
           expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         }),
+
+        // Active customers count
+        client.client.request(`
+          query GetActiveCustomers($reseller_id: uuid!) {
+            mst_customer_aggregate(
+              where: { 
+                reseller_id: { _eq: $reseller_id }
+                status: { _eq: "approved" }
+              }
+            ) {
+              aggregate {
+                count
+              }
+            }
+          }
+        `, { reseller_id: resellerId }),
         
         // Wallet balance
         client.client.request(`
@@ -84,6 +101,7 @@ export class ResellerDashboardService {
 
       const activeNumbers = activeNumbersResult.mst_virtual_number_aggregate?.aggregate?.count || 0;
       const expiringNumbers = expiringNumbersResult.mst_virtual_number_aggregate?.aggregate?.count || 0;
+      const activeCustomers = activeCustomersResult.mst_customer_aggregate?.aggregate?.count || 0;
       const wallet = walletResult.mst_wallet?.[0] || null;
       const walletBalance = wallet ? Number(wallet.balance) || 0 : 0;
       const creditAmount = wallet ? Number(wallet.credit_amount) || 0 : 0;
@@ -151,6 +169,7 @@ export class ResellerDashboardService {
       return {
         activeNumbers,
         expiringNumbers,
+        activeCustomers,
         walletBalance,
         walletUsage,
         creditAmount,

@@ -315,6 +315,18 @@ export const getMstWalletTransactions = async (walletId: string) => {
       description
       reference
       created_at
+      customer_id
+      virtual_number_id
+      mst_customer {
+        id
+        profile_name
+        business_name
+        pan_full_name
+      }
+      mst_virtual_number {
+        id
+        virtual_number
+      }
     }
   }`;
 
@@ -387,38 +399,45 @@ export const getAllMstWalletTransactions = async (resellerId?: string) => {
     }
 
     // Fetch transactions
+    const txnFields = `
+      id
+      wallet_id
+      transaction_id
+      transaction_type
+      amount
+      balance_before
+      balance_after
+      description
+      reference
+      created_at
+      customer_id
+      virtual_number_id
+      mst_customer {
+        id
+        profile_name
+        business_name
+        pan_full_name
+      }
+      mst_virtual_number {
+        id
+        virtual_number
+      }
+    `;
+
     const QUERY = resellerId && walletIds.length > 0
       ? `query GetAllMstWalletTransactions($wallet_ids: [uuid!]!) {
           mst_wallet_transaction(
             where: { wallet_id: { _in: $wallet_ids } }
             order_by: { created_at: desc }
           ) {
-            id
-            wallet_id
-            transaction_id
-            transaction_type
-            amount
-            balance_before
-            balance_after
-            description
-            reference
-            created_at
+            ${txnFields}
           }
         }`
       : `query GetAllMstWalletTransactions {
           mst_wallet_transaction(
             order_by: { created_at: desc }
           ) {
-            id
-            wallet_id
-            transaction_id
-            transaction_type
-            amount
-            balance_before
-            balance_after
-            description
-            reference
-            created_at
+            ${txnFields}
           }
         }`;
 
@@ -553,6 +572,8 @@ export const createMstWalletTransaction = async (data: {
   balance_after?: number;
   description?: string;
   reference?: string;
+  customer_id?: string;
+  virtual_number_id?: string;
 }) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!data.wallet_id || typeof data.wallet_id !== 'string' || !uuidRegex.test(data.wallet_id)) {
@@ -578,6 +599,8 @@ export const createMstWalletTransaction = async (data: {
     $balance_after: numeric
     $description: String
     $reference: String
+    $customer_id: uuid
+    $virtual_number_id: uuid
   ) {
     insert_mst_wallet_transaction_one(object: {
       wallet_id: $wallet_id
@@ -588,6 +611,8 @@ export const createMstWalletTransaction = async (data: {
       balance_after: $balance_after
       description: $description
       reference: $reference
+      customer_id: $customer_id
+      virtual_number_id: $virtual_number_id
     }) {
       id
       wallet_id
@@ -621,6 +646,12 @@ export const createMstWalletTransaction = async (data: {
     }
     if (data.reference) {
       variables.reference = data.reference;
+    }
+    if (data.customer_id) {
+      variables.customer_id = data.customer_id;
+    }
+    if (data.virtual_number_id) {
+      variables.virtual_number_id = data.virtual_number_id;
     }
 
     const result = await graphqlRequest(MUTATION, variables);

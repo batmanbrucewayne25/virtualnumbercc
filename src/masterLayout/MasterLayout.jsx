@@ -858,19 +858,6 @@ const MasterLayout = ({ children }) => {
                   </NavLink>
                 </li>
 
-                {/* Wallet Ledger - Reseller (filtered to own data) */}
-                <li>
-                  <NavLink
-                    to='/invoice-list'
-                    className={(navData) =>
-                      navData.isActive ? "active-page" : ""
-                    }
-                  >
-                    <Icon icon='hugeicons:invoice-03' className='menu-icon' />
-                    <span>Wallet Ledger</span>
-                  </NavLink>
-                </li>
-
               </>
             )}
 

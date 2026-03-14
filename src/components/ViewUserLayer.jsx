@@ -11,6 +11,7 @@ import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST, formatDateTimeIST, parseDateAsUTC } from "@/utils/dateUtils";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import ApproveCustomerModal from "./ApproveCustomerModal";
+import AddVirtualNumberModal from "./AddVirtualNumberModal";
 import RenewalPlanModal from "./RenewalPlanModal";
 import AlertModal from "./AlertModal";
 import { updateMstVirtualNumberCallForwarding } from "@/hasura/mutations/virtualNumber";
@@ -40,6 +41,7 @@ const ViewUserLayer = () => {
   const [renewalModalOpen, setRenewalModalOpen] = useState(false);
   const [selectedVirtualNumberForRenewal, setSelectedVirtualNumberForRenewal] = useState(null);
   const [renewalError, setRenewalError] = useState("");
+  const [showAddVirtualNumberModal, setShowAddVirtualNumberModal] = useState(false);
 
   const isAdminUser = userRole === "admin" || userRole === "super_admin";
 
@@ -845,8 +847,7 @@ const ViewUserLayer = () => {
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
-                onClick={handleApproveClick}
-                disabled={actionLoading}
+                onClick={() => setShowAddVirtualNumberModal(true)}
               >
                 <Icon icon="ic:baseline-plus" className="icon text-xl line-height-1" />
                 Add Virtual Number
@@ -1025,7 +1026,17 @@ const ViewUserLayer = () => {
           apiError={renewalError}
         />
 
-        {/* Approve Customer Modal (for adding virtual number) */}
+        {/* Add Virtual Number Modal */}
+        <AddVirtualNumberModal
+          isOpen={showAddVirtualNumberModal}
+          onClose={() => setShowAddVirtualNumberModal(false)}
+          customer={customer}
+          onSuccess={() => {
+            fetchCustomer();
+          }}
+        />
+
+        {/* Approve Customer Modal */}
         <ApproveCustomerModal
           isOpen={approveModalOpen}
           onClose={() => {

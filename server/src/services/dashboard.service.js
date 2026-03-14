@@ -15,6 +15,7 @@ export class DashboardService {
         activeAdminCountResult,
         resellerCountResult,
         activeResellerCountResult,
+        activeCustomerCountResult,
       ] = await Promise.all([
         // Total Admin Count
         client.client.request(`
@@ -38,7 +39,7 @@ export class DashboardService {
           }
         `),
         
-        // Total Reseller Count (Active Customers)
+        // Total Reseller Count
         client.client.request(`
           query GetResellerCount {
             mst_reseller_aggregate(
@@ -56,7 +57,7 @@ export class DashboardService {
           }
         `),
         
-        // Active Reseller Count (Active Customers)
+        // Active Reseller Count
         client.client.request(`
           query GetActiveResellerCount {
             mst_reseller_aggregate(
@@ -74,120 +75,56 @@ export class DashboardService {
             }
           }
         `),
+
+        // Active Customer Count (approved customers across all resellers)
+        client.client.request(`
+          query GetActiveCustomerCount {
+            mst_customer_aggregate(
+              where: { status: { _eq: "approved" } }
+            ) {
+              aggregate {
+                count
+              }
+            }
+          }
+        `),
       ]);
 
-      // Get virtual numbers count - try common table names
+      // Get virtual numbers count
       let activeVirtualNumbersCount = 0;
       let soonToExpireCount = 0;
       
       try {
-        // Try to get virtual numbers - try multiple possible table names
-        const possibleTableNames = [
-          'mst_virtual_number',
-          'virtual_numbers',
-          'mst_virtual_numbers',
-          'virtual_number'
-        ];
-        
-        let virtualNumbersQuery = null;
-        let tableName = null;
-        
-        // Try each possible table name
-        for (const table of possibleTableNames) {
-          try {
-            // Try to query active virtual numbers
-            const testQuery = `
-              query TestVirtualNumbersTable {
-                ${table}_aggregate(where: { status: { _eq: true } }) {
-                  aggregate {
-                    count
-                  }
-                }
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const vnStatsResult = await client.client.request(`
+          query GetVirtualNumberStats($today: date!, $expiry_date: date!) {
+            activeCount: mst_virtual_number_aggregate(
+              where: { status: { _eq: "active" } }
+            ) {
+              aggregate {
+                count
               }
-            `;
-            await client.client.request(testQuery);
-            tableName = table;
-            virtualNumbersQuery = `
-              query GetVirtualNumbersStats {
-                activeCount: ${table}_aggregate(where: { status: { _eq: true } }) {
-                  aggregate {
-                    count
-                  }
-                }
+            }
+            soonToExpire: mst_virtual_number_aggregate(
+              where: {
+                status: { _eq: "active" }
+                expiry_date: { _gte: $today, _lte: $expiry_date }
               }
-            `;
-            break;
-          } catch (testError) {
-            // Try next table name
-            continue;
-          }
-        }
-        
-        if (virtualNumbersQuery && tableName) {
-          const virtualNumbersResult = await client.client.request(virtualNumbersQuery);
-          activeVirtualNumbersCount = virtualNumbersResult.activeCount?.aggregate?.count || 0;
-          
-          // Get soon to expire numbers (within next 30 days)
-          const now = new Date();
-          const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-          
-          try {
-            const expireQuery = `
-              query GetSoonToExpireNumbers {
-                soonToExpire: ${tableName}_aggregate(
-                  where: {
-                    status: { _eq: true }
-                    _and: [
-                      { expiry_date: { _gte: "${now.toISOString()}" } }
-                      { expiry_date: { _lte: "${thirtyDaysFromNow.toISOString()}" } }
-                    ]
-                  }
-                ) {
-                  aggregate {
-                    count
-                  }
-                }
-              }
-            `;
-            const expireResult = await client.client.request(expireQuery);
-            soonToExpireCount = expireResult.soonToExpire?.aggregate?.count || 0;
-          } catch (expireError) {
-            // If expiry_date field doesn't exist, try alternative field names
-            const alternativeFields = ['expires_at', 'expiration_date', 'valid_until', 'expiry_date'];
-            for (const field of alternativeFields) {
-              try {
-                const altExpireQuery = `
-                  query GetSoonToExpireNumbers {
-                    soonToExpire: ${tableName}_aggregate(
-                      where: {
-                        status: { _eq: true }
-                        _and: [
-                          { ${field}: { _gte: "${now.toISOString()}" } }
-                          { ${field}: { _lte: "${thirtyDaysFromNow.toISOString()}" } }
-                        ]
-                      }
-                    ) {
-                      aggregate {
-                        count
-                      }
-                    }
-                  }
-                `;
-                const altExpireResult = await client.client.request(altExpireQuery);
-                soonToExpireCount = altExpireResult.soonToExpire?.aggregate?.count || 0;
-                break;
-              } catch (altError) {
-                // Continue to next field
-                continue;
+            ) {
+              aggregate {
+                count
               }
             }
           }
-        } else {
-          console.warn('Virtual numbers table not found. Tried:', possibleTableNames.join(', '));
-        }
+        `, { today, expiry_date: thirtyDaysFromNow });
+
+        activeVirtualNumbersCount = vnStatsResult.activeCount?.aggregate?.count || 0;
+        soonToExpireCount = vnStatsResult.soonToExpire?.aggregate?.count || 0;
       } catch (error) {
         console.warn('Virtual numbers query error:', error.message);
-        // Continue with 0 values
       }
 
       // Get transaction/payment statistics from mst_transaction table
@@ -297,8 +234,9 @@ export class DashboardService {
         totalAdmins: adminCountResult.mst_super_admin_aggregate?.aggregate?.count || 0,
         activeAdmins: activeAdminCountResult.mst_super_admin_aggregate?.aggregate?.count || 0,
         totalResellers: resellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
-        totalCustomers: resellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0, // Keep for backward compatibility
-        activeCustomers: activeResellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
+        totalCustomers: resellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
+        activeResellers: activeResellerCountResult.mst_reseller_aggregate?.aggregate?.count || 0,
+        activeCustomers: activeCustomerCountResult.mst_customer_aggregate?.aggregate?.count || 0,
         activeVirtualNumbers: activeVirtualNumbersCount,
         soonToExpireNumbers: soonToExpireCount,
         totalWalletRecharge: totalWalletRecharge,

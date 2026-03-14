@@ -360,6 +360,8 @@ const WalletLayer = () => {
                         <tr>
                           <th scope='col'>S.L</th>
                           <th scope='col'>Date</th>
+                          <th scope='col'>Customer</th>
+                          <th scope='col'>Virtual Number</th>
                           <th scope='col'>Type</th>
                           <th scope='col'>Amount</th>
                           <th scope='col'>Balance Before</th>
@@ -371,7 +373,7 @@ const WalletLayer = () => {
                       <tbody>
                         {filteredTransactions.length === 0 ? (
                           <tr>
-                            <td colSpan="8" className='text-center py-40'>
+                            <td colSpan="10" className='text-center py-40'>
                               <Icon icon='mdi:receipt-text-outline' className='icon text-6xl text-muted mb-3' />
                               <p className='text-muted'>No transactions found</p>
                             </td>
@@ -381,6 +383,19 @@ const WalletLayer = () => {
                             <tr key={transaction.id}>
                               <td>{index + 1}</td>
                               <td>{formatDate(transaction.created_at)}</td>
+                              <td>
+                                <span className='text-sm fw-medium'>
+                                  {transaction.mst_customer?.business_name ||
+                                   transaction.mst_customer?.profile_name ||
+                                   transaction.mst_customer?.pan_full_name ||
+                                   "-"}
+                                </span>
+                              </td>
+                              <td>
+                                <span className='text-sm'>
+                                  {transaction.mst_virtual_number?.virtual_number || "-"}
+                                </span>
+                              </td>
                               <td>
                                 <span
                                   className={`${

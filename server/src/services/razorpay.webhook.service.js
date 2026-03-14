@@ -982,7 +982,7 @@ async function _extendVirtualNumberExpiry(client, virtualNumberId, daysToAdd) {
  * webhook retries or re-entrant calls from idempotency guards).
  * Non-fatal — logs CRITICAL on failure but never throws.
  */
-async function _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId) {
+async function _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId, virtualNumberId = null) {
   console.log(`[postPayment][walletDebit] --- START ---`);
   console.log(`[postPayment][walletDebit] resellerId param=${resellerId}`);
   console.log(`[postPayment][walletDebit] transactionId=${transactionId}`);
@@ -1067,6 +1067,8 @@ async function _debitResellerWalletForOnlinePayment(client, customer, resellerId
         $balance_after: numeric!
         $description: String
         $reference: String
+        $customer_id: uuid
+        $virtual_number_id: uuid
       ) {
         insert_mst_wallet_transaction_one(object: {
           wallet_id: $wallet_id
@@ -1076,6 +1078,8 @@ async function _debitResellerWalletForOnlinePayment(client, customer, resellerId
           balance_after: $balance_after
           description: $description
           reference: $reference
+          customer_id: $customer_id
+          virtual_number_id: $virtual_number_id
         }) {
           id
         }
@@ -1088,6 +1092,8 @@ async function _debitResellerWalletForOnlinePayment(client, customer, resellerId
       balance_after: balanceAfter,
       description: `Customer online payment - virtual number assigned`,
       reference: transactionId || null,
+      customer_id: customer?.id || null,
+      virtual_number_id: virtualNumberId || null,
     });
     console.log(`[postPayment][walletDebit] mst_wallet_transaction insert result=`, JSON.stringify(walletTxnResult));
 
@@ -1194,7 +1200,8 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
       console.log(
         `[postPayment] Guard A hit — Transaction ${transactionId} already claimed (vn_id=${txnRecord.virtual_number_id}, status=${txnRecord.status}, renewal=${isRenewal}) — skipping VN creation, attempting wallet debit`
       );
-      const debitResult = await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+      const guardAVnId = txnRecord?.virtual_number_id || txnRecord?.notes?.virtual_number_id || null;
+      const debitResult = await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId, guardAVnId);
       // Extend expiry only for renewal AND only if wallet debit was new (not a retry)
       if (isRenewal && debitResult !== "already_debited") {
         const renewalVnId = txnRecord?.notes?.virtual_number_id || txnRecord?.virtual_number_id;
@@ -1214,7 +1221,8 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
         `[postPayment] Guard B hit — Customer ${customerId} already has a virtual number (status=${customer.status}, renewal=${isRenewalB}) — skipping VN creation, but will attempt wallet debit`
       );
       // Still attempt wallet debit in case it didn't run yet
-      const debitResultB = await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+      const guardBVnId = customer.mst_virtual_numbers?.[0]?.id || txnRecord?.notes?.virtual_number_id || null;
+      const debitResultB = await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId, guardBVnId);
       // Renewal flow: extend expiry only if wallet debit was new (not a retry)
       if (isRenewalB && transactionId && debitResultB !== "already_debited") {
         const renewalVnId = txnRecord?.notes?.virtual_number_id;
@@ -1253,7 +1261,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
 
       if ((claimResult?.update_mst_transaction?.affected_rows ?? 0) === 0) {
         console.log(`[postPayment] Claim lost — transaction ${transactionId} already claimed by concurrent call — skipping VN creation, attempting wallet debit`);
-        await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+        await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId, null);
         return true;
       }
       console.log(`[postPayment] Claim won on transaction ${transactionId} — proceeding with VN creation`);
@@ -1308,7 +1316,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
     console.log(`[postPayment] Virtual number ${virtualNumber} created for customer ${customerId}`);
 
     // ── 5. Debit reseller wallet by price_per_number ──────────────────────────
-    await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId);
+    await _debitResellerWalletForOnlinePayment(client, customer, resellerId, transactionId, vnRecord?.id || null);
 
     // ── 6. Link VN to transaction + restore status to success ────────────────
     if (transactionId && vnRecord.id) {

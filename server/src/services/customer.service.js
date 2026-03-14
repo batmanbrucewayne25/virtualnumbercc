@@ -182,7 +182,7 @@ export class CustomerService {
    * @param {string|null} reference
    * @returns {Promise<boolean>}
    */
-  static async debitResellerWallet(resellerId, amount, description, reference) {
+  static async debitResellerWallet(resellerId, amount, description, reference, customerId = null, virtualNumberId = null) {
     const wallet = await this.getResellerWallet(resellerId);
     if (!wallet) {
       throw new Error("Wallet not found");
@@ -210,6 +210,8 @@ export class CustomerService {
         $balance_after: numeric!
         $description: String
         $reference: String
+        $customer_id: uuid
+        $virtual_number_id: uuid
       ) {
         insert_mst_wallet_transaction_one(object: {
           wallet_id: $wallet_id
@@ -219,6 +221,8 @@ export class CustomerService {
           balance_after: $balance_after
           description: $description
           reference: $reference
+          customer_id: $customer_id
+          virtual_number_id: $virtual_number_id
         }) {
           id
         }
@@ -232,6 +236,8 @@ export class CustomerService {
       balance_after: balanceAfter,
       description: description || "Wallet debit",
       reference: reference || null,
+      customer_id: customerId || null,
+      virtual_number_id: virtualNumberId || null,
     });
 
     const updateMutation = `
@@ -770,7 +776,9 @@ export class CustomerService {
           effectiveResellerId,
           amountToDebit,
           "Customer approval - offline payment",
-          payment_reference_number || null
+          payment_reference_number || null,
+          customer_id || null,
+          null
         );
 
         // Generate virtual number

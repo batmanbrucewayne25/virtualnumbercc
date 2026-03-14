@@ -212,6 +212,8 @@ export class VirtualNumbersService {
           $balance_before: numeric!
           $balance_after: numeric!
           $description: String!
+          $customer_id: uuid
+          $virtual_number_id: uuid
         ) {
           insert_mst_wallet_transaction_one(object: {
             wallet_id: $wallet_id
@@ -220,6 +222,8 @@ export class VirtualNumbersService {
             balance_before: $balance_before
             balance_after: $balance_after
             description: $description
+            customer_id: $customer_id
+            virtual_number_id: $virtual_number_id
           }) {
             id
           }
@@ -232,7 +236,9 @@ export class VirtualNumbersService {
         transaction_type: 'debit',
         balance_before: Number(wallet.balance),
         balance_after: newBalance,
-        description: `Virtual number activation: ${number}`
+        description: `Virtual number activation: ${number}`,
+        customer_id: existingNumber.customer_id || null,
+        virtual_number_id: existingNumber.id || null,
       });
 
       return {
@@ -526,6 +532,7 @@ export class VirtualNumbersService {
             virtual_number
             status
             expiry_date
+            customer_id
           }
         }
       `;
@@ -634,6 +641,8 @@ export class VirtualNumbersService {
           $balance_before: numeric!
           $balance_after: numeric!
           $description: String!
+          $customer_id: uuid
+          $virtual_number_id: uuid
         ) {
           insert_mst_wallet_transaction_one(object: {
             wallet_id: $wallet_id
@@ -642,6 +651,8 @@ export class VirtualNumbersService {
             balance_before: $balance_before
             balance_after: $balance_after
             description: $description
+            customer_id: $customer_id
+            virtual_number_id: $virtual_number_id
           }) {
             id
           }
@@ -654,7 +665,9 @@ export class VirtualNumbersService {
         transaction_type: 'debit',
         balance_before: Number(wallet.balance),
         balance_after: newBalance,
-        description: `Virtual number reactivation: ${number}`
+        description: `Virtual number reactivation: ${number}`,
+        customer_id: virtualNumber.customer_id || null,
+        virtual_number_id: virtualNumber.id || null,
       });
 
       return {

@@ -450,21 +450,6 @@ const EditUserApprovalLayer = () => {
                 <small className="text-muted">Purchase/approval date of first virtual number</small>
               </div>
             )}
-            <div className="col-md-6">
-              <label className="form-label fw-semibold text-primary-light text-sm mb-8">
-                Max Virtual Numbers
-              </label>
-              <input
-                type="number"
-                min={0}
-                className="form-control radius-8"
-                name="max_virtual_numbers"
-                value={form.max_virtual_numbers}
-                onChange={handleChange}
-                placeholder="e.g. 5"
-                disabled={saving}
-              />
-            </div>
           </div>
 
           <div className="d-flex gap-2 pt-2">
