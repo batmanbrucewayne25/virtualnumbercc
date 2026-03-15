@@ -14,7 +14,7 @@ import ApproveCustomerModal from "./ApproveCustomerModal";
 import AddVirtualNumberModal from "./AddVirtualNumberModal";
 import RenewalPlanModal from "./RenewalPlanModal";
 import AlertModal from "./AlertModal";
-import { updateMstVirtualNumberCallForwarding } from "@/hasura/mutations/virtualNumber";
+
 
 const RENEW_THRESHOLD_DAYS = 20;
 
@@ -393,12 +393,24 @@ const ViewUserLayer = () => {
     setError("");
 
     try {
-      const result = await updateMstVirtualNumberCallForwarding({
-        id: editingVirtualNumber.id,
-        call_forwarding_number: editCallForwardNumber.trim(),
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/virtual-numbers/call-forward`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          virtual_number_id: editingVirtualNumber.id,
+          number: editingVirtualNumber.virtual_number,
+          forward_type: "mobile",
+          forward_value: editCallForwardNumber.trim(),
+        }),
       });
 
-      if (result.success) {
+      const result = await response.json();
+
+      if (response.ok && result.success) {
         setAlertModal({
           isOpen: true,
           title: "Success",

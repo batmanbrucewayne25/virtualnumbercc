@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getHasuraClient } from "../config/hasura.client.js";
+import { VnApiClient } from "../utils/vnApiClient.js";
 
 /**
  * Razorpay Webhook Service
@@ -937,6 +938,7 @@ async function _extendVirtualNumberExpiry(client, virtualNumberId, daysToAdd) {
       query GetVNExpiry($id: uuid!) {
         mst_virtual_number_by_pk(id: $id) {
           id
+          virtual_number
           expiry_date
         }
       }
@@ -947,6 +949,17 @@ async function _extendVirtualNumberExpiry(client, virtualNumberId, daysToAdd) {
       console.warn(`[postPayment][renewal] VN ${virtualNumberId} not found or no expiry_date`);
       return;
     }
+
+    // Call VN API to reactivate the number
+    if (vn.virtual_number) {
+      try {
+        const reactivateRes = await VnApiClient.reactivateNumber(vn.virtual_number);
+        console.log(`[postPayment][renewal] VN API reactivate response:`, reactivateRes);
+      } catch (vnApiErr) {
+        console.warn(`[postPayment][renewal] VN API reactivate failed (non-fatal):`, vnApiErr.message);
+      }
+    }
+
     const currentExpiry = new Date(vn.expiry_date);
     const newExpiry = new Date(currentExpiry);
     newExpiry.setDate(newExpiry.getDate() + daysToAdd);
@@ -1267,9 +1280,32 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
       console.log(`[postPayment] Claim won on transaction ${transactionId} — proceeding with VN creation`);
     }
 
-    // ── 4. Generate and insert virtual number ────────────────────────────────
-    const randomDigits = Math.floor(1000000000 + Math.random() * 9000000000);
-    const virtualNumber = `+91${randomDigits}`;
+    // ── 4. Fetch available number from VN API, activate, and configure call forwarding
+    let virtualNumber;
+    try {
+      const availableRes = await VnApiClient.getAvailableNumbers();
+      const availableNumbers = availableRes?.data || [];
+      if (availableNumbers.length === 0) {
+        throw new Error("No virtual numbers available from VN API");
+      }
+      virtualNumber = availableNumbers[0].number;
+
+      const activateRes = await VnApiClient.activateNumber(virtualNumber);
+      console.log(`[postPayment] VN API activate response:`, activateRes);
+
+      if (customer.phone) {
+        try {
+          await VnApiClient.configureCallForwarding(virtualNumber, "mobile", customer.phone);
+        } catch (cfErr) {
+          console.warn(`[postPayment] Call forwarding config failed (non-fatal):`, cfErr.message);
+        }
+      }
+    } catch (vnApiErr) {
+      console.error(`[postPayment] VN API error, falling back to random number:`, vnApiErr.message);
+      const randomDigits = Math.floor(1000000000 + Math.random() * 9000000000);
+      virtualNumber = `+91${randomDigits}`;
+    }
+
     const purchaseDate = new Date().toISOString().split("T")[0];
     const expiryDate = (() => {
       const d = new Date();

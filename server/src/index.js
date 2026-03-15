@@ -19,6 +19,7 @@ import resellerDashboardRoutes from "./routes/resellerDashboard.routes.js";
 import razorpayRoutes from "./routes/razorpay.routes.js";
 import kycRoutes from "./routes/kyc.routes.js";
 import virtualNumbersRoutes from "./routes/virtualNumbers.routes.js";
+import virtualNumberProxyRoutes from "./routes/virtualNumberProxy.routes.js";
 import otpRoutes from "./routes/otp.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import resellerRoutes from "./routes/reseller.routes.js";
@@ -100,8 +101,11 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/reseller", resellerRoutes);
 app.use("/api/upload", uploadRoutes);
 
-// External API Routes (Virtual Numbers API)
+// External API Routes (Virtual Numbers API — API-key auth for partners)
 app.use("/virtualnumbers", virtualNumbersRoutes);
+
+// Internal proxy to VN API (JWT auth for admin/reseller UI)
+app.use("/api/virtual-numbers", virtualNumberProxyRoutes);
 
 // Serve uploaded images (Option A: use default path so save and serve match;
 // do not set IMAGE_UPLOAD_PATH in server .env)

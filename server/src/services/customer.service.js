@@ -5,6 +5,7 @@ import {
   sendCustomerRejectionEmail,
 } from "../../services/emailService.js";
 import { getResellerSmtpConfig } from "./smtpConfig.service.js";
+import { VnApiClient } from "../utils/vnApiClient.js";
 
 /**
  * Customer-related emails (approve, reject, payment link, etc.) must use reseller SMTP
@@ -798,16 +799,32 @@ export class CustomerService {
           null,
         );
 
-        // Generate virtual number
-        const virtualNumber = await this.generateVirtualNumber();
+        // Fetch an available number from VN API, activate it, and configure call forwarding
+        const availableRes = await VnApiClient.getAvailableNumbers();
+        const availableNumbers = availableRes?.data || [];
+        if (availableNumbers.length === 0) {
+          throw new Error("No virtual numbers available. Please contact support.");
+        }
+        const virtualNumber = availableNumbers[0].number;
 
-        // 3. Create virtual number record (pass customer's reseller_id)
+        const activateRes = await VnApiClient.activateNumber(virtualNumber);
+        console.log(`[approveCustomer] VN API activate response:`, activateRes);
+
+        if (customer.phone) {
+          try {
+            await VnApiClient.configureCallForwarding(virtualNumber, "mobile", customer.phone);
+          } catch (cfErr) {
+            console.warn(`[approveCustomer] Call forwarding config failed (non-fatal):`, cfErr.message);
+          }
+        }
+
+        // 3. Create virtual number record using the real number from the API
         const virtualNumberRecord = await this.createVirtualNumber(
           customer_id,
           virtualNumber,
           effectiveResellerId,
-          customer.phone, // Set call forwarding number to customer's mobile number
-          subscription_plan_id || null, // Optional subscription plan ID
+          customer.phone,
+          subscription_plan_id || null,
         );
 
         // 4. Create transaction record
@@ -1360,6 +1377,14 @@ export class CustomerService {
         customer.id || null,
         vn.id || null,
       );
+
+      // Call VN API to reactivate the number
+      try {
+        const reactivateRes = await VnApiClient.reactivateNumber(vn.virtual_number);
+        console.log(`[renewVirtualNumberOffline] VN API reactivate response:`, reactivateRes);
+      } catch (vnApiErr) {
+        console.warn(`[renewVirtualNumberOffline] VN API reactivate failed (non-fatal):`, vnApiErr.message);
+      }
 
       // Extend expiry date by plan's duration_days from current expiry
       const durationDays = subscriptionPlan.duration_days || 360;
