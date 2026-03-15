@@ -182,7 +182,14 @@ export class CustomerService {
    * @param {string|null} reference
    * @returns {Promise<boolean>}
    */
-  static async debitResellerWallet(resellerId, amount, description, reference, customerId = null, virtualNumberId = null) {
+  static async debitResellerWallet(
+    resellerId,
+    amount,
+    description,
+    reference,
+    customerId = null,
+    virtualNumberId = null,
+  ) {
     const wallet = await this.getResellerWallet(resellerId);
     if (!wallet) {
       throw new Error("Wallet not found");
@@ -194,7 +201,7 @@ export class CustomerService {
     }
     if (balanceBefore < amountNum) {
       throw new Error(
-        `Insufficient wallet balance. Required: ₹${amountNum.toFixed(2)} (price per number). Your balance: ₹${balanceBefore.toFixed(2)}.`
+        `Insufficient wallet balance. Required: ₹${amountNum.toFixed(2)} (price per number). Your balance: ₹${balanceBefore.toFixed(2)}.`,
       );
     }
     const balanceAfter = balanceBefore - amountNum;
@@ -284,14 +291,14 @@ export class CustomerService {
     virtualNumber,
     resellerId = null,
     callForwardingNumber = null,
-    subscriptionPlanId = null
+    subscriptionPlanId = null,
   ) {
     try {
       const client = getHasuraClient();
 
       // Get today's date in YYYY-MM-DD format
       const purchaseDate = new Date().toISOString().split("T")[0];
-      
+
       // Calculate expiry_date as 360 days from purchase_date
       const purchaseDateObj = new Date(purchaseDate);
       const expiryDateObj = new Date(purchaseDateObj);
@@ -534,7 +541,12 @@ export class CustomerService {
    * @param {string|null} [rejectionReason] - When approving pass null to clear; when rejecting pass the reason
    * @returns {Promise<object>}
    */
-  static async updateCustomerStatus(customerId, status, kycStatus, rejectionReason = undefined) {
+  static async updateCustomerStatus(
+    customerId,
+    status,
+    kycStatus,
+    rejectionReason = undefined,
+  ) {
     try {
       const client = getHasuraClient();
 
@@ -655,13 +667,15 @@ export class CustomerService {
 
       let emailSent = false;
       let emailWarning = null;
-      const resellerSmtpConfig = await getResellerSmtpConfig(customer.reseller_id);
+      const resellerSmtpConfig = await getResellerSmtpConfig(
+        customer.reseller_id,
+      );
       const emailResult = await sendCustomerRejectionEmail(
         customer.email,
         customer.profile_name || customer.email,
         rejectionReason,
         resellerName,
-        resellerSmtpConfig
+        resellerSmtpConfig,
       );
       if (emailResult?.success) {
         emailSent = true;
@@ -713,13 +727,13 @@ export class CustomerService {
       if (nonApprovableStatuses.includes(customer.status)) {
         throw new Error(
           `Customer cannot be approved again — current status is "${customer.status}". ` +
-          `If payment was sent but not completed, ask the customer to use the existing payment link.`
+            `If payment was sent but not completed, ask the customer to use the existing payment link.`,
         );
       }
       // VN check — strongest guard, regardless of status
       if (customer.mst_virtual_numbers?.length > 0) {
         throw new Error(
-          "Customer already has a virtual number assigned — approval blocked to prevent duplicate assignment."
+          "Customer already has a virtual number assigned — approval blocked to prevent duplicate assignment.",
         );
       }
       // Transaction check — catches cases where status was manually reset in DB
@@ -728,8 +742,8 @@ export class CustomerService {
       if (existingTxn) {
         throw new Error(
           `Customer already has a ${existingTxn.status} transaction (id: ${existingTxn.id}) — ` +
-          `approval blocked to prevent duplicate virtual number assignment. ` +
-          `If this is a test, reset the transaction status or use a different customer.`
+            `approval blocked to prevent duplicate virtual number assignment. ` +
+            `If this is a test, reset the transaction status or use a different customer.`,
         );
       }
 
@@ -746,29 +760,32 @@ export class CustomerService {
       // For offline: wallet is debited immediately on approval.
       // For online: wallet is debited after webhook — but we block here so the
       //   reseller cannot send a payment link they cannot fulfil.
-      const pricePerNumber = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+      const pricePerNumber =
+        Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
       if (pricePerNumber <= 0) {
         throw new Error(
-          "price_per_number is not configured for this reseller. Please set it before approving customers."
+          "price_per_number is not configured for this reseller. Please set it before approving customers.",
         );
       }
       const resellerWallet = await this.getResellerWallet(effectiveResellerId);
       if (!resellerWallet) {
         throw new Error(
-          "Reseller wallet not found. Please contact the administrator."
+          "Reseller wallet not found. Please contact the administrator.",
         );
       }
-      const walletBalance = Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
+      const walletBalance =
+        Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
       if (walletBalance < pricePerNumber) {
         throw new Error(
           `Insufficient wallet balance. Required: ₹${pricePerNumber.toFixed(2)} (price per number). ` +
-          `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet before approving this customer.`
+            `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet before approving this customer.`,
         );
       }
 
       if (payment_method === "offline") {
         // Offline payment flow: debit customer's reseller wallet by price_per_number (not payment amount)
-        const amountToDebit = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+        const amountToDebit =
+          Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
         if (amountToDebit <= 0) {
           throw new Error("Price per number is not set for this reseller");
         }
@@ -778,7 +795,7 @@ export class CustomerService {
           "Customer approval - offline payment",
           payment_reference_number || null,
           customer_id || null,
-          null
+          null,
         );
 
         // Generate virtual number
@@ -790,7 +807,7 @@ export class CustomerService {
           virtualNumber,
           effectiveResellerId,
           customer.phone, // Set call forwarding number to customer's mobile number
-          subscription_plan_id || null // Optional subscription plan ID
+          subscription_plan_id || null, // Optional subscription plan ID
         );
 
         // 4. Create transaction record
@@ -811,7 +828,8 @@ export class CustomerService {
         await this.updateCustomerStatus(customer_id, "approved", "verified");
 
         // 6. Get reseller SMTP config for sending emails (customer's reseller)
-        const resellerSmtpConfig = await getResellerSmtpConfig(effectiveResellerId);
+        const resellerSmtpConfig =
+          await getResellerSmtpConfig(effectiveResellerId);
 
         // 7. Send emails using reseller SMTP config (brand name if set, else reseller name)
         const resellerDisplayName =
@@ -824,7 +842,7 @@ export class CustomerService {
           customer.profile_name || customer.email,
           virtualNumber,
           resellerDisplayName,
-          resellerSmtpConfig // Pass reseller SMTP config
+          resellerSmtpConfig, // Pass reseller SMTP config
         );
 
         // Send to admin (reseller email)
@@ -833,7 +851,7 @@ export class CustomerService {
           resellerDisplayName,
           virtualNumber,
           customer.profile_name || customer.email,
-          resellerSmtpConfig // Pass reseller SMTP config
+          resellerSmtpConfig, // Pass reseller SMTP config
         );
 
         return {
@@ -845,9 +863,8 @@ export class CustomerService {
       } else if (payment_method === "online") {
         // Online payment flow
         // 1. Get subscription plan
-        const subscriptionPlan = await this.getSubscriptionPlanById(
-          subscription_plan_id
-        );
+        const subscriptionPlan =
+          await this.getSubscriptionPlanById(subscription_plan_id);
         if (!subscriptionPlan) {
           throw new Error("Subscription plan not found");
         }
@@ -881,11 +898,12 @@ export class CustomerService {
         await this.updateCustomerStatus(
           customer_id,
           "pending_payment",
-          "verified"
+          "verified",
         );
 
         // 4. Get reseller SMTP config for sending emails (customer's reseller)
-        const resellerSmtpConfig = await getResellerSmtpConfig(effectiveResellerId);
+        const resellerSmtpConfig =
+          await getResellerSmtpConfig(effectiveResellerId);
 
         // 5. Generate Razorpay payment link
         let razorpayLink = null;
@@ -901,7 +919,7 @@ export class CustomerService {
           // Validate: Don't use subscription IDs (sub_...) as payment links
           if (linkId.startsWith("sub_")) {
             console.warn(
-              `razorpay_link_id contains a subscription ID (${linkId}), not a payment link ID. Creating payment link dynamically instead.`
+              `razorpay_link_id contains a subscription ID (${linkId}), not a payment link ID. Creating payment link dynamically instead.`,
             );
             // Fall through to create payment link dynamically
           } else {
@@ -929,9 +947,8 @@ export class CustomerService {
         // We always create a payment link for the amount, not use the plan/subscription ID directly
         if (!razorpayLink && subscriptionPlan.razorpay_plan_id) {
           // Import Razorpay service to create payment link
-          const { createRazorpayPaymentLink } = await import(
-            "./razorpay.service.js"
-          );
+          const { createRazorpayPaymentLink } =
+            await import("./razorpay.service.js");
 
           try {
             // Always create a new payment link for the subscription plan amount
@@ -961,7 +978,7 @@ export class CustomerService {
                   razorpay_plan_id: subscriptionPlan.razorpay_plan_id,
                   reseller_id: effectiveResellerId,
                 },
-              }
+              },
             );
 
             if (paymentLinkResult && paymentLinkResult.short_url) {
@@ -971,7 +988,7 @@ export class CustomerService {
               razorpayLink = `https://rzp.io/i/${paymentLinkResult.id}`;
             } else {
               throw new Error(
-                "Payment link creation returned invalid response"
+                "Payment link creation returned invalid response",
               );
             }
           } catch (linkError) {
@@ -979,14 +996,14 @@ export class CustomerService {
             throw new Error(
               `Failed to create Razorpay payment link: ${
                 linkError.message || linkError
-              }. Please ensure Razorpay credentials are configured correctly.`
+              }. Please ensure Razorpay credentials are configured correctly.`,
             );
           }
         }
 
         if (!razorpayLink) {
           throw new Error(
-            "Razorpay link not configured for this subscription plan. Please add razorpay_link_id or razorpay_plan_id to the subscription plan."
+            "Razorpay link not configured for this subscription plan. Please add razorpay_link_id or razorpay_plan_id to the subscription plan.",
           );
         }
 
@@ -1002,7 +1019,7 @@ export class CustomerService {
           subscriptionPlan.plan_name,
           subscriptionPlan.amount,
           resellerDisplayName,
-          resellerSmtpConfig // Pass reseller SMTP config
+          resellerSmtpConfig, // Pass reseller SMTP config
         );
 
         return {
@@ -1029,7 +1046,11 @@ export class CustomerService {
    * @param {string|null} resellerId - Reseller ID (for reseller role; admin passes null to use customer's reseller)
    * @returns {Promise<object>} { success, message, razorpay_link? }
    */
-  static async sendRenewalPaymentEmail(virtualNumberId, subscriptionPlanId, resellerId = null) {
+  static async sendRenewalPaymentEmail(
+    virtualNumberId,
+    subscriptionPlanId,
+    resellerId = null,
+  ) {
     try {
       const client = getHasuraClient();
 
@@ -1037,7 +1058,8 @@ export class CustomerService {
         throw new Error("Please select a subscription plan for renewal.");
       }
 
-      const subscriptionPlan = await this.getSubscriptionPlanById(subscriptionPlanId);
+      const subscriptionPlan =
+        await this.getSubscriptionPlanById(subscriptionPlanId);
       if (!subscriptionPlan) {
         throw new Error("Subscription plan not found");
       }
@@ -1070,7 +1092,9 @@ export class CustomerService {
         }
       `;
 
-      const result = await client.client.request(query, { id: virtualNumberId });
+      const result = await client.client.request(query, {
+        id: virtualNumberId,
+      });
       const vn = result?.mst_virtual_number_by_pk;
 
       if (!vn) {
@@ -1090,40 +1114,48 @@ export class CustomerService {
       const effectiveResellerId = resellerId || vn.reseller_id || reseller.id;
 
       if (resellerId && vn.reseller_id !== resellerId) {
-        throw new Error("You do not have permission to send renewal for this virtual number.");
+        throw new Error(
+          "You do not have permission to send renewal for this virtual number.",
+        );
       }
 
-      const pricePerNumber = Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+      const pricePerNumber =
+        Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
 
       if (pricePerNumber <= 0) {
         throw new Error(
-          "price_per_number is not configured for this reseller. Please set it before sending renewal payment links."
+          "price_per_number is not configured for this reseller. Please set it before sending renewal payment links.",
         );
       }
 
       const resellerWallet = await this.getResellerWallet(effectiveResellerId);
       if (!resellerWallet) {
-        throw new Error("Reseller wallet not found. Please contact the administrator.");
+        throw new Error(
+          "Reseller wallet not found. Please contact the administrator.",
+        );
       }
-      const walletBalance = Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
+      const walletBalance =
+        Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
 
       if (walletBalance < pricePerNumber) {
         throw new Error(
           `Insufficient wallet balance. Required: ₹${pricePerNumber.toFixed(2)} (price per number). ` +
-            `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet before sending renewal link.`
+            `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet before sending renewal link.`,
         );
       }
 
-      const planAmount = Number(parseFloat(String(subscriptionPlan.amount ?? 0))) || 0;
+      const planAmount =
+        Number(parseFloat(String(subscriptionPlan.amount ?? 0))) || 0;
       if (planAmount <= 0) {
         throw new Error("Subscription plan amount is invalid.");
       }
 
       console.log(
-        `[sendRenewalPaymentEmail] Plan: ${subscriptionPlan.plan_name}, Amount: ₹${planAmount.toFixed(2)}, Duration: ${subscriptionPlan.duration_days} days`
+        `[sendRenewalPaymentEmail] Plan: ${subscriptionPlan.plan_name}, Amount: ₹${planAmount.toFixed(2)}, Duration: ${subscriptionPlan.duration_days} days`,
       );
 
-      const resellerSmtpConfig = await getResellerSmtpConfig(effectiveResellerId);
+      const resellerSmtpConfig =
+        await getResellerSmtpConfig(effectiveResellerId);
 
       await this.createTransaction({
         customer_id: customer.id,
@@ -1152,27 +1184,32 @@ export class CustomerService {
       // For renewal, always create a dynamic payment link so we can pass customer_id,
       // virtual_number_id, etc. in notes for webhook matching. Static links may not support custom notes.
       if (subscriptionPlan.razorpay_plan_id) {
-        const { createRazorpayPaymentLink } = await import("./razorpay.service.js");
-        const paymentLinkResult = await createRazorpayPaymentLink(effectiveResellerId, {
-          amount: planAmount,
-          currency: subscriptionPlan.currency || "INR",
-          description: `Renewal for virtual number ${vn.virtual_number} - ${subscriptionPlan.plan_name}`,
-          customer: {
-            name: customer.profile_name || customer.email,
-            email: customer.email,
-            contact: customer.phone || undefined,
+        const { createRazorpayPaymentLink } =
+          await import("./razorpay.service.js");
+        const paymentLinkResult = await createRazorpayPaymentLink(
+          effectiveResellerId,
+          {
+            amount: planAmount,
+            currency: subscriptionPlan.currency || "INR",
+            description: `Renewal for virtual number ${vn.virtual_number} - ${subscriptionPlan.plan_name}`,
+            customer: {
+              name: customer.profile_name || customer.email,
+              email: customer.email,
+              contact: customer.phone || undefined,
+            },
+            notify: { email: false, sms: false },
+            notes: {
+              customer_id: customer.id,
+              reseller_id: effectiveResellerId,
+              virtual_number_id: vn.id,
+              subscription_plan_id: subscriptionPlanId,
+              transaction_type: "renewal",
+            },
           },
-          notify: { email: false, sms: false },
-          notes: {
-            customer_id: customer.id,
-            reseller_id: effectiveResellerId,
-            virtual_number_id: vn.id,
-            subscription_plan_id: subscriptionPlanId,
-            transaction_type: "renewal",
-          },
-        });
+        );
         razorpayLink =
-          paymentLinkResult?.short_url || `https://rzp.io/i/${paymentLinkResult?.id || ""}`;
+          paymentLinkResult?.short_url ||
+          `https://rzp.io/i/${paymentLinkResult?.id || ""}`;
       }
 
       // For renewal, we must use dynamic payment links (razorpay_plan_id) so the amount
@@ -1182,7 +1219,7 @@ export class CustomerService {
         throw new Error(
           `Razorpay is not configured for renewal on plan "${subscriptionPlan.plan_name}". ` +
             `Please add razorpay_plan_id to this subscription plan so we can create a payment link with the correct amount (₹${planAmount.toFixed(2)}). ` +
-            `Static payment links cannot be used for renewal as they have a fixed amount.`
+            `Static payment links cannot be used for renewal as they have a fixed amount.`,
         );
       }
 
@@ -1201,7 +1238,7 @@ export class CustomerService {
         planDisplayName,
         planAmount,
         resellerDisplayName,
-        resellerSmtpConfig
+        resellerSmtpConfig,
       );
 
       return {
@@ -1211,6 +1248,181 @@ export class CustomerService {
       };
     } catch (error) {
       console.error("Error sending renewal payment email:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Renew a virtual number via offline payment.
+   * Debits the reseller wallet by price_per_number, extends the expiry date
+   * by the plan's duration_days, and creates a transaction record.
+   *
+   * @param {object} renewalData
+   * @param {string} renewalData.virtual_number_id
+   * @param {string} renewalData.subscription_plan_id
+   * @param {string} renewalData.payment_amount
+   * @param {string} renewalData.payment_reference_number
+   * @param {string} renewalData.payment_date
+   * @param {string|null} resellerId - Reseller ID (for reseller role; admin passes null)
+   * @returns {Promise<object>}
+   */
+  static async renewVirtualNumberOffline(renewalData, resellerId = null) {
+    const {
+      virtual_number_id,
+      subscription_plan_id,
+      payment_amount,
+      payment_reference_number,
+      payment_date,
+    } = renewalData;
+
+    try {
+      const client = getHasuraClient();
+
+      if (!subscription_plan_id) {
+        throw new Error("Please select a subscription plan for renewal.");
+      }
+
+      const subscriptionPlan =
+        await this.getSubscriptionPlanById(subscription_plan_id);
+      if (!subscriptionPlan) {
+        throw new Error("Subscription plan not found");
+      }
+
+      const query = `
+        query GetVirtualNumberForOfflineRenewal($id: uuid!) {
+          mst_virtual_number_by_pk(id: $id) {
+            id
+            virtual_number
+            expiry_date
+            customer_id
+            reseller_id
+            mst_customer {
+              id
+              email
+              profile_name
+              phone
+              reseller_id
+            }
+            mst_reseller {
+              id
+              first_name
+              last_name
+              business_name
+              brand_name
+              email
+              price_per_number
+            }
+          }
+        }
+      `;
+
+      const result = await client.client.request(query, {
+        id: virtual_number_id,
+      });
+      const vn = result?.mst_virtual_number_by_pk;
+
+      if (!vn) {
+        throw new Error("Virtual number not found");
+      }
+
+      const customer = vn.mst_customer;
+      const reseller = vn.mst_reseller;
+
+      if (!customer) {
+        throw new Error("Customer not found for this virtual number");
+      }
+      if (!reseller) {
+        throw new Error("Reseller not found for this virtual number");
+      }
+
+      const effectiveResellerId = resellerId || vn.reseller_id || reseller.id;
+
+      if (resellerId && vn.reseller_id !== resellerId) {
+        throw new Error(
+          "You do not have permission to renew this virtual number.",
+        );
+      }
+
+      const pricePerNumber =
+        Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+      if (pricePerNumber <= 0) {
+        throw new Error(
+          "price_per_number is not configured for this reseller. Please set it before renewing.",
+        );
+      }
+
+      // Debit reseller wallet by price_per_number
+      await this.debitResellerWallet(
+        effectiveResellerId,
+        pricePerNumber,
+        `Renewal (offline) - ${vn.virtual_number}`,
+        payment_reference_number || null,
+        customer.id || null,
+        vn.id || null,
+      );
+
+      // Extend expiry date by plan's duration_days from current expiry
+      const durationDays = subscriptionPlan.duration_days || 360;
+      const currentExpiry = new Date(vn.expiry_date);
+      const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
+      const newExpiry = new Date(baseDate);
+      newExpiry.setDate(newExpiry.getDate() + durationDays);
+      const newExpiryStr = newExpiry.toISOString().split("T")[0];
+
+      const updateExpiryMutation = `
+        mutation ExtendVNExpiryOfflineRenewal($id: uuid!, $expiry_date: date!) {
+          update_mst_virtual_number_by_pk(
+            pk_columns: { id: $id }
+            _set: { expiry_date: $expiry_date }
+          ) {
+            id
+            expiry_date
+          }
+        }
+      `;
+      await client.client.request(updateExpiryMutation, {
+        id: vn.id,
+        expiry_date: newExpiryStr,
+      });
+
+      console.log(
+        `[renewVirtualNumberOffline] Extended VN ${vn.virtual_number} expiry: ${vn.expiry_date} -> ${newExpiryStr} (+${durationDays} days)`,
+      );
+
+      // Create transaction record
+      await this.createTransaction({
+        customer_id: customer.id,
+        reseller_id: effectiveResellerId,
+        virtual_number_id: vn.id,
+        transaction_type: "renewal",
+        payment_mode: "offline",
+        payment_method: "offline",
+        amount: parseFloat(payment_amount) || 0,
+        status: "success",
+        reference_number: payment_reference_number || null,
+        payment_date: payment_date || new Date().toISOString().split("T")[0],
+        customer_email: customer.email || null,
+        customer_name: customer.profile_name || null,
+        notes: {
+          customer_id: customer.id,
+          reseller_id: effectiveResellerId,
+          virtual_number_id: vn.id,
+          subscription_plan_id: subscription_plan_id,
+          transaction_type: "renewal",
+          payment_method: "offline",
+          previous_expiry: vn.expiry_date,
+          new_expiry: newExpiryStr,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Virtual number ${vn.virtual_number} renewed successfully. New expiry: ${newExpiryStr}.`,
+        new_expiry_date: newExpiryStr,
+        virtual_number: vn.virtual_number,
+      };
+    } catch (error) {
+      console.error("Error renewing virtual number offline:", error);
       throw error;
     }
   }
@@ -1254,7 +1466,9 @@ export class CustomerService {
       }
     `;
 
-    const result = await client.client.request(fetchQuery, { id: virtualNumberId });
+    const result = await client.client.request(fetchQuery, {
+      id: virtualNumberId,
+    });
     const vn = result?.mst_virtual_number_by_pk;
 
     if (!vn) {
@@ -1274,12 +1488,14 @@ export class CustomerService {
       if (existingEnd > new Date()) {
         throw new Error(
           `Grace period is already active until ${existingEnd.toISOString()}. ` +
-          `Please wait for it to expire before enabling a new one.`
+            `Please wait for it to expire before enabling a new one.`,
         );
       }
     }
 
-    const gracePeriodEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const gracePeriodEnd = new Date(
+      Date.now() + 24 * 60 * 60 * 1000,
+    ).toISOString();
 
     const updateMutation = `
       mutation EnableGracePeriod($id: uuid!, $grace_period_end: timestamptz!) {
@@ -1306,7 +1522,7 @@ export class CustomerService {
 
     console.log(
       `[enableGracePeriod] Admin enabled 24h grace period for VN ${vn.virtual_number} ` +
-      `(id=${virtualNumberId}). Expires at: ${gracePeriodEnd}`
+        `(id=${virtualNumberId}). Expires at: ${gracePeriodEnd}`,
     );
 
     return {

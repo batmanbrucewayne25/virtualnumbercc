@@ -214,13 +214,13 @@ const ViewUserLayer = () => {
     setRenewalModalOpen(true);
   };
 
-  const handleRenew = async (vn, subscriptionPlanId) => {
+  const handleRenew = async (vn, renewalData) => {
     if (!vn?.id || !customer?.email) {
       setRenewalError("Cannot send renewal: virtual number or customer email is missing.");
       return;
     }
 
-    if (!subscriptionPlanId) {
+    if (!renewalData?.subscription_plan_id) {
       setRenewalError("Please select a subscription plan.");
       return;
     }
@@ -230,32 +230,52 @@ const ViewUserLayer = () => {
 
     try {
       const API_BASE_URL = getApiBaseUrl();
-      const response = await fetch(`${API_BASE_URL}/customer/send-renewal-payment-email`, {
+      const isOffline = renewalData.payment_method === "offline";
+
+      const endpoint = isOffline
+        ? `${API_BASE_URL}/customer/renew-virtual-number-offline`
+        : `${API_BASE_URL}/customer/send-renewal-payment-email`;
+
+      const body = isOffline
+        ? {
+            virtual_number_id: vn.id,
+            subscription_plan_id: renewalData.subscription_plan_id,
+            payment_amount: renewalData.payment_amount,
+            payment_reference_number: renewalData.payment_reference_number,
+            payment_date: renewalData.payment_date,
+          }
+        : {
+            virtual_number_id: vn.id,
+            subscription_plan_id: renewalData.subscription_plan_id,
+          };
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${getAuthToken()}`,
         },
-        body: JSON.stringify({
-          virtual_number_id: vn.id,
-          subscription_plan_id: subscriptionPlanId,
-        }),
+        body: JSON.stringify(body),
       });
 
       const result = await response.json();
 
       if (result.success) {
-        setSuccessMessage(`Renewal payment link sent to ${customer.email}.`);
+        setSuccessMessage(
+          isOffline
+            ? `Virtual number renewed successfully for ${customer.email}.`
+            : `Renewal payment link sent to ${customer.email}.`
+        );
         setTimeout(() => setSuccessMessage(""), 5000);
         setRenewalModalOpen(false);
         setSelectedVirtualNumberForRenewal(null);
         await fetchCustomer();
       } else {
-        setRenewalError(result.message || "Failed to send renewal payment email.");
+        setRenewalError(result.message || "Failed to process renewal.");
       }
     } catch (err) {
-      console.error("Error sending renewal payment email:", err);
-      setRenewalError(err.message || "An error occurred while sending renewal payment email.");
+      console.error("Error processing renewal:", err);
+      setRenewalError(err.message || "An error occurred while processing renewal.");
     } finally {
       setRenewingId(null);
     }

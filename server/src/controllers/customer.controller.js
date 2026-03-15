@@ -164,6 +164,100 @@ export const approveCustomer = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Renew virtual number via offline payment (extend expiry, debit wallet, create transaction)
+ * @route   POST /api/customer/renew-virtual-number-offline
+ * @access  Protected (Admin or Reseller)
+ */
+export const renewVirtualNumberOffline = asyncHandler(async (req, res) => {
+  const {
+    virtual_number_id,
+    subscription_plan_id,
+    payment_amount,
+    payment_reference_number,
+    payment_date,
+  } = req.body;
+
+  if (!virtual_number_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide virtual_number_id',
+    });
+  }
+
+  if (!subscription_plan_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please select a subscription plan for renewal',
+    });
+  }
+
+  if (!payment_reference_number || !payment_amount || !payment_date) {
+    return res.status(400).json({
+      success: false,
+      message: 'For offline renewal, please provide payment_reference_number, payment_amount, and payment_date',
+    });
+  }
+
+  const amount = parseFloat(payment_amount);
+  if (isNaN(amount) || amount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Payment amount must be a valid positive number',
+    });
+  }
+
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Please log in again.',
+    });
+  }
+
+  const isReseller = role === 'reseller';
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  if (!isReseller && !isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only resellers or admins can renew virtual numbers.',
+    });
+  }
+
+  const resellerId = isReseller ? userId : null;
+
+  try {
+    const result = await CustomerService.renewVirtualNumberOffline(
+      {
+        virtual_number_id,
+        subscription_plan_id,
+        payment_amount,
+        payment_reference_number,
+        payment_date,
+      },
+      resellerId
+    );
+
+    return res.json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    console.error('Error renewing virtual number offline:', error);
+    const msg = error.message || 'Failed to renew virtual number';
+    const isWalletError =
+      msg.startsWith('Insufficient wallet balance') ||
+      msg.includes('wallet not found') ||
+      msg.includes('price_per_number');
+    return res.status(isWalletError ? 400 : 500).json({
+      success: false,
+      message: msg,
+    });
+  }
+});
+
+/**
  * @desc    Enable 24-hour grace period for a virtual number (admin only)
  * @route   POST /api/customer/enable-grace-period
  * @access  Protected (Admin only)

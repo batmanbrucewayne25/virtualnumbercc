@@ -3,6 +3,7 @@ import {
   approveCustomer,
   rejectCustomer,
   sendRenewalPaymentEmail,
+  renewVirtualNumberOffline,
   enableGracePeriod
 } from '../controllers/customer.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
@@ -22,6 +23,13 @@ router.post('/approve', authMiddleware, approveCustomer);
  * @access  Protected (Admin or Reseller)
  */
 router.post('/send-renewal-payment-email', authMiddleware, sendRenewalPaymentEmail);
+
+/**
+ * @route   POST /api/customer/renew-virtual-number-offline
+ * @desc    Renew virtual number via offline payment (extend expiry, debit wallet, create transaction)
+ * @access  Protected (Admin or Reseller)
+ */
+router.post('/renew-virtual-number-offline', authMiddleware, renewVirtualNumberOffline);
 
 /**
  * @route   POST /api/customer/enable-grace-period

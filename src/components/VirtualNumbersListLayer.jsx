@@ -167,7 +167,7 @@ const VirtualNumbersListLayer = () => {
     setRenewalModalOpen(true);
   };
 
-  const handleRenew = async (vn, subscriptionPlanId) => {
+  const handleRenew = async (vn, renewalData) => {
     if (!vn?.id || !vn?.mst_customer?.email) {
       setRenewalError(
         "Cannot send renewal: virtual number or customer email is missing.",
@@ -175,7 +175,7 @@ const VirtualNumbersListLayer = () => {
       return;
     }
 
-    if (!subscriptionPlanId) {
+    if (!renewalData?.subscription_plan_id) {
       setRenewalError("Please select a subscription plan.");
       return;
     }
@@ -185,26 +185,41 @@ const VirtualNumbersListLayer = () => {
 
     try {
       const API_BASE_URL = getApiBaseUrl();
-      const response = await fetch(
-        `${API_BASE_URL}/customer/send-renewal-payment-email`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${getAuthToken()}`,
-          },
-          body: JSON.stringify({
+      const isOffline = renewalData.payment_method === "offline";
+
+      const endpoint = isOffline
+        ? `${API_BASE_URL}/customer/renew-virtual-number-offline`
+        : `${API_BASE_URL}/customer/send-renewal-payment-email`;
+
+      const body = isOffline
+        ? {
             virtual_number_id: vn.id,
-            subscription_plan_id: subscriptionPlanId,
-          }),
+            subscription_plan_id: renewalData.subscription_plan_id,
+            payment_amount: renewalData.payment_amount,
+            payment_reference_number: renewalData.payment_reference_number,
+            payment_date: renewalData.payment_date,
+          }
+        : {
+            virtual_number_id: vn.id,
+            subscription_plan_id: renewalData.subscription_plan_id,
+          };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
         },
-      );
+        body: JSON.stringify(body),
+      });
 
       const result = await response.json();
 
       if (result.success) {
         setSuccessMessage(
-          `Renewal payment link sent to ${vn.mst_customer?.email}.`,
+          isOffline
+            ? `Virtual number renewed successfully for ${vn.mst_customer?.email}.`
+            : `Renewal payment link sent to ${vn.mst_customer?.email}.`,
         );
         setTimeout(() => setSuccessMessage(""), 5000);
         setRenewalModalOpen(false);
@@ -212,13 +227,13 @@ const VirtualNumbersListLayer = () => {
         fetchVirtualNumbers();
       } else {
         setRenewalError(
-          result.message || "Failed to send renewal payment email.",
+          result.message || "Failed to process renewal.",
         );
       }
     } catch (err) {
-      console.error("Error sending renewal payment email:", err);
+      console.error("Error processing renewal:", err);
       setRenewalError(
-        err.message || "An error occurred while sending renewal payment email.",
+        err.message || "An error occurred while processing renewal.",
       );
     } finally {
       setRenewingId(null);

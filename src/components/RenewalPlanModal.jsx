@@ -12,18 +12,40 @@ const RenewalPlanModal = ({
   loading,
   apiError,
 }) => {
+  const [formData, setFormData] = useState({
+    payment_method: "",
+    subscription_plan_id: "",
+    payment_reference_number: "",
+    payment_amount: "",
+    payment_date: "",
+  });
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedPlanId("");
+      const today = new Date().toISOString().split("T")[0];
+      setFormData({
+        payment_method: "",
+        subscription_plan_id: "",
+        payment_reference_number: "",
+        payment_amount: "",
+        payment_date: today,
+      });
       setError("");
-      fetchSubscriptionPlans();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (
+      isOpen &&
+      (formData.payment_method === "online" ||
+        formData.payment_method === "offline")
+    ) {
+      fetchSubscriptionPlans();
+    }
+  }, [isOpen, formData.payment_method]);
 
   const fetchSubscriptionPlans = async () => {
     setLoadingPlans(true);
@@ -52,7 +74,7 @@ const RenewalPlanModal = ({
       const result = await getMstSubscriptionPlans(resellerId);
       if (result.success) {
         const filteredPlans = (result.data || []).filter(
-          (plan) => plan.is_active === true
+          (plan) => plan.is_active === true,
         );
         setSubscriptionPlans(filteredPlans);
       }
@@ -64,16 +86,56 @@ const RenewalPlanModal = ({
     }
   };
 
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      if (
+        name === "subscription_plan_id" &&
+        value &&
+        subscriptionPlans.length > 0
+      ) {
+        const plan = subscriptionPlans.find((p) => p.id === value);
+        if (plan != null && plan.amount != null) {
+          next.payment_amount = String(plan.amount);
+        }
+      }
+      return next;
+    });
+    setError("");
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
 
-    if (!selectedPlanId) {
+    if (!formData.payment_method) {
+      setError("Please select a payment method.");
+      return;
+    }
+
+    if (formData.payment_method === "offline") {
+      if (
+        !formData.payment_reference_number ||
+        !formData.payment_amount ||
+        !formData.payment_date
+      ) {
+        setError("Please fill all required fields for offline payment.");
+        return;
+      }
+      const amount = parseFloat(formData.payment_amount);
+      if (isNaN(amount) || amount <= 0) {
+        setError("Payment amount must be a valid positive number.");
+        return;
+      }
+    }
+
+    if (!formData.subscription_plan_id) {
       setError("Please select a subscription plan.");
       return;
     }
 
-    onRenew(virtualNumber, selectedPlanId);
+    onRenew(virtualNumber, formData);
   };
 
   if (!isOpen) return null;
@@ -102,63 +164,214 @@ const RenewalPlanModal = ({
             <div className="modal-body p-24">
               <div className="mb-20">
                 <p className="text-sm text-secondary-light mb-0">
-                  Select a subscription plan to send the renewal payment link to{" "}
-                  <strong>{customer?.profile_name || customer?.email}</strong> for
-                  virtual number{" "}
-                  <strong>{virtualNumber?.virtual_number || "-"}</strong>
+                  Renew virtual number{" "}
+                  <strong>{virtualNumber?.virtual_number || "-"}</strong> for{" "}
+                  <strong>{customer?.profile_name || customer?.email}</strong>
                 </p>
               </div>
 
               {(apiError || error) && (
                 <div className="alert alert-danger radius-8 mb-24" role="alert">
-                  <Icon icon="material-symbols:error-outline" className="icon me-2" />
+                  <Icon
+                    icon="material-symbols:error-outline"
+                    className="icon me-2"
+                  />
                   {apiError || error}
                 </div>
               )}
 
               <div className="mb-20">
                 <label
-                  htmlFor="subscription_plan_id"
+                  htmlFor="renewal_payment_method"
                   className="form-label fw-semibold text-primary-light text-sm mb-8"
                 >
-                  Subscription Plan <span className="text-danger-600">*</span>
+                  Payment Method <span className="text-danger-600">*</span>
                 </label>
-                {loadingPlans ? (
-                  <div className="text-center py-3">
-                    <div
-                      className="spinner-border spinner-border-sm text-primary"
-                      role="status"
-                    >
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    <p className="text-sm text-muted mt-2">Loading plans...</p>
-                  </div>
-                ) : subscriptionPlans.length === 0 ? (
-                  <div className="alert alert-warning radius-8">
-                    <Icon icon="material-symbols:warning-outline" className="icon me-2" />
-                    No active subscription plans found. Please add subscription plans
-                    first.
-                  </div>
-                ) : (
-                  <select
-                    className="form-select radius-8"
-                    id="subscription_plan_id"
-                    name="subscription_plan_id"
-                    value={selectedPlanId}
-                    onChange={(e) => setSelectedPlanId(e.target.value)}
-                    disabled={loading}
-                    required
-                  >
-                    <option value="">Select a plan</option>
-                    {subscriptionPlans.map((plan) => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} (
-                        {plan.duration_days} days)
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <select
+                  className="form-select radius-8"
+                  id="renewal_payment_method"
+                  name="payment_method"
+                  value={formData.payment_method}
+                  onChange={handleChange}
+                  required
+                  disabled={loading}
+                >
+                  <option value="">Select Payment Method</option>
+                  <option value="offline">Offline Payment</option>
+                  <option value="online">Online Payment</option>
+                </select>
               </div>
+
+              {formData.payment_method === "offline" && (
+                <>
+                  <div className="mb-20">
+                    <label
+                      htmlFor="renewal_subscription_plan_id_offline"
+                      className="form-label fw-semibold text-primary-light text-sm mb-8"
+                    >
+                      Subscription Plan{" "}
+                      <span className="text-danger-600">*</span>
+                    </label>
+                    {loadingPlans ? (
+                      <div className="text-center py-3">
+                        <div
+                          className="spinner-border spinner-border-sm text-primary"
+                          role="status"
+                        >
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="text-sm text-muted mt-2">
+                          Loading plans...
+                        </p>
+                      </div>
+                    ) : subscriptionPlans.length === 0 ? (
+                      <div className="alert alert-warning radius-8">
+                        <Icon
+                          icon="material-symbols:warning-outline"
+                          className="icon me-2"
+                        />
+                        No active subscription plans found.
+                      </div>
+                    ) : (
+                      <select
+                        className="form-select radius-8"
+                        id="renewal_subscription_plan_id_offline"
+                        name="subscription_plan_id"
+                        value={formData.subscription_plan_id}
+                        onChange={handleChange}
+                        disabled={loading}
+                        required
+                      >
+                        <option value="">Select Subscription Plan</option>
+                        {subscriptionPlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)}{" "}
+                            ({plan.duration_days} days)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="mb-20">
+                    <label
+                      htmlFor="renewal_payment_amount"
+                      className="form-label fw-semibold text-primary-light text-sm mb-8"
+                    >
+                      Payment Amount (₹){" "}
+                      <span className="text-danger-600">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="form-control radius-8"
+                      id="renewal_payment_amount"
+                      name="payment_amount"
+                      placeholder="Enter payment amount"
+                      value={formData.payment_amount}
+                      onChange={handleChange}
+                      required
+                      disabled={loading}
+                    />
+                    <p className="text-muted text-sm mt-8 mb-0">
+                      Your reseller price per number will be deducted from your
+                      wallet.
+                    </p>
+                  </div>
+
+                  <div className="mb-20">
+                    <label
+                      htmlFor="renewal_payment_date"
+                      className="form-label fw-semibold text-primary-light text-sm mb-8"
+                    >
+                      Payment Date <span className="text-danger-600">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control radius-8"
+                      id="renewal_payment_date"
+                      name="payment_date"
+                      value={formData.payment_date}
+                      onChange={handleChange}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="mb-20">
+                    <label
+                      htmlFor="renewal_payment_reference_number"
+                      className="form-label fw-semibold text-primary-light text-sm mb-8"
+                    >
+                      Payment Reference Number{" "}
+                      <span className="text-danger-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control radius-8"
+                      id="renewal_payment_reference_number"
+                      name="payment_reference_number"
+                      placeholder="Enter payment reference number"
+                      value={formData.payment_reference_number}
+                      onChange={handleChange}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                </>
+              )}
+
+              {formData.payment_method === "online" && (
+                <div className="mb-20">
+                  <label
+                    htmlFor="renewal_subscription_plan_id"
+                    className="form-label fw-semibold text-primary-light text-sm mb-8"
+                  >
+                    Subscription Plan <span className="text-danger-600">*</span>
+                  </label>
+                  {loadingPlans ? (
+                    <div className="text-center py-3">
+                      <div
+                        className="spinner-border spinner-border-sm text-primary"
+                        role="status"
+                      >
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <p className="text-sm text-muted mt-2">
+                        Loading plans...
+                      </p>
+                    </div>
+                  ) : subscriptionPlans.length === 0 ? (
+                    <div className="alert alert-warning radius-8">
+                      <Icon
+                        icon="material-symbols:warning-outline"
+                        className="icon me-2"
+                      />
+                      No active subscription plans found. Please add
+                      subscription plans first.
+                    </div>
+                  ) : (
+                    <select
+                      className="form-select radius-8"
+                      id="renewal_subscription_plan_id"
+                      name="subscription_plan_id"
+                      value={formData.subscription_plan_id}
+                      onChange={handleChange}
+                      disabled={loading}
+                      required
+                    >
+                      <option value="">Select a plan</option>
+                      {subscriptionPlans.map((plan) => (
+                        <option key={plan.id} value={plan.id}>
+                          {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} (
+                          {plan.duration_days} days)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
             </div>
             <div className="modal-footer border-top">
               <button
@@ -172,7 +385,12 @@ const RenewalPlanModal = ({
               <button
                 type="submit"
                 className="btn btn-primary d-inline-flex align-items-center gap-2"
-                disabled={loading || loadingPlans || subscriptionPlans.length === 0}
+                disabled={
+                  loading ||
+                  loadingPlans ||
+                  subscriptionPlans.length === 0 ||
+                  !formData.payment_method
+                }
               >
                 {loading ? (
                   <>
@@ -181,11 +399,26 @@ const RenewalPlanModal = ({
                       role="status"
                       aria-hidden="true"
                     />
-                    Sending...
+                    {formData.payment_method === "offline"
+                      ? "Processing..."
+                      : "Sending..."}
+                  </>
+                ) : formData.payment_method === "offline" ? (
+                  <>
+                    <Icon
+                      icon="mdi:check-circle-outline"
+                      className="icon"
+                      style={{ fontSize: "1rem" }}
+                    />
+                    Renew Now
                   </>
                 ) : (
                   <>
-                    <Icon icon="mdi:email-send-outline" className="icon" style={{ fontSize: "1rem" }} />
+                    <Icon
+                      icon="mdi:email-send-outline"
+                      className="icon"
+                      style={{ fontSize: "1rem" }}
+                    />
                     Send Payment Link
                   </>
                 )}
