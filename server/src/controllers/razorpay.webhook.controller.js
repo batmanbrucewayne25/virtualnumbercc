@@ -136,6 +136,17 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         );
         break;
 
+      case "payment_link.paid":
+        // payment_link.paid fires when a Razorpay Payment Link is paid.
+        // payment.captured should also fire for the same payment, but we
+        // handle this event as a safety net to ensure VN creation runs
+        // even if payment.captured was missed or processed out of order.
+        result = await WebhookService.processPaymentCaptured(
+          resellerId,
+          payload
+        );
+        break;
+
       case "subscription.completed":
       case "subscription.halted":
       case "subscription.cancelled":

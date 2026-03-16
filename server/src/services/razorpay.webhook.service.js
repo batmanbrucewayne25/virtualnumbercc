@@ -1248,11 +1248,16 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
 
     // ── 3. Claim the transaction slot atomically BEFORE creating VN ──────────
     // Use a conditional UPDATE on mst_transaction as a DB-level mutex.
-    // The condition: virtual_number_id IS NULL AND status != 'success'.
+    // The condition: virtual_number_id IS NULL.
     // Only the FIRST concurrent postPayment call satisfies this — it sets
-    // a sentinel value (status='processing') so every subsequent concurrent
+    // a sentinel value (status='processing_vn') so every subsequent concurrent
     // call gets affected_rows=0 and bails out immediately.
     // This is race-safe because Postgres row-locks the transaction row on UPDATE.
+    //
+    // IMPORTANT: We allow claiming transactions at "success" status too, because
+    // order.paid / payment.captured webhooks fire concurrently and may set the
+    // transaction to "success" before postPayment runs. Excluding "success" here
+    // would cause VN creation to be permanently skipped.
     if (transactionId) {
       const claimTxnMutation = `
         mutation ClaimTransactionForVN($txn_id: uuid!) {
@@ -1260,7 +1265,7 @@ async function updateCustomerStatusAfterPayment(customerId, resellerId, transact
             where: {
               id: { _eq: $txn_id }
               virtual_number_id: { _is_null: true }
-              status: { _nin: ["processing_vn", "success"] }
+              status: { _nin: ["processing_vn"] }
             }
             _set: { status: "processing_vn" }
           ) {
