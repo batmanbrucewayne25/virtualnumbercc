@@ -4,7 +4,8 @@ import {
   rejectCustomer,
   sendRenewalPaymentEmail,
   renewVirtualNumberOffline,
-  enableGracePeriod
+  enableGracePeriod,
+  addVirtualNumber
 } from '../controllers/customer.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
@@ -37,6 +38,13 @@ router.post('/renew-virtual-number-offline', authMiddleware, renewVirtualNumberO
  * @access  Protected (Admin only)
  */
 router.post('/enable-grace-period', authMiddleware, enableGracePeriod);
+
+/**
+ * @route   POST /api/customer/add-virtual-number
+ * @desc    Add an additional virtual number to an already-approved customer (online or offline)
+ * @access  Protected (Admin or Reseller)
+ */
+router.post('/add-virtual-number', authMiddleware, addVirtualNumber);
 
 /**
  * @route   POST /api/customer/reject

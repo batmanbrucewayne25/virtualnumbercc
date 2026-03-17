@@ -1557,4 +1557,259 @@ export class CustomerService {
       virtual_number: vn.virtual_number,
     };
   }
+
+  /**
+   * Add an additional virtual number to an already-approved customer.
+   * Supports both online (send Razorpay payment link) and offline (debit wallet + create VN immediately) flows.
+   * Unlike approveCustomer, this has NO re-approval guards and does NOT change customer status.
+   */
+  static async addVirtualNumber(data, resellerId = null) {
+    const {
+      customer_id,
+      payment_method,
+      subscription_plan_id,
+      payment_reference_number,
+      payment_amount,
+      payment_date,
+      call_forwarding_number,
+    } = data;
+
+    try {
+      const customer = await this.getCustomerById(customer_id);
+      if (!customer) {
+        throw new Error("Customer not found");
+      }
+
+      const reseller = customer.mst_reseller;
+      if (!reseller) {
+        throw new Error("Reseller not found");
+      }
+
+      const effectiveResellerId = customer.reseller_id || resellerId;
+
+      const pricePerNumber =
+        Number(parseFloat(String(reseller?.price_per_number ?? ""))) || 0;
+      if (pricePerNumber <= 0) {
+        throw new Error(
+          "price_per_number is not configured for this reseller. Please set it before adding virtual numbers.",
+        );
+      }
+      const resellerWallet = await this.getResellerWallet(effectiveResellerId);
+      if (!resellerWallet) {
+        throw new Error(
+          "Reseller wallet not found. Please contact the administrator.",
+        );
+      }
+      const walletBalance =
+        Number(String(resellerWallet.balance).replace(/,/g, "")) || 0;
+      if (walletBalance < pricePerNumber) {
+        throw new Error(
+          `Insufficient wallet balance. Required: ₹${pricePerNumber.toFixed(2)} (price per number). ` +
+            `Available: ₹${walletBalance.toFixed(2)}. Please top up your wallet.`,
+        );
+      }
+
+      const forwardNumber = call_forwarding_number || customer.phone || null;
+
+      if (payment_method === "offline") {
+        const amountToDebit = pricePerNumber;
+        await this.debitResellerWallet(
+          effectiveResellerId,
+          amountToDebit,
+          "Add virtual number - offline payment",
+          payment_reference_number || null,
+          customer_id || null,
+          null,
+        );
+
+        const availableRes = await VnApiClient.getAvailableNumbers();
+        const availableNumbers = availableRes?.data || [];
+        if (availableNumbers.length === 0) {
+          throw new Error("No virtual numbers available. Please contact support.");
+        }
+        const randomIndex = Math.floor(Math.random() * availableNumbers.length);
+        const virtualNumber = availableNumbers[randomIndex].number;
+
+        const activateRes = await VnApiClient.activateNumber(virtualNumber);
+        console.log(`[addVirtualNumber] VN API activate response:`, activateRes);
+
+        if (forwardNumber) {
+          try {
+            await VnApiClient.configureCallForwarding(virtualNumber, "mobile", forwardNumber);
+          } catch (cfErr) {
+            console.warn(`[addVirtualNumber] Call forwarding config failed (non-fatal):`, cfErr.message);
+          }
+        }
+
+        const virtualNumberRecord = await this.createVirtualNumber(
+          customer_id,
+          virtualNumber,
+          effectiveResellerId,
+          forwardNumber,
+          subscription_plan_id || null,
+        );
+
+        await this.createTransaction({
+          customer_id: customer_id,
+          reseller_id: effectiveResellerId,
+          virtual_number_id: virtualNumberRecord?.id || null,
+          transaction_type: "payment",
+          payment_mode: "offline",
+          payment_method: "offline",
+          amount: parseFloat(payment_amount) || 0,
+          status: "success",
+          reference_number: payment_reference_number || null,
+          payment_date: payment_date || new Date().toISOString().split("T")[0],
+        });
+
+        const resellerSmtpConfig =
+          await getResellerSmtpConfig(effectiveResellerId);
+
+        const resellerDisplayName =
+          reseller.brand_name ||
+          reseller.business_name ||
+          `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
+          "Reseller";
+        try {
+          await sendVirtualNumberEmail(
+            customer.email,
+            customer.profile_name || customer.email,
+            virtualNumber,
+            resellerDisplayName,
+            resellerSmtpConfig,
+          );
+        } catch (emailErr) {
+          console.warn(`[addVirtualNumber] Email send failed (non-fatal):`, emailErr.message);
+        }
+
+        return {
+          success: true,
+          virtual_number: virtualNumber,
+          message: "Virtual number added successfully. Emails sent.",
+        };
+      } else if (payment_method === "online") {
+        const subscriptionPlan =
+          await this.getSubscriptionPlanById(subscription_plan_id);
+        if (!subscriptionPlan) {
+          throw new Error("Subscription plan not found");
+        }
+
+        await this.createTransaction({
+          customer_id: customer_id,
+          reseller_id: effectiveResellerId,
+          virtual_number_id: null,
+          transaction_type: "payment",
+          payment_mode: "online",
+          payment_method: "razorpay",
+          amount: Number(subscriptionPlan.amount) || 0,
+          status: "pending",
+          reference_number: null,
+          payment_date: null,
+          customer_email: customer.email || null,
+          customer_name: customer.profile_name || null,
+          notes: {
+            customer_id: customer_id,
+            reseller_id: effectiveResellerId,
+            subscription_plan_id: subscription_plan_id,
+            plan_name: subscriptionPlan.plan_name,
+          },
+        });
+
+        const resellerSmtpConfig =
+          await getResellerSmtpConfig(effectiveResellerId);
+
+        let razorpayLink = null;
+
+        if (
+          subscriptionPlan.razorpay_link_id &&
+          subscriptionPlan.razorpay_link_id.trim()
+        ) {
+          const linkId = subscriptionPlan.razorpay_link_id.trim();
+          if (linkId.startsWith("sub_")) {
+            // Subscription ID, not payment link -- fall through
+          } else if (linkId.startsWith("http://") || linkId.startsWith("https://")) {
+            razorpayLink = linkId;
+          } else if (linkId.startsWith("rzp.io/i/") || linkId.startsWith("www.rzp.io/i/")) {
+            razorpayLink = `https://${linkId}`;
+          } else {
+            const cleanLinkId = linkId.replace(/^\/+/, "").trim();
+            razorpayLink = `https://rzp.io/i/${cleanLinkId}`;
+          }
+        }
+
+        if (!razorpayLink && subscriptionPlan.razorpay_plan_id) {
+          const { createRazorpayPaymentLink } =
+            await import("./razorpay.service.js");
+
+          try {
+            const paymentLinkResult = await createRazorpayPaymentLink(
+              effectiveResellerId,
+              {
+                amount: Number(subscriptionPlan.amount) || 0,
+                currency: subscriptionPlan.currency || "INR",
+                description: `Payment for ${subscriptionPlan.plan_name}`,
+                customer: {
+                  name: customer.profile_name || customer.email,
+                  email: customer.email,
+                  contact: customer.phone || undefined,
+                },
+                notify: { email: false, sms: false },
+                notes: {
+                  customer_id: customer_id,
+                  subscription_plan_id: subscription_plan_id,
+                  razorpay_plan_id: subscriptionPlan.razorpay_plan_id,
+                  reseller_id: effectiveResellerId,
+                },
+              },
+            );
+
+            if (paymentLinkResult && paymentLinkResult.short_url) {
+              razorpayLink = paymentLinkResult.short_url;
+            } else if (paymentLinkResult && paymentLinkResult.id) {
+              razorpayLink = `https://rzp.io/i/${paymentLinkResult.id}`;
+            } else {
+              throw new Error("Payment link creation returned invalid response");
+            }
+          } catch (linkError) {
+            console.error("Error creating Razorpay payment link:", linkError);
+            throw new Error(
+              `Failed to create Razorpay payment link: ${linkError.message || linkError}`,
+            );
+          }
+        }
+
+        if (!razorpayLink) {
+          throw new Error(
+            "Razorpay link not configured for this subscription plan. Please add razorpay_link_id or razorpay_plan_id.",
+          );
+        }
+
+        const resellerDisplayName =
+          reseller.brand_name ||
+          reseller.business_name ||
+          `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
+          "Reseller";
+        await sendRazorpayLinkEmail(
+          customer.email,
+          customer.profile_name || customer.email,
+          razorpayLink,
+          subscriptionPlan.plan_name,
+          subscriptionPlan.amount,
+          resellerDisplayName,
+          resellerSmtpConfig,
+        );
+
+        return {
+          success: true,
+          razorpay_link: razorpayLink,
+          message: "Razorpay payment link sent to customer email.",
+        };
+      } else {
+        throw new Error("Invalid payment method. Must be 'offline' or 'online'.");
+      }
+    } catch (error) {
+      console.error("Error adding virtual number:", error);
+      throw error;
+    }
+  }
 }

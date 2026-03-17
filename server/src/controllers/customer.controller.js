@@ -306,6 +306,103 @@ export const enableGracePeriod = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Add an additional virtual number to an already-approved customer
+ * @route   POST /api/customer/add-virtual-number
+ * @access  Protected (Admin or Reseller)
+ */
+export const addVirtualNumber = asyncHandler(async (req, res) => {
+  const {
+    customer_id,
+    payment_method,
+    subscription_plan_id,
+    payment_reference_number,
+    payment_amount,
+    payment_date,
+    call_forwarding_number,
+  } = req.body;
+
+  if (!customer_id || !payment_method) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide customer_id and payment_method',
+    });
+  }
+
+  if (payment_method === 'offline') {
+    if (!payment_reference_number || !payment_amount || !payment_date) {
+      return res.status(400).json({
+        success: false,
+        message: 'For offline payment, please provide payment_reference_number, payment_amount, and payment_date',
+      });
+    }
+  } else if (payment_method === 'online') {
+    if (!subscription_plan_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'For online payment, please provide subscription_plan_id',
+      });
+    }
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid payment_method. Must be "offline" or "online"',
+    });
+  }
+
+  const userId = req.user?.userId;
+  const role = req.user?.role;
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Please log in again.',
+    });
+  }
+
+  const isReseller = role === 'reseller';
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  if (!isReseller && !isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only resellers or admins can add virtual numbers.',
+    });
+  }
+
+  const resellerId = isReseller ? userId : null;
+
+  try {
+    const result = await CustomerService.addVirtualNumber(
+      {
+        customer_id,
+        payment_method,
+        subscription_plan_id,
+        payment_reference_number,
+        payment_amount,
+        payment_date,
+        call_forwarding_number,
+      },
+      resellerId,
+    );
+
+    res.json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    console.error('Error adding virtual number:', error);
+    const msg = error.message || 'Failed to add virtual number';
+    const isWalletError =
+      msg.startsWith('Insufficient wallet balance') ||
+      msg.includes('wallet not found') ||
+      msg.includes('price_per_number');
+    res.status(isWalletError ? 400 : 500).json({
+      success: false,
+      message: msg,
+    });
+  }
+});
+
+/**
  * @desc    Reject customer (update status and send rejection email via reseller SMTP)
  * @route   POST /api/customer/reject
  * @access  Protected (Admin or Reseller - reseller only for own customers)

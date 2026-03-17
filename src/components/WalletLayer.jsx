@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
-import { getMstWalletTransactions, getMstWalletByResellerId, creditWallet, debitWallet } from "@/hasura/mutations/wallet";
+import { getMstWalletTransactions, getMstWalletByResellerId, creditWallet } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { insertWalletRequest } from "@/hasura/mutations/walletRequest";
 import { getUserData } from "@/utils/auth";
@@ -17,10 +17,8 @@ const WalletLayer = () => {
   const [resellers, setResellers] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [creditModalOpen, setCreditModalOpen] = useState(false);
-  const [debitModalOpen, setDebitModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [creditAmount, setCreditAmount] = useState("");
-  const [debitAmount, setDebitAmount] = useState("");
   const [transactionDescription, setTransactionDescription] = useState("");
   const [transactionReference, setTransactionReference] = useState("");
   const [validityDate, setValidityDate] = useState("");
@@ -152,47 +150,6 @@ const WalletLayer = () => {
     }
   };
 
-  const handleDebit = async () => {
-    if (!selectedResellerId) {
-      setError("Please select a reseller");
-      return;
-    }
-
-    const amount = parseFloat(debitAmount);
-    if (isNaN(amount) || amount <= 0) {
-      setError("Please enter a valid amount");
-      return;
-    }
-
-    setActionLoading(true);
-    setError("");
-
-    try {
-      const result = await debitWallet(
-        selectedResellerId,
-        amount,
-        transactionDescription || "Wallet debit",
-        transactionReference || null
-      );
-
-      if (result.success) {
-        setDebitAmount("");
-        setTransactionDescription("");
-        setTransactionReference("");
-        setDebitModalOpen(false);
-        fetchWalletData();
-        window.dispatchEvent(new CustomEvent("wallet-should-refresh"));
-      } else {
-        setError(result.message || "Failed to debit wallet");
-      }
-    } catch (err) {
-      console.error("Error debiting wallet:", err);
-      setError(err.message || "An error occurred while debiting wallet");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const filteredTransactions = transactions.filter((transaction) => {
     const matchesSearch =
       searchTerm === "" ||
@@ -291,24 +248,14 @@ const WalletLayer = () => {
                 </select>
               </div>
               {selectedResellerId && isAdmin && (
-                <div className='d-flex gap-2'>
-                  <button
-                    type='button'
-                    className='btn btn-success text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-                    onClick={() => setCreditModalOpen(true)}
-                  >
-                    <Icon icon='ic:baseline-plus' className='icon text-xl line-height-1' />
-                    Credit
-                  </button>
-                  <button
-                    type='button'
-                    className='btn btn-danger text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-                    onClick={() => setDebitModalOpen(true)}
-                  >
-                    <Icon icon='ic:baseline-minus' className='icon text-xl line-height-1' />
-                    Debit
-                  </button>
-                </div>
+                <button
+                  type='button'
+                  className='btn btn-success text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+                  onClick={() => setCreditModalOpen(true)}
+                >
+                  <Icon icon='ic:baseline-plus' className='icon text-xl line-height-1' />
+                  Credit
+                </button>
               )}
               {selectedResellerId && !isAdmin && (
                 <button
@@ -729,106 +676,6 @@ const WalletLayer = () => {
         </div>
       )}
 
-      {/* Debit Modal */}
-      {debitModalOpen && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content radius-12">
-              <div className="modal-header border-bottom">
-                <h5 className="modal-title text-md text-primary-light">Debit Wallet</h5>
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={() => {
-                    setDebitModalOpen(false);
-                    setDebitAmount("");
-                    setTransactionDescription("");
-                    setTransactionReference("");
-                    setError("");
-                  }}
-                  disabled={actionLoading}
-                  aria-label="Close"
-                />
-              </div>
-              <div className="modal-body p-24">
-                <div className="mb-20">
-                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                    Amount (₹) <span className='text-danger-600'>*</span>
-                  </label>
-                  <input
-                    type='number'
-                    step='0.01'
-                    min='0'
-                    className='form-control radius-8'
-                    placeholder='Enter amount to debit'
-                    value={debitAmount}
-                    onChange={(e) => setDebitAmount(e.target.value)}
-                    required
-                    disabled={actionLoading}
-                  />
-                </div>
-                <div className="mb-20">
-                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                    Description
-                  </label>
-                  <textarea
-                    className='form-control radius-8'
-                    rows='3'
-                    placeholder='Enter transaction description (optional)'
-                    value={transactionDescription}
-                    onChange={(e) => setTransactionDescription(e.target.value)}
-                    disabled={actionLoading}
-                  />
-                </div>
-                <div className="mb-20">
-                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                    Reference
-                  </label>
-                  <input
-                    type='text'
-                    className='form-control radius-8'
-                    placeholder='Enter reference (optional)'
-                    value={transactionReference}
-                    onChange={(e) => setTransactionReference(e.target.value)}
-                    disabled={actionLoading}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer border-top">
-                <button
-                  type="button"
-                  className="btn btn-secondary radius-8"
-                  onClick={() => {
-                    setDebitModalOpen(false);
-                    setDebitAmount("");
-                    setTransactionDescription("");
-                    setTransactionReference("");
-                    setError("");
-                  }}
-                  disabled={actionLoading}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger radius-8"
-                  onClick={handleDebit}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                      Processing...
-                    </>
-                  ) : (
-                    "Debit Wallet"
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

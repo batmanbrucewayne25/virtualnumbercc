@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getAllMstWalletTransactions } from "@/hasura/mutations/wallet";
+import { getAllMstWalletTransactions, debitWallet, getMstWalletByResellerId } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { formatDateTimeIST } from "@/utils/dateUtils";
 import { getUserData } from "@/utils/auth";
@@ -21,6 +21,13 @@ const InvoiceListLayer = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [isResellerView, setIsResellerView] = useState(false);
+  const [debitModalOpen, setDebitModalOpen] = useState(false);
+  const [debitAmount, setDebitAmount] = useState("");
+  const [debitDescription, setDebitDescription] = useState("");
+  const [debitReference, setDebitReference] = useState("");
+  const [debitLoading, setDebitLoading] = useState(false);
+  const [debitModalWalletBalance, setDebitModalWalletBalance] = useState(null);
+  const [debitModalWalletLoading, setDebitModalWalletLoading] = useState(false);
 
   useEffect(() => {
     const userData = getUserData();
@@ -122,6 +129,49 @@ const InvoiceListLayer = () => {
     return `₹${Number(amount).toFixed(2)}`;
   };
 
+  const handleDebit = async () => {
+    if (resellerFilter === "all") {
+      setError("Please select a reseller to debit");
+      return;
+    }
+    const amount = parseFloat(debitAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Please enter a valid amount");
+      return;
+    }
+    if (debitModalWalletBalance != null && amount > debitModalWalletBalance) {
+      setError(`Amount cannot exceed available balance (${formatCurrency(debitModalWalletBalance)})`);
+      return;
+    }
+    setDebitLoading(true);
+    setError("");
+    try {
+      const result = await debitWallet(
+        resellerFilter,
+        amount,
+        debitDescription || "Wallet debit",
+        debitReference || null
+      );
+      if (result.success) {
+        setDebitAmount("");
+        setDebitDescription("");
+        setDebitReference("");
+        setDebitModalOpen(false);
+        fetchTransactions();
+        window.dispatchEvent(new CustomEvent("wallet-should-refresh"));
+        setSuccess("Wallet debited successfully");
+        setTimeout(() => setSuccess(""), 3000);
+      } else {
+        setError(result.message || "Failed to debit wallet");
+      }
+    } catch (err) {
+      console.error("Error debiting wallet:", err);
+      setError(err.message || "An error occurred while debiting wallet");
+    } finally {
+      setDebitLoading(false);
+    }
+  };
+
   return (
     <div className='card'>
       <div className='card-header d-flex flex-wrap align-items-center justify-content-between gap-3'>
@@ -178,6 +228,38 @@ const InvoiceListLayer = () => {
             <option value='CREDIT'>Credit</option>
             <option value='DEBIT'>Debit</option>
           </select>
+          {!isResellerView && resellerFilter !== "all" && (
+            <button
+              type='button'
+              className='btn btn-danger text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+              onClick={async () => {
+                setDebitAmount("");
+                setDebitDescription("");
+                setDebitReference("");
+                setError("");
+                setDebitModalWalletBalance(null);
+                setDebitModalWalletLoading(true);
+                setDebitModalOpen(true);
+                try {
+                  const result = await getMstWalletByResellerId(resellerFilter);
+                  if (result.success && result.data) {
+                    const balance = Number(String(result.data.balance).replace(/,/g, "")) || 0;
+                    setDebitModalWalletBalance(balance);
+                  } else {
+                    setDebitModalWalletBalance(null);
+                  }
+                } catch (err) {
+                  console.error("Error fetching wallet for debit modal:", err);
+                  setDebitModalWalletBalance(null);
+                } finally {
+                  setDebitModalWalletLoading(false);
+                }
+              }}
+            >
+              <Icon icon='ic:baseline-minus' className='icon text-xl line-height-1' />
+              Debit
+            </button>
+          )}
           {!isResellerView && (
             <button
               type='button'
@@ -198,6 +280,12 @@ const InvoiceListLayer = () => {
           <div className='alert alert-danger radius-8 mb-24' role='alert'>
             <Icon icon='material-symbols:error-outline' className='icon me-2' />
             {error}
+          </div>
+        )}
+        {success && (
+          <div className='alert alert-success radius-8 mb-24' role='alert'>
+            <Icon icon='material-symbols:check-circle-outline' className='icon me-2' />
+            {success}
           </div>
         )}
 
@@ -401,6 +489,130 @@ const InvoiceListLayer = () => {
         onClose={() => setWalletModalOpen(false)}
         onSuccess={fetchTransactions}
       />
+
+      {/* Debit Modal */}
+      {debitModalOpen && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">Debit Wallet</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setDebitModalOpen(false);
+                    setDebitAmount("");
+                    setDebitDescription("");
+                    setDebitReference("");
+                    setDebitModalWalletBalance(null);
+                    setDebitModalWalletLoading(false);
+                    setError("");
+                  }}
+                  disabled={debitLoading}
+                  aria-label="Close"
+                />
+              </div>
+              <div className="modal-body p-24">
+                {debitModalWalletLoading ? (
+                  <p className="text-muted text-sm mb-20">Loading balance...</p>
+                ) : debitModalWalletBalance === null ? (
+                  <p className="text-danger-600 text-sm mb-20">Unable to load balance. Debit is disabled.</p>
+                ) : (
+                  <p className="text-primary-light fw-medium text-sm mb-20">
+                    Available balance: {formatCurrency(debitModalWalletBalance)}
+                  </p>
+                )}
+                {error && (
+                  <div className="alert alert-danger radius-8 mb-20 py-12" role="alert">
+                    <Icon icon="material-symbols:error-outline" className="icon me-2" />
+                    <span className="text-sm">{error}</span>
+                  </div>
+                )}
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Amount (₹) <span className='text-danger-600'>*</span>
+                  </label>
+                  <input
+                    type='number'
+                    step='0.01'
+                    min='0'
+                    max={debitModalWalletBalance ?? undefined}
+                    className='form-control radius-8'
+                    placeholder='Enter amount to debit'
+                    value={debitAmount}
+                    onChange={(e) => {
+                      setDebitAmount(e.target.value);
+                      setError("");
+                    }}
+                    required
+                    disabled={debitLoading}
+                  />
+                </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Description
+                  </label>
+                  <textarea
+                    className='form-control radius-8'
+                    rows='3'
+                    placeholder='Enter transaction description (optional)'
+                    value={debitDescription}
+                    onChange={(e) => setDebitDescription(e.target.value)}
+                    disabled={debitLoading}
+                  />
+                </div>
+                <div className="mb-20">
+                  <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                    Reference
+                  </label>
+                  <input
+                    type='text'
+                    className='form-control radius-8'
+                    placeholder='Enter reference (optional)'
+                    value={debitReference}
+                    onChange={(e) => setDebitReference(e.target.value)}
+                    disabled={debitLoading}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary radius-8"
+                  onClick={() => {
+                    setDebitModalOpen(false);
+                    setDebitAmount("");
+                    setDebitDescription("");
+                    setDebitReference("");
+                    setDebitModalWalletBalance(null);
+                    setDebitModalWalletLoading(false);
+                    setError("");
+                  }}
+                  disabled={debitLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger radius-8"
+                  onClick={handleDebit}
+                  disabled={debitLoading || debitModalWalletLoading || debitModalWalletBalance === null}
+                >
+                  {debitLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Processing...
+                    </>
+                  ) : (
+                    "Debit Wallet"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

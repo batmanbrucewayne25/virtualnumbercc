@@ -970,7 +970,10 @@ const EditResellerLayer = () => {
                                 src={imagePreview}
                                 alt='Profile'
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                onError={(e) => { e.currentTarget.src = 'assets/images/user.png'; }}
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = '/assets/images/user.png';
+                                }}
                               />
                             ) : (
                               <Icon icon='solar:user-circle-bold' className='text-secondary-light' style={{ fontSize: 48 }} />
@@ -1036,7 +1039,10 @@ const EditResellerLayer = () => {
                                 src={logoPreview}
                                 alt='Logo'
                                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                onError={(e) => { e.currentTarget.src = 'assets/images/logo-icon.png'; }}
+                                onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = '/assets/images/logo-icon.png';
+                              }}
                               />
                             ) : (
                               <Icon icon='solar:gallery-bold' className='text-secondary-light' style={{ fontSize: 48 }} />
