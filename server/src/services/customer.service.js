@@ -790,16 +790,8 @@ export class CustomerService {
         if (amountToDebit <= 0) {
           throw new Error("Price per number is not set for this reseller");
         }
-        await this.debitResellerWallet(
-          effectiveResellerId,
-          amountToDebit,
-          "Customer approval - offline payment",
-          payment_reference_number || null,
-          customer_id || null,
-          null,
-        );
 
-        // Fetch an available number from VN API, activate it, and configure call forwarding
+        // ── Step 1: Acquire VN from external API BEFORE touching the wallet ──
         const availableRes = await VnApiClient.getAvailableNumbers();
         const availableNumbers = availableRes?.data || [];
         if (availableNumbers.length === 0) {
@@ -818,7 +810,7 @@ export class CustomerService {
           }
         }
 
-        // 3. Create virtual number record using the real number from the API
+        // ── Step 2: Persist VN record in DB BEFORE debiting wallet ───────────
         const virtualNumberRecord = await this.createVirtualNumber(
           customer_id,
           virtualNumber,
@@ -827,7 +819,17 @@ export class CustomerService {
           subscription_plan_id || null,
         );
 
-        // 4. Create transaction record
+        // ── Step 3: Debit wallet ONLY after VN is safely in DB ───────────────
+        await this.debitResellerWallet(
+          effectiveResellerId,
+          amountToDebit,
+          "Customer approval - offline payment",
+          payment_reference_number || null,
+          customer_id || null,
+          virtualNumberRecord?.id || null,
+        );
+
+        // ── Step 4: Record the transaction ───────────────────────────────────
         await this.createTransaction({
           customer_id: customer_id,
           reseller_id: effectiveResellerId,
@@ -1368,17 +1370,7 @@ export class CustomerService {
         );
       }
 
-      // Debit reseller wallet by price_per_number
-      await this.debitResellerWallet(
-        effectiveResellerId,
-        pricePerNumber,
-        `Renewal (offline) - ${vn.virtual_number}`,
-        payment_reference_number || null,
-        customer.id || null,
-        vn.id || null,
-      );
-
-      // Call VN API to reactivate the number
+      // ── Step 1: Reactivate on VN API (best-effort, non-fatal) ───────────────
       try {
         const reactivateRes = await VnApiClient.reactivateNumber(vn.virtual_number);
         console.log(`[renewVirtualNumberOffline] VN API reactivate response:`, reactivateRes);
@@ -1386,7 +1378,8 @@ export class CustomerService {
         console.warn(`[renewVirtualNumberOffline] VN API reactivate failed (non-fatal):`, vnApiErr.message);
       }
 
-      // Extend expiry date by plan's duration_days from current expiry
+      // ── Step 2: Extend expiry date in DB BEFORE debiting wallet ─────────────
+      // If the DB update fails, no money moves.
       const durationDays = subscriptionPlan.duration_days || 360;
       const currentExpiry = new Date(vn.expiry_date);
       const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
@@ -1409,6 +1402,16 @@ export class CustomerService {
         id: vn.id,
         expiry_date: newExpiryStr,
       });
+
+      // ── Step 3: Debit wallet ONLY after expiry is safely extended ────────────
+      await this.debitResellerWallet(
+        effectiveResellerId,
+        pricePerNumber,
+        `Renewal (offline) - ${vn.virtual_number}`,
+        payment_reference_number || null,
+        customer.id || null,
+        vn.id || null,
+      );
 
       console.log(
         `[renewVirtualNumberOffline] Extended VN ${vn.virtual_number} expiry: ${vn.expiry_date} -> ${newExpiryStr} (+${durationDays} days)`,
@@ -1613,15 +1616,9 @@ export class CustomerService {
 
       if (payment_method === "offline") {
         const amountToDebit = pricePerNumber;
-        await this.debitResellerWallet(
-          effectiveResellerId,
-          amountToDebit,
-          "Add virtual number - offline payment",
-          payment_reference_number || null,
-          customer_id || null,
-          null,
-        );
 
+        // ── Step 1: Acquire VN from external API BEFORE touching the wallet ──
+        // This ensures we never debit money if no VN is available.
         const availableRes = await VnApiClient.getAvailableNumbers();
         const availableNumbers = availableRes?.data || [];
         if (availableNumbers.length === 0) {
@@ -1641,6 +1638,9 @@ export class CustomerService {
           }
         }
 
+        // ── Step 2: Persist VN record in DB ──────────────────────────────────
+        // Do this before debiting so if the DB insert fails, the wallet is untouched.
+        // If this throws (e.g. duplicate key), the error propagates and no money moves.
         const virtualNumberRecord = await this.createVirtualNumber(
           customer_id,
           virtualNumber,
@@ -1649,6 +1649,18 @@ export class CustomerService {
           subscription_plan_id || null,
         );
 
+        // ── Step 3: Debit wallet ONLY after VN is safely in DB ───────────────
+        // At this point the VN exists; debiting is safe.
+        await this.debitResellerWallet(
+          effectiveResellerId,
+          amountToDebit,
+          "Add virtual number - offline payment",
+          payment_reference_number || null,
+          customer_id || null,
+          virtualNumberRecord?.id || null,
+        );
+
+        // ── Step 4: Record the transaction ───────────────────────────────────
         await this.createTransaction({
           customer_id: customer_id,
           reseller_id: effectiveResellerId,
@@ -1660,8 +1672,13 @@ export class CustomerService {
           status: "success",
           reference_number: payment_reference_number || null,
           payment_date: payment_date || new Date().toISOString().split("T")[0],
+          notes: {
+            transaction_type: "add_virtual_number",
+            call_forwarding_number: forwardNumber || null,
+          },
         });
 
+        // ── Step 5: Send email (best-effort, never blocks success) ───────────
         const resellerSmtpConfig =
           await getResellerSmtpConfig(effectiveResellerId);
 
@@ -1712,6 +1729,8 @@ export class CustomerService {
             reseller_id: effectiveResellerId,
             subscription_plan_id: subscription_plan_id,
             plan_name: subscriptionPlan.plan_name,
+            transaction_type: "add_virtual_number",
+            call_forwarding_number: forwardNumber || null,
           },
         });
 
@@ -1759,6 +1778,8 @@ export class CustomerService {
                   subscription_plan_id: subscription_plan_id,
                   razorpay_plan_id: subscriptionPlan.razorpay_plan_id,
                   reseller_id: effectiveResellerId,
+                  transaction_type: "add_virtual_number",
+                  call_forwarding_number: forwardNumber || null,
                 },
               },
             );

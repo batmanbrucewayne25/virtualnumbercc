@@ -178,6 +178,10 @@ const WalletLayer = () => {
       setError("Please enter a valid amount");
       return;
     }
+    if (!requestReference.trim()) {
+      setError("Reference is required");
+      return;
+    }
     setRequestSubmitting(true);
     setError("");
     try {
@@ -513,14 +517,15 @@ const WalletLayer = () => {
                   </div>
                   <div className="mb-20">
                     <label className="form-label fw-semibold text-primary-light text-sm mb-8">
-                      Reference
+                      Reference <span className="text-danger-600">*</span>
                     </label>
                     <input
                       type="text"
                       className="form-control radius-8"
-                      placeholder="Enter reference (optional)"
+                      placeholder="Enter reference"
                       value={requestReference}
                       onChange={(e) => setRequestReference(e.target.value)}
+                      required
                       disabled={requestSubmitting}
                     />
                   </div>

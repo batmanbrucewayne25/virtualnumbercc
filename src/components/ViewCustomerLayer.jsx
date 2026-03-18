@@ -12,6 +12,8 @@ import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
 import AddVirtualNumberModal from "./AddVirtualNumberModal";
 import AlertModal from "./AlertModal";
+import SignatureImage from "./SignatureImage";
+import { getSignatureImageAbsoluteUrl } from "@/utils/signatureImageUrl";
 
 // Helper function to format address object into readable string
 const formatAddress = (address) => {
@@ -739,35 +741,18 @@ const ViewCustomerLayer = () => {
                 <div className="d-flex flex-column gap-2">
                   {customer.signatureImage ? (
                     <div>
-                      {(() => {
-                        const raw = customer.signatureImage;
-                        const isFullUrl = raw && (raw.startsWith('data:') || raw.startsWith('http') || raw.startsWith('/'));
-                        const IMAGE_UPLOAD_PATH = import.meta.env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
-                        const signatureSrc = isFullUrl ? raw : `${IMAGE_UPLOAD_PATH}/signatures/${raw}`;
-                        return (
-                          <img 
-                            src={signatureSrc} 
-                            alt="Digital Signature" 
-                            className="rounded border"
-                            style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
-                            onError={(e) => {
-                              console.error('Error loading signature image:', e);
-                              e.target.style.display = 'none';
-                              const errorDiv = document.createElement('div');
-                              errorDiv.className = 'alert alert-warning';
-                              errorDiv.textContent = 'Failed to load signature image';
-                              e.target.parentNode?.appendChild(errorDiv);
-                            }}
-                            onClick={() => {
-                              const newWindow = window.open();
-                              if (newWindow) {
-                                newWindow.document.write(`<img src="${signatureSrc}" style="max-width: 100%; height: auto; background: white;" />`);
-                              }
-                            }}
-                            title="Click to view full size"
-                          />
-                        );
-                      })()}
+                      <SignatureImage
+                        signatureValue={customer.signatureImage}
+                        onClick={() => {
+                          const url = getSignatureImageAbsoluteUrl(customer.signatureImage);
+                          if (url) {
+                            const newWindow = window.open();
+                            if (newWindow) {
+                              newWindow.document.write(`<img src="${url}" style="max-width: 100%; height: auto; background: white;" />`);
+                            }
+                          }
+                        }}
+                      />
                     </div>
                   ) : customer.signature_hash ? (
                     <div>
@@ -832,6 +817,8 @@ const ViewCustomerLayer = () => {
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
                 onClick={() => setShowAddVirtualNumberModal(true)}
+                disabled={customer.approval !== "approved"}
+                title={customer.approval !== "approved" ? "Approve the customer first to assign virtual numbers" : ""}
               >
                 <Icon icon="ic:baseline-plus" className="icon text-xl line-height-1" />
                 Add Virtual Number

@@ -11,7 +11,7 @@ const IMAGE_UPLOAD_BASE_DIR = process.env.IMAGE_UPLOAD_PATH || path.join(__dirna
 
 // Create uploads directories if they don't exist
 const profileImagesDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'profile-images');
-const logosDir = path.join(__dirname, '../../uploads/logos');
+const logosDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'logos');
 const signaturesDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'signatures');
 if (!fs.existsSync(profileImagesDir)) {
   fs.mkdirSync(profileImagesDir, { recursive: true });

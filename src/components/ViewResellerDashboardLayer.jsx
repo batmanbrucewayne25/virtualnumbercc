@@ -15,12 +15,13 @@ import { getNumberLimitsByResellerId } from "@/hasura/mutations/numberLimits";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
 import AlertModal from "./AlertModal";
+import SignatureImage from "./SignatureImage";
+import { getSignatureImageAbsoluteUrl } from "@/utils/signatureImageUrl";
 
-const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
   const apiUrl = getApiBaseUrl();
   return apiUrl.replace('/api', '/uploads');
 })();
-const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH;
 
 // Helper function to format address object into readable string
 const formatCustomerAddress = (address) => {
@@ -482,8 +483,7 @@ const ViewResellerDashboardLayer = () => {
                           </label>
                           <div>
                             <img
-                              src={ `${IMAGE_UPLOAD_PATH}/profile-images/${reseller.profile_image}`
-                              }
+                              src={`${IMAGE_UPLOAD_PATH}/profile-images/${reseller.profile_image}`}
                               alt="Profile"
                               className="rounded"
                               style={{
@@ -502,20 +502,28 @@ const ViewResellerDashboardLayer = () => {
 {reseller?.signatureImage && (
                         <div className="mb-16">
                           <label className="form-label text-xs text-secondary-light mb-4">
-                           Signature
+                            Signature
                           </label>
                           <div>
-                            <img
-                              src={ `${IMAGE_UPLOAD_PATH}/signatures/${reseller.signatureImage}`
-                              }
-                              alt="Profile"
-                              className="rounded"
+                            <SignatureImage
+                              signatureValue={reseller.signatureImage}
                               style={{
-                                maxWidth: "150px",
-                                maxHeight: "150px",
-                                objectFit: "cover",
+                                maxWidth: "200px",
+                                maxHeight: "120px",
+                                objectFit: "contain",
                                 cursor: "pointer",
-                              }}  
+                                display: "block",
+                                backgroundColor: "#fff",
+                              }}
+                              onClick={() => {
+                                const url = getSignatureImageAbsoluteUrl(reseller.signatureImage);
+                                if (url) {
+                                  const newWindow = window.open();
+                                  if (newWindow) {
+                                    newWindow.document.write(`<img src="${url}" style="max-width: 100%; height: auto; background: white;" />`);
+                                  }
+                                }
+                              }}
                             />
                           </div>
                         </div>
@@ -544,7 +552,7 @@ const ViewResellerDashboardLayer = () => {
                             reseller.logo.startsWith("data:") ||
                             reseller.logo.startsWith("http")
                               ? reseller.logo
-                              : `${IMAGE_BASE_PATH}/logos/${reseller.logo}`
+                              : `${(IMAGE_UPLOAD_PATH || "").replace(/\/$/, "")}/logos/${reseller.logo.replace(/^\/+/, "")}`
                           }
                           alt="Logo"
                           className="rounded"
@@ -562,7 +570,7 @@ const ViewResellerDashboardLayer = () => {
                               reseller.logo.startsWith("data:") ||
                               reseller.logo.startsWith("http")
                                 ? reseller.logo
-                                : `${IMAGE_BASE_PATH}/logos/${reseller.logo}`;
+                                : `${(IMAGE_UPLOAD_PATH || "").replace(/\/$/, "")}/logos/${reseller.logo.replace(/^\/+/, "")}`;
                             const newWindow = window.open();
                             if (newWindow) {
                               newWindow.document.write(
@@ -955,7 +963,7 @@ const ViewResellerDashboardLayer = () => {
                         Validity Days
                       </label>
                       <p className="text-md fw-medium text-primary-light mb-0">
-                        {validity.validity_days - 1 || "-"}
+                        {validity.validity_days ?? "-"}
                       </p>
                     </div>
 

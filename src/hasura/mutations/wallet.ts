@@ -770,7 +770,7 @@ export const creditWallet = async (
         const validityStartDate = now.toISOString();
         const validityEndDate = new Date(validity_date);
         validityEndDate.setHours(23, 59, 59, 999); // Set to end of day
-        const validityDays = Math.ceil((validityEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const validityDays = Math.floor((validityEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
         if (validityDays > 0) {
           // Upsert validity

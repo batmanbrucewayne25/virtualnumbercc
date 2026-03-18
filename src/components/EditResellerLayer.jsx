@@ -6,6 +6,7 @@ import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId, upsertMstResellerDomain } from "@/hasura/mutations/resellerDomain";
 import { getNumberLimitsByResellerId, upsertNumberLimits } from "@/hasura/mutations/numberLimits";
 import { getAuthToken, getUserData } from "@/utils/auth";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 import SuccessModal from "./SuccessModal";
 
 const EditResellerLayer = () => {
@@ -51,8 +52,7 @@ const EditResellerLayer = () => {
   const [domainData, setDomainData] = useState(null);
 
   // Image/Logo upload state
-  const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads';
-  const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+  const IMAGE_UPLOAD_PATH = (import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads').replace(/\/+$/, '');
   const [imagePreview, setImagePreview] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
@@ -203,7 +203,7 @@ const EditResellerLayer = () => {
             setImagePreview(`${IMAGE_UPLOAD_PATH}/profile-images/${result.data.profile_image}`);
           }
           if (result.data.logo) {
-            setLogoPreview(`${IMAGE_BASE_PATH}/logos/${result.data.logo}`);
+            setLogoPreview(`${IMAGE_UPLOAD_PATH}/logos/${result.data.logo}`);
           }
         } else {
           setError(result.message || "Reseller not found");
@@ -430,11 +430,11 @@ const EditResellerLayer = () => {
     setError("");
     try {
       const token = getAuthToken();
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+      const apiBase = getApiBaseUrl().replace(/\/+$/, '');
       const uploadData = new FormData();
       uploadData.append('profile_image', file);
 
-      const response = await fetch(`${API_BASE_URL}upload/profile-image?resellerId=${resellerId}`, {
+      const response = await fetch(`${apiBase}/upload/profile-image?resellerId=${resellerId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: uploadData,
@@ -442,13 +442,8 @@ const EditResellerLayer = () => {
       const result = await response.json();
       if (result.success) {
         const filename = result.data.filename;
-        const imageUrl = `${IMAGE_UPLOAD_PATH}/${filename}`;
-        setImagePreview(imageUrl);
-        // Save filename to formData so it's included in the form submission
-        setFormData((prev) => ({
-          ...prev,
-          profile_image: filename,
-        }));
+        setImagePreview(`${IMAGE_UPLOAD_PATH}/profile-images/${filename}`);
+        setFormData((prev) => ({ ...prev, profile_image: filename }));
         setSelectedImageFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
         setSuccess(true);
@@ -499,11 +494,11 @@ const EditResellerLayer = () => {
     setError("");
     try {
       const token = getAuthToken();
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+      const apiBase = getApiBaseUrl().replace(/\/+$/, '');
       const uploadData = new FormData();
       uploadData.append('logo', file);
 
-      const response = await fetch(`${API_BASE_URL}upload/logo?resellerId=${resellerId}`, {
+      const response = await fetch(`${apiBase}/upload/logo?resellerId=${resellerId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: uploadData,
@@ -511,13 +506,8 @@ const EditResellerLayer = () => {
       const result = await response.json();
       if (result.success) {
         const filename = result.data.filename;
-        const logoUrl = `${IMAGE_BASE_PATH}/logos/${filename}`;
-        setLogoPreview(logoUrl);
-        // Save filename to formData so it's included in the form submission
-        setFormData((prev) => ({
-          ...prev,
-          logo: filename,
-        }));
+        setLogoPreview(`${IMAGE_UPLOAD_PATH}/logos/${filename}`);
+        setFormData((prev) => ({ ...prev, logo: filename }));
         setSelectedLogoFile(null);
         if (logoInputRef.current) logoInputRef.current.value = "";
         setSuccess(true);

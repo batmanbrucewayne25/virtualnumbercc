@@ -3,8 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { getMstResellerById, updateMstResellerProfileImage, updateMstResellerLogo, updateMstReseller } from "@/hasura/mutations/reseller";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
-const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || 'http://localhost:3001/uploads';
-const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
+import { getApiBaseUrl } from "@/utils/apiUrl";
+const IMAGE_UPLOAD_PATH = (import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads').replace(/\/+$/, '');
 
 const ViewProfileLayer = () => {
   const [fetching, setFetching] = useState(true);
@@ -114,11 +114,10 @@ const ViewProfileLayer = () => {
 
         // Set profile image if available
         if (result.data.profile_image) {
-          const imageUrl = result.data.profile_image.startsWith('http') 
-            ? result.data.profile_image 
-            : `${IMAGE_UPLOAD_PATH}/${result.data.profile_image}`;
-        
-            setImagePreview(imageUrl);
+          const imageUrl = result.data.profile_image.startsWith('http')
+            ? result.data.profile_image
+            : `${IMAGE_UPLOAD_PATH}/profile-images/${result.data.profile_image}`;
+          setImagePreview(imageUrl);
           setOriginalImageUrl(imageUrl);
         } else {
           setOriginalImageUrl("assets/images/user-grid/user-grid-img13.png");
@@ -126,9 +125,9 @@ const ViewProfileLayer = () => {
 
         // Set logo if available
         if (result.data.logo) {
-          const logoUrl = result.data.logo.startsWith('http') 
-            ? result.data.logo 
-            : `${IMAGE_BASE_PATH}/logos/${result.data.logo}`;
+          const logoUrl = result.data.logo.startsWith('http')
+            ? result.data.logo
+            : `${IMAGE_UPLOAD_PATH}/logos/${result.data.logo}`;
           setLogoPreview(logoUrl);
           setOriginalLogoUrl(logoUrl);
         } else {
@@ -204,19 +203,15 @@ const ViewProfileLayer = () => {
 
     try {
       const token = getAuthToken();
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+      const apiBase = getApiBaseUrl().replace(/\/+$/, '');
 
-      // Create FormData
-      const formData = new FormData();
-      formData.append('profile_image', file);
+      const uploadFormData = new FormData();
+      uploadFormData.append('profile_image', file);
 
-      // Upload image
-      const response = await fetch(`${API_BASE_URL}upload/profile-image`, {
+      const response = await fetch(`${apiBase}/upload/profile-image`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: uploadFormData,
       });
 
       const result = await response.json();
@@ -225,13 +220,12 @@ const ViewProfileLayer = () => {
         setSuccess(true);
         setSuccessMessage("Profile image updated successfully!");
         setError("");
-        // Update image preview with the new URL (filename only from backend)
-        const imageUrl = `${IMAGE_UPLOAD_PATH}/${result.data.filename}`;
+        const imageUrl = `${IMAGE_UPLOAD_PATH}/profile-images/${result.data.filename}`;
         setImagePreview(imageUrl);
-        
-        // Refresh reseller data
+        setOriginalImageUrl(imageUrl);
+
         await fetchResellerData(resellerId);
-        
+
         setTimeout(() => {
           setSuccess(false);
           setSuccessMessage("");
@@ -244,10 +238,7 @@ const ViewProfileLayer = () => {
       setError(err.message || "An error occurred while uploading image");
     } finally {
       setUploadingImage(false);
-      // Reset file input and selected file
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
       setSelectedFile(null);
     }
   };
@@ -296,19 +287,15 @@ const ViewProfileLayer = () => {
 
     try {
       const token = getAuthToken();
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+      const apiBase = getApiBaseUrl().replace(/\/+$/, '');
 
-      // Create FormData
-      const formData = new FormData();
-      formData.append('logo', file);
+      const uploadFormData = new FormData();
+      uploadFormData.append('logo', file);
 
-      // Upload logo
-      const response = await fetch(`${API_BASE_URL}upload/logo`, {
+      const response = await fetch(`${apiBase}/upload/logo`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: uploadFormData,
       });
 
       const result = await response.json();
@@ -317,14 +304,12 @@ const ViewProfileLayer = () => {
         setSuccess(true);
         setSuccessMessage("Logo updated successfully!");
         setError("");
-        // Update logo preview with the new URL (filename only from backend)
-        const logoUrl = `${IMAGE_BASE_PATH}/logos/${result.data.filename}`;
+        const logoUrl = `${IMAGE_UPLOAD_PATH}/logos/${result.data.filename}`;
         setLogoPreview(logoUrl);
         setOriginalLogoUrl(logoUrl);
-        
-        // Refresh reseller data
+
         await fetchResellerData(resellerId);
-        
+
         setTimeout(() => {
           setSuccess(false);
           setSuccessMessage("");
@@ -337,10 +322,7 @@ const ViewProfileLayer = () => {
       setError(err.message || "An error occurred while uploading logo");
     } finally {
       setUploadingLogo(false);
-      // Reset file input and selected file
-      if (logoInputRef.current) {
-        logoInputRef.current.value = "";
-      }
+      if (logoInputRef.current) logoInputRef.current.value = "";
       setSelectedLogoFile(null);
     }
   };

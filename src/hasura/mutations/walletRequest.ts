@@ -32,6 +32,10 @@ export const insertWalletRequest = async (
   if (isNaN(amount) || amount <= 0) {
     return { success: false, message: "Amount must be greater than 0." };
   }
+  const reference = payload.reference?.trim();
+  if (!reference) {
+    return { success: false, message: "Reference is required." };
+  }
   const MUTATION = `mutation InsertWalletRequest(
     $reseller_id: uuid!
     $amount: numeric!
@@ -60,8 +64,8 @@ export const insertWalletRequest = async (
     const result = await graphqlRequest(MUTATION, {
       reseller_id: resellerId,
       amount,
-      reference: payload.reference || null,
-      description: payload.description || null,
+      reference,
+      description: payload.description?.trim() || null,
     });
     if (result?.errors) {
       return {

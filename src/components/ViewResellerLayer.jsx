@@ -7,12 +7,13 @@ import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDom
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import { getAuthToken, getUserData } from "@/utils/auth";
 import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
+import SignatureImage from "./SignatureImage";
+import { getSignatureImageAbsoluteUrl } from "@/utils/signatureImageUrl";
 
-const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || (() => {
+const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH || (() => {
   const apiUrl = getApiBaseUrl();
   return apiUrl.replace('/api', '/uploads');
 })();
-const IMAGE_UPLOAD_PATH = import.meta.env.VITE_IMAGE_UPLOAD_PATH;
 
 const ViewResellerLayer = () => {
   const { id } = useParams();
@@ -515,40 +516,19 @@ const ViewResellerLayer = () => {
                   <div className='mb-16'>
                     <label className='form-label text-xs text-secondary-light mb-4'>Digital Signature</label>
                     <div>
-                      {(() => {
-                        const signature = reseller.signatureImage || '';
-                        if (!signature) return <p className='text-sm text-secondary-light'>No signature available</p>;
-                        
-                        const imageSrc = signature.startsWith('data:') 
-                          ? signature 
-                          : (signature.startsWith('http://') || signature.startsWith('https://'))
-                            ? signature
-                            : `${IMAGE_UPLOAD_PATH}/signatures/${signature}`;
-                        
-                        return (
-                          <img 
-                            src={imageSrc}
-                            alt="Digital Signature" 
-                            className="rounded border"
-                            style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
-                            onError={(e) => {
-                              console.error('Error loading signature image:', e);
-                              e.target.style.display = 'none';
-                              const errorDiv = document.createElement('div');
-                              errorDiv.className = 'alert alert-warning';
-                              errorDiv.textContent = 'Failed to load signature image';
-                              e.target.parentNode?.appendChild(errorDiv);
-                            }}
-                            onClick={() => {
-                              const newWindow = window.open();
-                              if (newWindow) {
-                                newWindow.document.write(`<img src="${imageSrc}" style="max-width: 100%; height: auto; background: white;" />`);
-                              }
-                            }}
-                            title="Click to view full size"
-                          />
-                        );
-                      })()}
+                      <SignatureImage
+                        signatureValue={reseller.signatureImage}
+                        style={{ maxWidth: '200px', maxHeight: '120px', objectFit: 'contain', cursor: 'pointer', display: 'block', backgroundColor: '#fff' }}
+                        onClick={() => {
+                          const url = getSignatureImageAbsoluteUrl(reseller.signatureImage);
+                          if (url) {
+                            const newWindow = window.open();
+                            if (newWindow) {
+                              newWindow.document.write(`<img src="${url}" style="max-width: 100%; height: auto; background: white;" />`);
+                            }
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 )}
@@ -568,7 +548,7 @@ const ViewResellerLayer = () => {
                       <img 
                         src={reseller.logo.startsWith('data:') || reseller.logo.startsWith('http') 
                           ? reseller.logo 
-                          : `${IMAGE_BASE_PATH}/logos/${reseller.logo}`} 
+                          : `${IMAGE_UPLOAD_PATH.replace(/\/$/, '')}/logos/${reseller.logo.replace(/^\/+/, '')}`} 
                         alt="Logo" 
                         className="rounded"
                         style={{ maxWidth: '200px', maxHeight: '100px', objectFit: 'contain', cursor: 'pointer' }}
@@ -578,7 +558,7 @@ const ViewResellerLayer = () => {
                         onClick={() => {
                           const img = reseller.logo.startsWith('data:') || reseller.logo.startsWith('http') 
                             ? reseller.logo 
-                            : `${IMAGE_BASE_PATH}/logos/${reseller.logo}`;
+                            : `${IMAGE_UPLOAD_PATH.replace(/\/$/, '')}/logos/${reseller.logo.replace(/^\/+/, '')}`;
                           const newWindow = window.open();
                           if (newWindow) {
                             newWindow.document.write(`<img src="${img}" style="max-width: 100%; height: auto;" />`);

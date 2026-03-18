@@ -61,15 +61,18 @@ async function vnFetch(method, path, body = null) {
 let mockCounter = 0;
 
 function mockAvailableNumbers() {
+  // Use timestamp + random to ensure unique numbers across server restarts
+  const ts = Date.now();
+  const rand = Math.floor(Math.random() * 9000) + 1000;
+  const base = parseInt(String(ts).slice(-7)) * 10 + rand;
   mockCounter++;
-  const base = 9876540000 + mockCounter;
   return {
     status: 200,
     message: "Available numbers fetched successfully",
     data: [
-      { id: `mock-id-${mockCounter}-1`, number: `+91${base}`, region: "India", rate: 500.0 },
-      { id: `mock-id-${mockCounter}-2`, number: `+91${base + 1}`, region: "India", rate: 500.0 },
-      { id: `mock-id-${mockCounter}-3`, number: `+91${base + 2}`, region: "India", rate: 500.0 },
+      { id: `mock-id-${ts}-1`, number: `+91${6000000000 + base}`, region: "India", rate: 500.0 },
+      { id: `mock-id-${ts}-2`, number: `+91${6000000000 + base + 1}`, region: "India", rate: 500.0 },
+      { id: `mock-id-${ts}-3`, number: `+91${6000000000 + base + 2}`, region: "India", rate: 500.0 },
     ],
   };
 }

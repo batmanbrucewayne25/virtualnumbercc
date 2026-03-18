@@ -184,15 +184,15 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
               </div>
 
               {error && (
-                <div className="alert alert-danger radius-8 mb-24" role="alert">
-                  <Icon icon="material-symbols:error-outline" className="icon me-2" />
+                <div className="alert alert-danger radius-8 mb-24 d-flex align-items-center" role="alert">
+                  <Icon icon="material-symbols:error-outline" className="icon me-2 flex-shrink-0" />
                   {error}
                 </div>
               )}
 
               {success && (
-                <div className="alert alert-success radius-8 mb-24" role="alert">
-                  <Icon icon="material-symbols:check-circle-outline" className="icon me-2" />
+                <div className="alert alert-success radius-8 mb-24 d-flex align-items-center" role="alert">
+                  <Icon icon="material-symbols:check-circle-outline" className="icon me-2 flex-shrink-0" />
                   {formData.payment_method === "online"
                     ? "Payment link sent to customer email!"
                     : "Virtual number added successfully!"}
@@ -239,8 +239,8 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
                         <p className="text-sm text-muted mt-2">Loading plans...</p>
                       </div>
                     ) : subscriptionPlans.length === 0 ? (
-                      <div className="alert alert-warning radius-8">
-                        <Icon icon="material-symbols:warning-outline" className="icon me-2" />
+                      <div className="alert alert-warning radius-8 d-flex align-items-center">
+                        <Icon icon="material-symbols:warning-outline" className="icon me-2 flex-shrink-0" />
                         No active subscription plans found.
                       </div>
                     ) : (
@@ -369,8 +369,8 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
                         <p className="text-sm text-muted mt-2">Loading plans...</p>
                       </div>
                     ) : subscriptionPlans.length === 0 ? (
-                      <div className="alert alert-warning radius-8">
-                        <Icon icon="material-symbols:warning-outline" className="icon me-2" />
+                      <div className="alert alert-warning radius-8 d-flex align-items-center">
+                        <Icon icon="material-symbols:warning-outline" className="icon me-2 flex-shrink-0" />
                         No active subscription plans found. Please create a subscription plan first.
                       </div>
                     ) : (
@@ -429,17 +429,17 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
               </button>
               <button
                 type="submit"
-                className="btn btn-primary radius-8"
+                className="btn btn-primary radius-8 d-flex align-items-center"
                 disabled={loading || !formData.payment_method || (formData.payment_method === "online" && subscriptionPlans.length === 0)}
               >
                 {loading ? (
                   <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    <span className="spinner-border spinner-border-sm me-2 flex-shrink-0" role="status" aria-hidden="true"></span>
                     {formData.payment_method === "online" ? "Sending..." : "Adding..."}
                   </>
                 ) : (
                   <>
-                    <Icon icon="ic:baseline-plus" className="icon me-2" />
+                    <Icon icon="ic:baseline-plus" className="icon me-2 flex-shrink-0" />
                     {formData.payment_method === "online" ? "Send Payment Link" : "Add Virtual Number"}
                   </>
                 )}

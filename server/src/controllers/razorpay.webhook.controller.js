@@ -297,7 +297,7 @@ export const getWebhookUrl = asyncHandler(async (req, res) => {
         "2. Go to Settings → Webhooks",
         '3. Click "Add New Webhook"',
         "4. Paste the webhook URL above",
-        "5. Select events: payment.captured, payment.failed, payment.authorized, refund.created",
+        "5. Select events: payment.captured, payment.failed, payment.authorized, payment_link.paid, refund.created",
         "6. Copy the webhook secret and save it in your configuration",
         '7. Click "Create Webhook"',
       ],
