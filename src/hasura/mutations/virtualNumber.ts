@@ -1,10 +1,31 @@
 import { graphqlRequest } from "@/hasura";
+import { getAuthSession, isAdminSession } from "@/utils/auth";
 
 /**
- * Get all virtual numbers (for admin) with customer and reseller details
+ * Get all virtual numbers.
+ * - Resellers: always scoped to their own reseller_id (enforced here, not just in the caller).
+ * - Admins: may pass an optional resellerId filter; omitting it returns all records.
+ * Passing a resellerId that doesn't match the session reseller_id is silently overridden
+ * to prevent horizontal privilege escalation.
  */
 export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) => {
-  const resellerId = filters?.resellerId;
+  const session = getAuthSession();
+  const isAdmin = isAdminSession();
+
+  // Determine the effective reseller_id to filter by
+  let resellerId: string | undefined;
+
+  if (!isAdmin) {
+    // Non-admin (reseller): ALWAYS scope to their own ID from the session
+    const sessionId = session?.id;
+    if (!sessionId) {
+      return { success: false, message: "Unauthorized: session not found", data: [] };
+    }
+    resellerId = sessionId;
+  } else {
+    // Admin: respect the caller-supplied filter (may be undefined for "all")
+    resellerId = filters?.resellerId;
+  }
 
   const vnFields = `
     id

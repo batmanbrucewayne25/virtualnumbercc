@@ -11,6 +11,7 @@ import Step4 from "./steps/Step4";
 import Step5 from "./steps/Step5";
 import Step6 from "./steps/Step6";
 import Step7 from "./steps/Step7";
+import Step8 from "./steps/Step8";
 
 interface SignUpLayerProps {
   skipOtpVerification?: boolean;
@@ -20,8 +21,12 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [step, setStep] = useState<number>(1);
-  const [email, setEmail] = useState<string>("");
-  const [phone, setPhone] = useState<string>("");
+  // Initialise email & phone synchronously from localStorage so that when
+  // Step 3 (OtpVerify) mounts the phone prop is already populated and the
+  // auto-send fires immediately on the first render — not on a second render
+  // after a useEffect populates the value.
+  const [email, setEmail] = useState<string>(() => localStorage.getItem("signupEmail") ?? "");
+  const [phone, setPhone] = useState<string>(() => localStorage.getItem("signupPhone") ?? "");
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -48,8 +53,8 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
       // This will validate the requested step against the user's current_step
       fetchUserData(emailFromStorage, requestedStep);
     } else if (requestedStep) {
-      // If step param exists but no email, validate step is between 1-7
-      if (requestedStep >= 1 && requestedStep <= 7) {
+      // If step param exists but no email, validate step is between 1-8
+      if (requestedStep >= 1 && requestedStep <= 8) {
         setStep(requestedStep);
       } else {
         // Invalid step, default to 1
@@ -105,9 +110,11 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
         setEmail(userEmail);
 
         if (user.signup_completed) {
-          setShowSuccess(true);
-          setStep(7);
-          setSearchParams({ step: "7" });
+          // signup_completed means Step 7 data is saved — land on Step 8 (review screen)
+          // so the reseller can review and press "Confirm & Submit" themselves.
+          // Never auto-fire the success popup; only the button press in Step 8 does that.
+          setStep(8);
+          setSearchParams({ step: "8" });
         } else {
           // Get current_step from database
           const currentStep = user.current_step || 0;
@@ -144,28 +151,46 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
     }
   };
 
-  const handleStepChange = (newStep: number) => {
-    // If userData exists, enforce step navigation restrictions
-    if (userData && !userData.signup_completed) {
-      const maxAllowedStep = (userData.current_step || 0) + 1;
-      
-      // Allow navigation to steps 1 to maxAllowedStep (completed steps + next step)
+  /**
+   * Re-fetch the reseller record from the DB and update local userData state.
+   * Returns the fresh user object so callers can use it immediately (avoids
+   * stale-closure issues with the userData state variable).
+   */
+  const refreshUserData = async (userEmail: string): Promise<any | null> => {
+    try {
+      const result = await getMstResellerByEmail({ email: userEmail });
+      const fresh = result?.mst_reseller?.[0] ?? null;
+      if (fresh) setUserData(fresh);
+      return fresh;
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * Navigate to a new step.
+   * Accepts an optional `latestUser` param — the freshly fetched user record —
+   * so we always validate against the DB value, not stale React state.
+   */
+  const handleStepChange = (newStep: number, latestUser?: any) => {
+    const user = latestUser ?? userData;
+
+    if (user && !user.signup_completed) {
+      const maxAllowedStep = (user.current_step || 0) + 1;
+
       if (newStep >= 1 && newStep <= maxAllowedStep) {
         setStep(newStep);
-        // Update URL parameter when step changes
         setSearchParams({ step: newStep.toString() });
       } else if (newStep > maxAllowedStep) {
-        // If trying to skip ahead, redirect to next step
-        console.log(`⚠️  Step ${newStep} not allowed. Redirecting to step ${maxAllowedStep}`);
+        console.log(`⚠️  Step ${newStep} not allowed (max ${maxAllowedStep}). Redirecting.`);
         setStep(maxAllowedStep);
         setSearchParams({ step: maxAllowedStep.toString() });
       } else {
-        // Invalid step, stay at current or go to 1
         setStep(1);
         setSearchParams({ step: "1" });
       }
     } else {
-      // No userData or signup completed, allow free navigation
+      // No userData or signup_completed — allow free navigation (Step 8 confirm, etc.)
       setStep(newStep);
       setSearchParams({ step: newStep.toString() });
     }
@@ -199,7 +224,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
       }
     } else if (requestedStep !== null && requestedStep !== step) {
       // No userData or signup completed, sync step with URL param
-      if (requestedStep >= 1 && requestedStep <= 7) {
+      if (requestedStep >= 1 && requestedStep <= 8) {
         setStep(requestedStep);
       }
     }
@@ -215,7 +240,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
 
   if (loading) {
     return (
-      <section className="auth bg-base d-flex flex-wrap">
+      <section className="auth bg-base d-flex flex-wrap" style={{ height: "100vh", overflow: "hidden" }}>
         <div className="auth-right py-32 px-24 d-flex flex-column justify-content-center w-100">
           <div className="max-w-464-px mx-auto w-100 text-center">
             <p>Loading...</p>
@@ -226,16 +251,25 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   }
 
   return (
-    <section className="auth bg-base d-flex flex-wrap">
-      {/* LEFT (UNCHANGED) */}
-      <div className="auth-left d-lg-block d-none">
+    <section
+      className="auth bg-base d-flex flex-wrap"
+      style={{ height: "100vh", overflow: "hidden" }}
+    >
+      {/* LEFT — fixed, never scrolls */}
+      <div
+        className="auth-left d-lg-block d-none"
+        style={{ position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}
+      >
         <div className="d-flex align-items-center flex-column h-100 justify-content-center">
           <img src="assets/images/own/login.svg" alt="Signup" />
         </div>
       </div>
 
-      {/* RIGHT */}
-      <div className="auth-right py-32 px-24 d-flex flex-column justify-content-center">
+      {/* RIGHT — independently scrollable */}
+      <div
+        className="auth-right py-32 px-24 d-flex flex-column"
+        style={{ height: "100vh", overflowY: "auto", justifyContent: "flex-start" }}
+      >
         <div className="max-w-464-px mx-auto w-100">
           {/* LOGO */}
           <Link to="/index" className="mb-40 max-w-290-px d-block">
@@ -244,7 +278,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
 
           {/* STEP INDICATOR */}
           <p className="text-sm text-secondary-light mb-16">
-            Step {step} of 7
+            Step {step} of 8
           </p>
 
           {/* STEP 1 */}
@@ -256,7 +290,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               email={email}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(1)}
-              onVerify={() => handleStepChange(3)}
+              onVerify={async () => {
+                const fresh = await refreshUserData(email);
+                handleStepChange(3, fresh);
+              }}
             />
           )}
 
@@ -267,7 +304,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               phone={phone}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(2)}
-              onVerify={() => handleStepChange(4)}
+              onVerify={async () => {
+                const fresh = await refreshUserData(email);
+                handleStepChange(4, fresh);
+              }}
             />
           )}
 
@@ -277,7 +317,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               email={email}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(3)}
-              onSubmit={() => handleStepChange(5)}
+              onSubmit={async () => {
+                const fresh = await refreshUserData(email);
+                handleStepChange(5, fresh);
+              }}
             />
           )}
 
@@ -287,7 +330,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               email={email}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(4)}
-              onSubmit={() => handleStepChange(6)}
+              onSubmit={async () => {
+                const fresh = await refreshUserData(email);
+                handleStepChange(6, fresh);
+              }}
             />
           )}
 
@@ -296,7 +342,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
             <Step6
               email={email}
               onBack={() => handleStepChange(5)}
-              onContinue={() => handleStepChange(7)}
+              onContinue={async () => {
+                const fresh = await refreshUserData(email);
+                handleStepChange(7, fresh);
+              }}
             />
           )}
 
@@ -305,7 +354,19 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
             <Step7
               email={email}
               onBack={() => handleStepChange(6)}
-              onSubmit={() => setShowSuccess(true)}
+              onSubmit={async () => {
+                const fresh = await refreshUserData(email);
+                handleStepChange(8, fresh);
+              }}
+            />
+          )}
+
+          {/* STEP 8 — Review & Confirm */}
+          {step === 8 && (
+            <Step8
+              email={email}
+              onBack={() => handleStepChange(7)}
+              onConfirm={() => setShowSuccess(true)}
             />
           )}
 

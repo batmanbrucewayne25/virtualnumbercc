@@ -24,7 +24,6 @@ interface UserData {
  * @returns { isValid: boolean, loading: boolean, userData: UserData | null }
  */
 export const useStepValidation = ({ email, currentStep }: UseStepValidationOptions) => {
-  console.log("useStepValidation called", email, currentStep);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [isValid, setIsValid] = useState<boolean>(false);
@@ -43,10 +42,11 @@ export const useStepValidation = ({ email, currentStep }: UseStepValidationOptio
       setLoading(true);
       try {
         // Fetch user data to get current_step from database
+        // getMstResellerByEmail unwraps result.data, so the array is at result.mst_reseller
         const result = await getMstResellerByEmail({ email });
-console.log(result);
-        if (result?.data?.mst_reseller?.length > 0) {
-          const user = result.data.mst_reseller[0];
+        const resellerList = result?.mst_reseller ?? result?.data?.mst_reseller ?? [];
+        if (resellerList.length > 0) {
+          const user = resellerList[0];
           setUserData({
             current_step: user.current_step,
             signup_completed: user.signup_completed,
@@ -56,7 +56,6 @@ console.log(result);
           // Get current_step from database
           const userCurrentStep = user.current_step || 0;
           const maxAllowedStep = userCurrentStep + 1;
-console.log(maxAllowedStep, userCurrentStep);
           // Validate requested step
           if (currentStep > maxAllowedStep) {
             // BLOCK access - step exceeds max allowed

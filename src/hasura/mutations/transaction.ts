@@ -1,4 +1,5 @@
 import { graphqlRequest } from "@/hasura";
+import { getAuthSession, isAdminSession } from "@/utils/auth";
 
 /**
  * Create a new transaction
@@ -122,7 +123,10 @@ export const createMstTransaction = async (data: {
 };
 
 /**
- * Get all transactions for a reseller
+ * Get all transactions for a reseller.
+ * For reseller sessions: the resellerId parameter is IGNORED and overridden with the
+ * session's own ID to prevent horizontal privilege escalation.
+ * For admin sessions: the supplied resellerId is used as-is.
  */
 export const getMstTransactionsByReseller = async (
   resellerId: string,
@@ -133,6 +137,16 @@ export const getMstTransactionsByReseller = async (
     searchTerm?: string;
   }
 ) => {
+  const session = getAuthSession();
+  const isAdmin = isAdminSession();
+
+  // Enforce: non-admin can only ever see their own transactions
+  const effectiveResellerId = isAdmin ? resellerId : (session?.id || resellerId);
+  if (!effectiveResellerId) {
+    return { success: false, message: "Unauthorized: reseller ID not found", data: [] };
+  }
+  // Reassign so the rest of the function uses the safe value
+  resellerId = effectiveResellerId;
   // Build the query - search will be filtered client-side
   let whereClause = `reseller_id: { _eq: $reseller_id }`;
   if (filters?.status && filters.status !== "all") {
@@ -299,7 +313,8 @@ export const updateMstTransactionStatus = async (
 };
 
 /**
- * Get all transactions (for super admin)
+ * Get all transactions (for super admin only).
+ * Resellers are blocked from calling this function.
  */
 export const getMstTransactions = async (options?: {
   limit?: number;
@@ -307,6 +322,19 @@ export const getMstTransactions = async (options?: {
   status?: string;
   resellerId?: string;
 }) => {
+  // Security gate: only admins may call the unfiltered transaction query
+  if (!isAdminSession()) {
+    const session = getAuthSession();
+    const fallbackId = session?.id;
+    if (!fallbackId) {
+      return { success: false, message: "Unauthorized", data: [] };
+    }
+    // Silently redirect to the scoped query
+    return getMstTransactionsByReseller(fallbackId, {
+      status: options?.status,
+    });
+  }
+
   const { limit = 100, offset = 0, status, resellerId } = options || {};
 
   let whereConditions: string[] = [];

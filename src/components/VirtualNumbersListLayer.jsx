@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getMstVirtualNumbers } from "@/hasura/mutations/virtualNumber";
 import { getMstResellers } from "@/hasura/mutations/reseller";
-import { getUserData, getAuthToken } from "@/utils/auth";
+import { getUserData, getAuthToken, getAuthSession, isAdminSession } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import RenewalPlanModal from "./RenewalPlanModal";
@@ -33,22 +33,12 @@ const VirtualNumbersListLayer = () => {
   const [gracePeriodError, setGracePeriodError] = useState("");
 
   useEffect(() => {
-    const token = getAuthToken();
-    const userData = getUserData();
-    let role = userData?.role;
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        role = payload.role || role;
-      } catch (err) {
-        console.error("Error decoding token:", err);
-      }
-    }
-    setUserRole(role);
+    const session = getAuthSession();
+    setUserRole(session?.role || null);
   }, []);
 
   const isReseller = userRole === "reseller";
-  const isAdmin = userRole === "admin" || userRole === "super_admin";
+  const isAdmin = isAdminSession();
 
   useEffect(() => {
     fetchResellers();
@@ -73,12 +63,10 @@ const VirtualNumbersListLayer = () => {
     setLoading(true);
     setError("");
     try {
-      const userData = getUserData();
+      // For resellers: getMstVirtualNumbers enforces session-scoped filtering internally.
+      // For admins: pass the UI filter (may be "all" or a specific reseller ID).
       const filters = {};
-
-      if (userData?.role === "reseller" && userData?.id) {
-        filters.resellerId = userData.id;
-      } else if (resellerFilter && resellerFilter !== "all") {
+      if (isAdmin && resellerFilter && resellerFilter !== "all") {
         filters.resellerId = resellerFilter;
       }
 

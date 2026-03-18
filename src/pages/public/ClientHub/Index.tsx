@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useCallback } from "react";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import Step1 from "./steps/Step1";
@@ -8,11 +8,48 @@ import Step3 from "./steps/Step3";
 import Step4 from "./steps/Step4";
 import Step5 from "./steps/Step5";
 import Step6 from "./steps/Step6";
-import Step7 from "./steps/Step7";
 import Step8 from "./steps/Step8";
 import Step9 from "./steps/Step9";
 import Step10 from "./steps/Step10";
 import Step11 from "./steps/Step11";
+
+const STORAGE_KEY_PREFIX = "clienthub_progress_";
+const STORAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const getStorageKey = (resellerId: string) => `${STORAGE_KEY_PREFIX}${resellerId}`;
+
+const loadProgress = (resellerId: string): { step: number; formData: any } | null => {
+  try {
+    const raw = sessionStorage.getItem(getStorageKey(resellerId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.step !== "number") return null;
+    const age = Date.now() - (parsed.timestamp || 0);
+    if (age > STORAGE_TTL_MS) return null;
+    return { step: parsed.step, formData: parsed.formData || {} };
+  } catch {
+    return null;
+  }
+};
+
+const saveProgress = (resellerId: string, step: number, formData: any) => {
+  try {
+    const toSave = { ...formData };
+    delete toSave.password; // Never persist password
+    sessionStorage.setItem(
+      getStorageKey(resellerId),
+      JSON.stringify({ step, formData: toSave, timestamp: Date.now() })
+    );
+  } catch (e) {
+    console.warn("Failed to save ClientHub progress:", e);
+  }
+};
+
+const clearProgress = (resellerId: string) => {
+  try {
+    sessionStorage.removeItem(getStorageKey(resellerId));
+  } catch {}
+};
 
 interface ClientHubLayerProps {
   skipOtpVerification?: boolean;
@@ -26,6 +63,7 @@ const ClientHubLayer = ({
   isAdminMode = false,
 }: ClientHubLayerProps) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { resellerId: resellerIdFromUrl } = useParams<{
     resellerId?: string;
   }>();
@@ -48,6 +86,11 @@ const ClientHubLayer = ({
     gstData: null,
     signature: null,
   });
+  const [progressRestored, setProgressRestored] = useState(false);
+
+  useEffect(() => {
+    setProgressRestored(false);
+  }, [resellerId]);
 
   useEffect(() => {
     // If resellerId is provided as prop (admin mode), use it directly
@@ -122,6 +165,10 @@ const ClientHubLayer = ({
         // Fetch reseller data
         if (finalResellerId) {
           setResellerId(finalResellerId);
+          // If resellerId came from domain (not URL), navigate to /clienthub/:resellerId so refresh works
+          if (!resellerIdFromUrl) {
+            navigate(`/clienthub/${finalResellerId}`, { replace: true });
+          }
           const result = await getMstResellerById(finalResellerId);
           if (result.success && result.data) {
             setResellerData(result.data);
@@ -142,11 +189,63 @@ const ClientHubLayer = ({
     };
 
     determineResellerId();
-  }, [resellerIdFromUrl, resellerIdProp]);
+  }, [resellerIdFromUrl, resellerIdProp, navigate]);
 
-  const handleStepChange = (newStep: number) => {
+  // Restore progress from sessionStorage + URL when resellerId is ready
+  useEffect(() => {
+    if (!resellerId || loading || progressRestored || isAdminMode) return;
+    const urlStep = searchParams.get("step");
+    const stored = loadProgress(resellerId);
+    const urlStepNum = urlStep ? parseInt(urlStep, 10) : NaN;
+    const validUrlStep = !isNaN(urlStepNum) && urlStepNum >= 1 && urlStepNum <= 11;
+    const stepToUse = validUrlStep ? urlStepNum : stored?.step;
+    const formToUse = stored?.formData;
+    if (stepToUse != null && stepToUse >= 1 && stepToUse <= 11) {
+      setStep(stepToUse);
+      if (!validUrlStep && urlStep === null) {
+        setSearchParams((p) => {
+          const next = new URLSearchParams(p);
+          next.set("step", String(stepToUse));
+          return next;
+        }, { replace: true });
+      }
+    }
+    if (formToUse && typeof formToUse === "object") {
+      setFormData((prev: any) => ({
+        ...prev,
+        ...formToUse,
+        password: prev.password || "", // Never restore password
+      }));
+    }
+    setProgressRestored(true);
+  }, [resellerId, loading, progressRestored, isAdminMode, searchParams, setSearchParams]);
+
+  // Persist progress on step/formData changes
+  useEffect(() => {
+    if (!resellerId || !progressRestored || step === 11) return;
+    saveProgress(resellerId, step, formData);
+    setSearchParams((p) => {
+      const next = new URLSearchParams(p);
+      next.set("step", String(step));
+      return next;
+    }, { replace: true });
+  }, [resellerId, step, formData, progressRestored, setSearchParams]);
+
+  // Clear progress on completion (step 11)
+  useEffect(() => {
+    if (resellerId && step === 11) {
+      clearProgress(resellerId);
+      setSearchParams((p) => {
+        const next = new URLSearchParams(p);
+        next.delete("step");
+        return next;
+      }, { replace: true });
+    }
+  }, [resellerId, step, setSearchParams]);
+
+  const handleStepChange = useCallback((newStep: number) => {
     setStep(newStep);
-  };
+  }, []);
 
   const handleStep1Success = (data: any) => {
     setFormData((prev: any) => ({ ...prev, ...data }));
@@ -198,10 +297,6 @@ const ClientHubLayer = ({
 
   const handleStep6Success = (data: any) => {
     setFormData((prev: any) => ({ ...prev, aadhaarData: data }));
-    handleStepChange(7);
-  };
-
-  const handleStep7Success = () => {
     handleStepChange(8);
   };
 
@@ -323,10 +418,16 @@ const ClientHubLayer = ({
             </div>
           )}
 
-          {/* STEP INDICATOR */}
-          <p className="text-sm text-secondary-light mb-16">
-            Step {step} of 11
-          </p>
+          {/* STEP INDICATOR (steps 1-6,8,9,10,11 = 10 total; step 7 removed) */}
+          {(() => {
+            const displayStep = step <= 6 ? step : step - 1;
+            const totalSteps = 10;
+            return (
+              <p className="text-sm text-secondary-light mb-16">
+                Step {displayStep} of {totalSteps}
+              </p>
+            );
+          })()}
 
           {/* STEP 1: Login or Sign Up */}
           {step === 1 && resellerId && (
@@ -393,23 +494,11 @@ const ClientHubLayer = ({
             />
           )}
 
-          {/* STEP 7: DOB Matching */}
-          {step === 7 && (
-            <Step7
-              email={formData.email}
-              panData={formData.panData}
-              aadhaarData={formData.aadhaarData}
-              skipOtpVerification={skipOtpVerification}
-              onBack={() => handleStepChange(6)}
-              onSuccess={handleStep7Success}
-            />
-          )}
-
           {/* STEP 8: GST Verification (Optional) */}
           {step === 8 && (
             <Step8
               email={formData.email}
-              onBack={() => handleStepChange(7)}
+              onBack={() => handleStepChange(6)}
               onContinue={handleStep8Success}
             />
           )}

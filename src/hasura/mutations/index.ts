@@ -43,7 +43,9 @@ export const getMstResellerByEmail = async ({ email }: any) => {
   }
 }`;
 
-  return graphqlRequest(QUERY, { email });
+  const result = await graphqlRequest(QUERY, { email });
+  // Hasura returns { data: { mst_reseller: [...] } } — unwrap so callers can use result.mst_reseller directly
+  return result?.data ?? result;
 };
 
 export const loginMstReseller = async ({ email }: any) => {

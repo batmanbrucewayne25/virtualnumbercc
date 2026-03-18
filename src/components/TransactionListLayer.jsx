@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getMstTransactionsByReseller } from "@/hasura/mutations/transaction";
-import { getUserData } from "@/utils/auth";
+import { getUserData, getAuthSession } from "@/utils/auth";
 import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
 import * as XLSX from "xlsx";
 import AlertModal from "./AlertModal";
@@ -25,8 +25,10 @@ const TransactionListLayer = () => {
     setLoading(true);
     setError("");
     try {
-      const userData = getUserData();
-      if (!userData || !userData.id) {
+      // Use session (JWT-derived) ID — getMstTransactionsByReseller also enforces this internally
+      const session = getAuthSession();
+      const resellerId = session?.id;
+      if (!resellerId) {
         setError("Unable to determine reseller ID. Please log in again.");
         setLoading(false);
         return;
@@ -39,7 +41,7 @@ const TransactionListLayer = () => {
         searchTerm: searchTerm || undefined,
       };
 
-      const result = await getMstTransactionsByReseller(userData.id, filters);
+      const result = await getMstTransactionsByReseller(resellerId, filters);
       if (result.success) {
         setTransactions(result.data || []);
       } else {

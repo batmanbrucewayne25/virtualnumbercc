@@ -360,11 +360,27 @@ const Step6 = ({
       if (errorMessage.includes("unique") || errorMessage.includes("duplicate") || errorMessage.includes("constraint")) {
         setError(getConstraintViolationMessage(err));
       } else {
-        const errorMsg =
+        const rawMsg: string =
           err.response?.data?.message ||
           err.message ||
-          "OTP verification failed. Please check the OTP and try again.";
-        setError(errorMsg);
+          "";
+        const isBackendError =
+          rawMsg.toLowerCase().includes("error from backend") ||
+          rawMsg.toLowerCase().includes("error from Backend");
+        if (isBackendError) {
+          setError(
+            "Aadhaar verification service is temporarily unavailable. Please wait a moment and try requesting a new OTP."
+          );
+          // Reset OTP state so user can re-request
+          setAadhaarOtpSent(false);
+          setAadhaarOtp("");
+          setRequestId(null);
+          setCountdown(0);
+        } else {
+          setError(
+            rawMsg || "OTP verification failed. Please check the OTP and try again."
+          );
+        }
       }
     } finally {
       setLoading(false);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
 type OtpVerifyProps = {
@@ -29,32 +29,17 @@ const OtpVerify = ({
   const [otpSent, setOtpSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
-  // Auto-send OTP on component mount when email/phone is available
-  useEffect(() => {
-    // Only send OTP if email (for email verification) or phone (for phone verification) is available
-    if (
-      (label.toLowerCase() === "email" && email) ||
-      (label.toLowerCase() === "phone" && phone)
-    ) {
-      sendOTP();
-    }
-  }, [email, phone]); // Re-run when email or phone changes
+  // Track whether the initial auto-send has already fired.
+  // Using a ref (not state) so it never triggers a re-render and is
+  // immune to React Strict Mode double-invoke in development.
+  const autoSentRef = useRef(false);
 
-  // Countdown timer
-  useEffect(() => {
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [countdown]);
-
-  const sendOTP = async () => {
-    // Validate that email or phone is available before sending
+  // Stable sendOTP so the auto-send effect doesn't need it as a dep
+  const sendOTP = useCallback(async () => {
     if (label.toLowerCase() === "email" && !email) {
       setError("Email is required to send OTP.");
       return;
     }
-
     if (label.toLowerCase() === "phone" && !phone) {
       setError("Phone number is required to send OTP.");
       return;
@@ -76,24 +61,9 @@ const OtpVerify = ({
           ? { email, ...(userType && { user_type: userType }) }
           : { phone, ...(userType && { user_type: userType }) };
 
-      // Validate payload before sending
-      if (label.toLowerCase() === "email" && !payload.email) {
-        setError("Email is required.");
-        setSending(false);
-        return;
-      }
-
-      if (label.toLowerCase() === "phone" && !payload.phone) {
-        setError("Phone number is required.");
-        setSending(false);
-        return;
-      }
-
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -102,7 +72,7 @@ const OtpVerify = ({
       if (result.success) {
         setSuccess(result.message || "OTP sent successfully!");
         setOtpSent(true);
-        setCountdown(60); // 60 seconds countdown
+        setCountdown(60);
         setTimeout(() => setSuccess(""), 3000);
       } else {
         setError(result.message || "Failed to send OTP. Please try again.");
@@ -113,7 +83,29 @@ const OtpVerify = ({
     } finally {
       setSending(false);
     }
-  };
+  }, [email, phone, label, userType]);
+
+  // Auto-send OTP exactly once when the required contact value is available.
+  // We wait until the prop is non-empty (parent may set it asynchronously from
+  // localStorage / DB fetch) and guard with a ref so it never fires twice.
+  useEffect(() => {
+    const contactReady =
+      (label.toLowerCase() === "email" && !!email) ||
+      (label.toLowerCase() === "phone" && !!phone);
+
+    if (contactReady && !autoSentRef.current) {
+      autoSentRef.current = true;
+      sendOTP();
+    }
+  }, [email, phone, label, sendOTP]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   const handleVerify = async () => {
     setError("");

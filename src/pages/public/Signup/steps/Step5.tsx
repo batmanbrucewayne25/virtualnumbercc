@@ -275,9 +275,13 @@ const Step5 = ({
           if (data.dob) {
             try {
               // Fetch user data to get PAN DOB
+              // getMstResellerByEmail unwraps result.data, so the array is at result.mst_reseller
               const userResult = await getMstResellerByEmail({ email });
-              console.log("User result:", userResult);
-              if (!userResult?.data?.mst_reseller || userResult.data.mst_reseller.length === 0) {
+              const resellerList =
+                userResult?.mst_reseller ??
+                userResult?.data?.mst_reseller ??
+                [];
+              if (resellerList.length === 0) {
                 setError(
                   "Unable to verify date of birth. Please try again or contact support."
                 );
@@ -285,7 +289,7 @@ const Step5 = ({
                 return;
               }
 
-              const user = userResult.data.mst_reseller[0];
+              const user = resellerList[0];
               const panDob = user.pan_dob;
               
               if (!panDob) {

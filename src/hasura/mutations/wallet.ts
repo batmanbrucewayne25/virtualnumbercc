@@ -1,4 +1,5 @@
 import { graphqlRequest } from "@/hasura";
+import { getAuthSession, isAdminSession } from "@/utils/auth";
 
 /**
  * Get wallet by reseller ID
@@ -359,9 +360,27 @@ export const getMstWalletTransactions = async (walletId: string) => {
 };
 
 /**
- * Get all wallet transactions with reseller info
+ * Get all wallet transactions with reseller info.
+ * - Resellers: always scoped to their own reseller_id from the session.
+ * - Admins: may pass an optional resellerId; omitting it returns all records.
  */
 export const getAllMstWalletTransactions = async (resellerId?: string) => {
+  const session = getAuthSession();
+  const isAdmin = isAdminSession();
+
+  // Enforce: non-admin can only see their own wallet transactions
+  let effectiveResellerId: string | undefined;
+  if (!isAdmin) {
+    const sessionId = session?.id;
+    if (!sessionId) {
+      return { success: false, message: "Unauthorized: session not found", data: [] };
+    }
+    effectiveResellerId = sessionId;
+  } else {
+    effectiveResellerId = resellerId;
+  }
+  resellerId = effectiveResellerId;
+
   try {
     // First, get wallets filtered by reseller_id if provided
     let walletIds: string[] = [];

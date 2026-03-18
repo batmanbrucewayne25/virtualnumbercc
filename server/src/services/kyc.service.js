@@ -198,12 +198,44 @@ export class KYCService {
 
       // Handle different response structures
       const responseData = response.data;
+      const statusCode = responseData?.status_code;
       const status = responseData?.status || responseData?.data?.status;
+      const innerData = responseData?.data || {};
+
+      // Check for error status in response body (API returns 200 HTTP but with error in body)
+      if (
+        statusCode === 500 ||
+        status === "error" ||
+        (statusCode && statusCode >= 400) ||
+        (responseData?.message &&
+          (responseData.message.toLowerCase().includes("error from backend") ||
+            responseData.message.toLowerCase().includes("went wrong") ||
+            responseData.message.toLowerCase().includes("failed")))
+      ) {
+        const errorMessage =
+          responseData?.message ||
+          innerData?.message ||
+          "OTP verification failed. Please try again.";
+
+        console.error("[KYC] Aadhaar Submit OTP API Error:", {
+          status_code: statusCode,
+          status,
+          message: errorMessage,
+          request_id: responseData?.request_id,
+        });
+
+        throw {
+          status: statusCode || 400,
+          message: errorMessage,
+          error: responseData,
+        };
+      }
 
       // Check if verification was successful
       if (
         status === "success_aadhaar" ||
         status === "success" ||
+        innerData?.aadhaar_number ||
         responseData?.aadhaar_number
       ) {
         return {
@@ -215,7 +247,7 @@ export class KYCService {
         // Response received but status indicates failure
         const errorMessage =
           responseData?.message ||
-          responseData?.data?.message ||
+          innerData?.message ||
           "OTP verification failed";
         throw {
           status: 400,

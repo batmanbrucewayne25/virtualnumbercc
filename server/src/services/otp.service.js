@@ -352,7 +352,9 @@ export class OTPService {
       const userInfo = await this.getUserId(email, phone, userType);
 
       const userId = userInfo?.id || null;
-      const actualUserType = userInfo?.user_type || userType;
+      // Always use the caller-supplied userType so verify lookup matches correctly.
+      // getUserId may resolve a different type (e.g. reseller when caller says customer).
+      const actualUserType = userType;
 
       // Build mutation - conditionally include user_id only if it exists
       // This supports both cases: when user exists and when user doesn't exist yet (signup flow)
@@ -477,18 +479,21 @@ export class OTPService {
     try {
       const client = getHasuraClient();
       const contactInfo = email || phone;
+      const now = new Date().toISOString();
 
-      // First, try to find unverified OTP
+      // Look up the most recent unverified, non-expired OTP for this contact
+      // NOTE: We do NOT filter by user_type here because storeOTP may have resolved
+      // a different user_type (e.g. stored as "reseller" when caller says "customer").
+      // We match by contact_info + otp_code + otp_type only, then accept any user_type.
       const query = `
-        query VerifyOTP($contact_info: String!, $otp_code: String!, $otp_type: String!, $user_type: String!) {
+        query VerifyOTP($contact_info: String!, $otp_code: String!, $otp_type: String!, $now: timestamp!) {
           mst_otp_verification(
             where: {
               contact_info: { _eq: $contact_info }
               otp_code: { _eq: $otp_code }
               otp_type: { _eq: $otp_type }
-              user_type: { _eq: $user_type }
               is_verified: { _eq: false }
-              expires_at: { _gte: "now()" }
+              expires_at: { _gte: $now }
             }
             order_by: { created_at: desc }
             limit: 1
@@ -510,7 +515,7 @@ export class OTPService {
         contact_info: contactInfo,
         otp_code: otp,
         otp_type: type,
-        user_type: userType,
+        now,
       });
 
       if (
@@ -521,12 +526,12 @@ export class OTPService {
 
         // Mark OTP as verified and set verified_at timestamp
         const updateMutation = `
-          mutation MarkOTPVerified($id: uuid!) {
+          mutation MarkOTPVerified($id: uuid!, $verified_at: timestamp!) {
             update_mst_otp_verification_by_pk(
               pk_columns: { id: $id }
               _set: {
                 is_verified: true
-                verified_at: "now()"
+                verified_at: $verified_at
               }
             ) {
               id
@@ -538,6 +543,7 @@ export class OTPService {
 
         await client.client.request(updateMutation, {
           id: otpRecord.id,
+          verified_at: now,
         });
 
         return {
@@ -548,14 +554,13 @@ export class OTPService {
 
       // If OTP not found, increment attempts for the most recent unverified OTP
       const failedQuery = `
-        query GetFailedOTP($contact_info: String!, $otp_type: String!, $user_type: String!) {
+        query GetFailedOTP($contact_info: String!, $otp_type: String!, $now: timestamp!) {
           mst_otp_verification(
             where: {
               contact_info: { _eq: $contact_info }
               otp_type: { _eq: $otp_type }
-              user_type: { _eq: $user_type }
               is_verified: { _eq: false }
-              expires_at: { _gte: "now()" }
+              expires_at: { _gte: $now }
             }
             order_by: { created_at: desc }
             limit: 1
@@ -569,7 +574,7 @@ export class OTPService {
       const failedResult = await client.client.request(failedQuery, {
         contact_info: contactInfo,
         otp_type: type,
-        user_type: userType,
+        now,
       });
 
       if (

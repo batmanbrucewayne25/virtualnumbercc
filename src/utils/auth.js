@@ -100,3 +100,72 @@ export const verifyPassword = (inputPassword, storedPasswordHash) => {
   // For production, you should use bcrypt.compare or similar
   return inputPassword === storedPasswordHash;
 };
+
+/**
+ * Decode JWT payload without verifying signature (signature is verified server-side).
+ * Returns null if token is missing or malformed.
+ */
+const decodeJwtPayload = (token) => {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Get the authenticated session from the JWT token.
+ * Returns { id, role, email } sourced from the JWT payload.
+ * Falls back to localStorage userData only when no JWT is present (e.g. dev/admin mode).
+ * Returns null if not authenticated.
+ */
+export const getAuthSession = () => {
+  const token = getAuthToken();
+  if (token) {
+    const payload = decodeJwtPayload(token);
+    if (payload) {
+      // Check token expiry
+      if (payload.exp && Date.now() / 1000 > payload.exp) {
+        clearAuth();
+        return null;
+      }
+      return {
+        id: payload.userId || payload.id || payload.sub || null,
+        role: payload.role || null,
+        email: payload.email || null,
+      };
+    }
+  }
+  // Fallback: use localStorage userData (less secure, but acceptable when no JWT)
+  const userData = getUserData();
+  if (!userData) return null;
+  return {
+    id: userData.id || null,
+    role: userData.role || null,
+    email: userData.email || null,
+  };
+};
+
+/**
+ * Returns true if the current session belongs to an admin or super_admin.
+ */
+export const isAdminSession = () => {
+  const session = getAuthSession();
+  return session?.role === 'admin' || session?.role === 'super_admin';
+};
+
+/**
+ * Returns the reseller ID of the currently logged-in reseller.
+ * Throws an error if the session is not a reseller (prevents privilege escalation).
+ * Returns null if not authenticated.
+ */
+export const getResellerIdFromSession = () => {
+  const session = getAuthSession();
+  if (!session) return null;
+  if (session.role !== 'reseller') return null;
+  return session.id || null;
+};

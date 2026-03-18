@@ -44,6 +44,28 @@ interface Step10Props {
   onSubmit: () => void;
 }
 
+/** Mask PAN number: first 4 + **** + last 2 (e.g. CHWPJ2392B → CHWP****2B) */
+const maskPanNumber = (pan: string): string => {
+  if (!pan || pan.length < 6) return "****";
+  return `${pan.slice(0, 4)}****${pan.slice(-2)}`;
+};
+
+/** Format date from YYYY-MM-DD to DD-MM-YYYY */
+const formatDobToDDMMYYYY = (dateStr: string): string => {
+  if (!dateStr) return "N/A";
+  const trimmed = dateStr.trim();
+  if (!trimmed) return "N/A";
+  // Already DD-MM-YYYY format (has - and first part is 1-2 digits)
+  if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(trimmed)) return trimmed;
+  // YYYY-MM-DD format
+  const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${d.padStart(2, "0")}-${m.padStart(2, "0")}-${y}`;
+  }
+  return trimmed;
+};
+
 const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
   const [loading, setLoading] = useState(false);
 
@@ -122,7 +144,9 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
             <>
               <div className="mb-8">
                 <span className="text-secondary-light text-sm">PAN Number:</span>
-                <span className="ms-8 fw-medium">{formData.panData.pan_number}</span>
+                <span className="ms-8 fw-medium">
+                  {formData.panData.pan_number ? maskPanNumber(formData.panData.pan_number) : "N/A"}
+                </span>
               </div>
               <div className="mb-8">
                 <span className="text-secondary-light text-sm">Name:</span>
@@ -130,7 +154,7 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
               </div>
               <div className="mb-8">
                 <span className="text-secondary-light text-sm">DOB:</span>
-                <span className="ms-8 fw-medium">{formData.panData.dob}</span>
+                <span className="ms-8 fw-medium">{formatDobToDDMMYYYY(formData.panData.dob)}</span>
               </div>
               <div>
                 <span className="text-secondary-light text-sm">Category:</span>
@@ -162,7 +186,7 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
               </div>
               <div>
                 <span className="text-secondary-light text-sm">DOB:</span>
-                <span className="ms-8 fw-medium">{formData.aadhaarData.dob}</span>
+                <span className="ms-8 fw-medium">{formatDobToDDMMYYYY(formData.aadhaarData.dob)}</span>
               </div>
             </>
           ) : (

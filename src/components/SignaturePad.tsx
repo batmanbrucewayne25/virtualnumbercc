@@ -186,11 +186,11 @@ const SignaturePad = ({
       <div className="d-flex align-items-center justify-content-between mt-12">
         <button
           type="button"
-          className="btn btn-outline-danger btn-sm"
+          className="btn btn-outline-danger btn-sm d-flex align-items-center gap-2"
           onClick={clearSignature}
           disabled={!hasSignature}
         >
-          <Icon icon="material-symbols:delete-outline" className="icon me-2" />
+          <Icon icon="material-symbols:delete-outline" className="icon" style={{ fontSize: "18px" }} />
           Clear
         </button>
         <small className="text-secondary-light">
