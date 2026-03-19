@@ -144,6 +144,9 @@ export const getMstResellerById = async (id: string) => {
       is_phone_verified
       profile_image
       logo
+      favicon
+      minified_logo
+      profile_image_alt
       signatureImage
       allow_existing_customer
       suspended_reason
@@ -456,6 +459,9 @@ export const updateMstReseller = async (id: string, data: {
   validity_date?: string | null;
   profile_image?: string;
   logo?: string;
+  favicon?: string;
+  minified_logo?: string;
+  profile_image_alt?: string;
   allow_existing_customer?: boolean;
   grace_period_days?: number;
   [key: string]: any;
@@ -494,6 +500,9 @@ export const updateMstReseller = async (id: string, data: {
     gstin_status: 'String',
     profile_image: 'String',
     logo: 'String',
+    favicon: 'String',
+    minified_logo: 'String',
+    profile_image_alt: 'String',
     allow_existing_customer: 'Boolean',
     grace_period_days: 'Int',
     price_per_number: 'numeric',
@@ -560,6 +569,9 @@ export const updateMstReseller = async (id: string, data: {
       status
       profile_image
       logo
+      favicon
+      minified_logo
+      profile_image_alt
       updated_at
     }
   }`;

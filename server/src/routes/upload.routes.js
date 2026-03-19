@@ -3,15 +3,24 @@ import {
   uploadProfileImage,
   uploadLogo,
   uploadSignature,
+  uploadFavicon,
+  uploadMinifiedLogo,
+  uploadProfileImageAlt,
   serveSignature,
   serveLogo,
   serveProfileImage,
+  serveFavicon,
+  serveMinifiedLogo,
+  serveProfileImageAlt,
 } from '../controllers/upload.controller.js';
 import { optionalAuthMiddleware } from '../middleware/optionalAuth.middleware.js';
 import {
   uploadProfileImage as uploadProfileImageMulter,
   uploadLogo as uploadLogoMulter,
   uploadSignature as uploadSignatureMulter,
+  uploadFavicon as uploadFaviconMulter,
+  uploadMinifiedLogo as uploadMinifiedLogoMulter,
+  uploadProfileImageAlt as uploadProfileImageAltMulter,
 } from '../services/upload.service.js';
 
 const router = express.Router();
@@ -43,6 +52,15 @@ router.post('/logo', optionalAuthMiddleware, uploadLogoMulter.single('logo'), up
  * @access  Public
  */
 router.get('/logo/:filename', serveLogo);
+
+router.post('/favicon', optionalAuthMiddleware, uploadFaviconMulter.single('favicon'), uploadFavicon);
+router.get('/favicon/:filename', serveFavicon);
+
+router.post('/minified-logo', optionalAuthMiddleware, uploadMinifiedLogoMulter.single('minified_logo'), uploadMinifiedLogo);
+router.get('/minified-logo/:filename', serveMinifiedLogo);
+
+router.post('/profile-image-alt', optionalAuthMiddleware, uploadProfileImageAltMulter.single('profile_image_alt'), uploadProfileImageAlt);
+router.get('/profile-image-alt/:filename', serveProfileImageAlt);
 
 /**
  * @route   POST /api/upload/signature

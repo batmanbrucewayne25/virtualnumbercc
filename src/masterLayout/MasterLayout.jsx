@@ -161,6 +161,31 @@ const MasterLayout = ({ children }) => {
           const p = Number(resellerResult.data.price_per_number);
           setPricePerNumber(isNaN(p) ? null : p);
         }
+        if (resellerResult.success && resellerResult.data) {
+          const latestReseller = resellerResult.data;
+          const existingUserData = getUserData() || {};
+          const mergedUserData = {
+            ...existingUserData,
+            logo: latestReseller.logo ?? existingUserData.logo ?? null,
+            minified_logo: latestReseller.minified_logo ?? existingUserData.minified_logo ?? null,
+            favicon: latestReseller.favicon ?? existingUserData.favicon ?? null,
+            profile_image_alt: latestReseller.profile_image_alt ?? existingUserData.profile_image_alt ?? null,
+          };
+          localStorage.setItem("userData", JSON.stringify(mergedUserData));
+
+          if (latestReseller.favicon) {
+            const faviconHref = latestReseller.favicon.startsWith("http")
+              ? latestReseller.favicon
+              : `${IMAGE_BASE_PATH}/favicons/${latestReseller.favicon}`;
+            let faviconTag = document.querySelector("link[rel='icon']");
+            if (!faviconTag) {
+              faviconTag = document.createElement("link");
+              faviconTag.setAttribute("rel", "icon");
+              document.head.appendChild(faviconTag);
+            }
+            faviconTag.setAttribute("href", faviconHref);
+          }
+        }
 
         if (validityResult.success && validityResult.data) {
           const v = validityResult.data;
@@ -326,19 +351,41 @@ const MasterLayout = ({ children }) => {
           <Link to='/' className='sidebar-logo'>
             {userRole === "reseller" && (() => {
               const userData = getUserData();
-              const logo = userData?.logo; 
+              const logo = userData?.logo;
+              const minifiedLogo = userData?.minified_logo;
               const logoUrl = logo && !resellerLogoError
                 ? (logo.startsWith("data:") || logo.startsWith("http") ? logo : `${IMAGE_BASE_PATH}/logos/${logo}`)
-                : null; 
+                : null;
+              const minifiedLogoUrl = minifiedLogo && !resellerLogoError
+                ? (minifiedLogo.startsWith("data:") || minifiedLogo.startsWith("http")
+                    ? minifiedLogo
+                    : `${IMAGE_BASE_PATH}/minified-logos/${minifiedLogo}`)
+                : null;
               const logoAlt = userData?.brand_name || userData?.business_name || "Logo";
               return logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={logoAlt}
-                  className="logo-image"
-                  style={{ maxHeight: "40px", width: "auto", objectFit: "contain" }}
-                  onError={() => setResellerLogoError(true)}
-                />
+                <>
+                  <img
+                    src={logoUrl}
+                    alt={logoAlt}
+                    className='light-logo'
+                    style={{ maxHeight: "40px", width: "auto", objectFit: "contain" }}
+                    onError={() => setResellerLogoError(true)}
+                  />
+                  <img
+                    src={logoUrl}
+                    alt={logoAlt}
+                    className='dark-logo'
+                    style={{ maxHeight: "40px", width: "auto", objectFit: "contain" }}
+                    onError={() => setResellerLogoError(true)}
+                  />
+                  <img
+                    src={minifiedLogoUrl || logoUrl}
+                    alt={logoAlt}
+                    className='logo-icon'
+                    style={{ maxHeight: "40px", width: "auto", objectFit: "contain" }}
+                    onError={() => setResellerLogoError(true)}
+                  />
+                </>
               ) : (
                 <>
                   <img

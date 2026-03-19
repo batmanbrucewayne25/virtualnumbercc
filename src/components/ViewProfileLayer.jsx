@@ -24,6 +24,24 @@ const ViewProfileLayer = () => {
   const [selectedLogoFile, setSelectedLogoFile] = useState(null);
   const [originalLogoUrl, setOriginalLogoUrl] = useState("assets/images/logo-icon.png");
   const logoInputRef = useRef(null);
+
+  const [faviconPreview, setFaviconPreview] = useState("assets/images/logo-icon.png");
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
+  const [selectedFaviconFile, setSelectedFaviconFile] = useState(null);
+  const [originalFaviconUrl, setOriginalFaviconUrl] = useState("assets/images/logo-icon.png");
+  const faviconInputRef = useRef(null);
+
+  const [minifiedLogoPreview, setMinifiedLogoPreview] = useState("assets/images/logo-icon.png");
+  const [uploadingMinifiedLogo, setUploadingMinifiedLogo] = useState(false);
+  const [selectedMinifiedLogoFile, setSelectedMinifiedLogoFile] = useState(null);
+  const [originalMinifiedLogoUrl, setOriginalMinifiedLogoUrl] = useState("assets/images/logo-icon.png");
+  const minifiedLogoInputRef = useRef(null);
+
+  const [profileAltPreview, setProfileAltPreview] = useState("assets/images/user-grid/user-grid-img13.png");
+  const [uploadingProfileAlt, setUploadingProfileAlt] = useState(false);
+  const [selectedProfileAltFile, setSelectedProfileAltFile] = useState(null);
+  const [originalProfileAltUrl, setOriginalProfileAltUrl] = useState("assets/images/user-grid/user-grid-img13.png");
+  const profileAltInputRef = useRef(null);
   
   const [formData, setFormData] = useState({
     first_name: "",
@@ -133,6 +151,39 @@ const ViewProfileLayer = () => {
         } else {
           setLogoPreview("assets/images/logo-icon.png");
           setOriginalLogoUrl("assets/images/logo-icon.png");
+        }
+
+        if (result.data.favicon) {
+          const faviconUrl = result.data.favicon.startsWith('http')
+            ? result.data.favicon
+            : `${IMAGE_UPLOAD_PATH}/favicons/${result.data.favicon}`;
+          setFaviconPreview(faviconUrl);
+          setOriginalFaviconUrl(faviconUrl);
+        } else {
+          setFaviconPreview("assets/images/logo-icon.png");
+          setOriginalFaviconUrl("assets/images/logo-icon.png");
+        }
+
+        if (result.data.minified_logo) {
+          const miniLogoUrl = result.data.minified_logo.startsWith('http')
+            ? result.data.minified_logo
+            : `${IMAGE_UPLOAD_PATH}/minified-logos/${result.data.minified_logo}`;
+          setMinifiedLogoPreview(miniLogoUrl);
+          setOriginalMinifiedLogoUrl(miniLogoUrl);
+        } else {
+          setMinifiedLogoPreview("assets/images/logo-icon.png");
+          setOriginalMinifiedLogoUrl("assets/images/logo-icon.png");
+        }
+
+        if (result.data.profile_image_alt) {
+          const profileAltUrl = result.data.profile_image_alt.startsWith('http')
+            ? result.data.profile_image_alt
+            : `${IMAGE_UPLOAD_PATH}/profile-image-alt/${result.data.profile_image_alt}`;
+          setProfileAltPreview(profileAltUrl);
+          setOriginalProfileAltUrl(profileAltUrl);
+        } else {
+          setProfileAltPreview("assets/images/user-grid/user-grid-img13.png");
+          setOriginalProfileAltUrl("assets/images/user-grid/user-grid-img13.png");
         }
 
         // Fetch domain data
@@ -326,6 +377,160 @@ const ViewProfileLayer = () => {
       setSelectedLogoFile(null);
     }
   };
+
+  const handleAssetChange = ({ event, setErrorMessage, maxSizeMb, setPreview, setSelectedFile }) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Please upload a valid image file.");
+      return;
+    }
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      setErrorMessage(`Image size should be less than ${maxSizeMb}MB.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => setPreview(e.target?.result);
+    reader.readAsDataURL(file);
+    setSelectedFile(file);
+    setErrorMessage("");
+  };
+
+  const uploadAsset = async ({
+    file,
+    endpoint,
+    formKey,
+    successText,
+    imageFolder,
+    filenameKey,
+    setUploading,
+    setPreview,
+    setOriginal,
+    clearInput,
+    clearSelected,
+  }) => {
+    if (!file) {
+      setError(`Please select a ${formKey.replaceAll('_', ' ')} file`);
+      return;
+    }
+    if (!resellerId) {
+      setError("Unable to determine reseller ID. Please log in again.");
+      return;
+    }
+    setUploading(true);
+    setError("");
+    setSuccess(false);
+    try {
+      const token = getAuthToken();
+      const apiBase = getApiBaseUrl().replace(/\/+$/, '');
+      const uploadFormData = new FormData();
+      uploadFormData.append(formKey, file);
+      const response = await fetch(`${apiBase}${endpoint}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: uploadFormData,
+      });
+      const result = await response.json();
+      if (result.success) {
+        setSuccess(true);
+        setSuccessMessage(successText);
+        const filename = result?.data?.[filenameKey] || result?.data?.filename;
+        const imageUrl = filename && !String(filename).startsWith("http")
+          ? `${IMAGE_UPLOAD_PATH}/${imageFolder}/${filename}`
+          : filename;
+        if (imageUrl) {
+          setPreview(imageUrl);
+          setOriginal(imageUrl);
+        }
+        await fetchResellerData(resellerId);
+        setTimeout(() => {
+          setSuccess(false);
+          setSuccessMessage("");
+        }, 3000);
+      } else {
+        setError(result.message || `Failed to upload ${formKey.replaceAll("_", " ")}`);
+      }
+    } catch (err) {
+      console.error(`Error uploading ${formKey}:`, err);
+      setError(err.message || "An error occurred while uploading");
+    } finally {
+      setUploading(false);
+      if (clearInput?.current) clearInput.current.value = "";
+      clearSelected(null);
+    }
+  };
+
+  const handleFaviconChange = (e) =>
+    handleAssetChange({
+      event: e,
+      setErrorMessage: setError,
+      maxSizeMb: 2,
+      setPreview: setFaviconPreview,
+      setSelectedFile: setSelectedFaviconFile,
+    });
+
+  const handleFaviconUpload = async () =>
+    uploadAsset({
+      file: faviconInputRef.current?.files?.[0],
+      endpoint: "/upload/favicon",
+      formKey: "favicon",
+      successText: "Favicon updated successfully!",
+      imageFolder: "favicons",
+      filenameKey: "filename",
+      setUploading: setUploadingFavicon,
+      setPreview: setFaviconPreview,
+      setOriginal: setOriginalFaviconUrl,
+      clearInput: faviconInputRef,
+      clearSelected: setSelectedFaviconFile,
+    });
+
+  const handleMinifiedLogoChange = (e) =>
+    handleAssetChange({
+      event: e,
+      setErrorMessage: setError,
+      maxSizeMb: 3,
+      setPreview: setMinifiedLogoPreview,
+      setSelectedFile: setSelectedMinifiedLogoFile,
+    });
+
+  const handleMinifiedLogoUpload = async () =>
+    uploadAsset({
+      file: minifiedLogoInputRef.current?.files?.[0],
+      endpoint: "/upload/minified-logo",
+      formKey: "minified_logo",
+      successText: "Minified logo updated successfully!",
+      imageFolder: "minified-logos",
+      filenameKey: "filename",
+      setUploading: setUploadingMinifiedLogo,
+      setPreview: setMinifiedLogoPreview,
+      setOriginal: setOriginalMinifiedLogoUrl,
+      clearInput: minifiedLogoInputRef,
+      clearSelected: setSelectedMinifiedLogoFile,
+    });
+
+  const handleProfileAltChange = (e) =>
+    handleAssetChange({
+      event: e,
+      setErrorMessage: setError,
+      maxSizeMb: 5,
+      setPreview: setProfileAltPreview,
+      setSelectedFile: setSelectedProfileAltFile,
+    });
+
+  const handleProfileAltUpload = async () =>
+    uploadAsset({
+      file: profileAltInputRef.current?.files?.[0],
+      endpoint: "/upload/profile-image-alt",
+      formKey: "profile_image_alt",
+      successText: "Alternative profile image updated successfully!",
+      imageFolder: "profile-image-alt",
+      filenameKey: "filename",
+      setUploading: setUploadingProfileAlt,
+      setPreview: setProfileAltPreview,
+      setOriginal: setOriginalProfileAltUrl,
+      clearInput: profileAltInputRef,
+      clearSelected: setSelectedProfileAltFile,
+    });
 
   if (fetching) {
     return (
@@ -551,6 +756,225 @@ const ViewProfileLayer = () => {
                           Upload Logo
                         </>
                       )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className='mt-24 mb-24'>
+              <h6 className='text-xl mb-16'>Favicon</h6>
+              <div className='d-flex align-items-center gap-3'>
+                <div className='position-relative'>
+                  <img
+                    src={faviconPreview}
+                    alt='Favicon'
+                    className='border br-white border-width-2-px w-64-px h-64-px object-fit-contain bg-light radius-8 p-2'
+                    onError={(e) => { e.target.src = 'assets/images/logo-icon.png'; }}
+                  />
+                  <button
+                    type='button'
+                    className='btn btn-sm btn-primary position-absolute top-0 end-0 rounded-circle p-0 d-flex align-items-center justify-content-center'
+                    style={{ width: '28px', height: '28px', transform: 'translate(50%, -50%)', zIndex: 10 }}
+                    onClick={() => faviconInputRef.current?.click()}
+                    disabled={uploadingFavicon}
+                    title='Change Favicon'
+                  >
+                    <Icon icon='solar:camera-outline' className='icon' style={{ fontSize: '14px' }} />
+                  </button>
+                  <input
+                    ref={faviconInputRef}
+                    type='file'
+                    accept='image/*'
+                    style={{ display: 'none' }}
+                    onChange={handleFaviconChange}
+                  />
+                </div>
+                <div className='flex-grow-1'>
+                  <p className='text-sm text-secondary-light mb-2'>
+                    Upload a small icon for browser tab/branding (PNG recommended, max 2MB).
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {selectedFaviconFile && (
+              <div className='card bg-base border mb-24 p-16 radius-8'>
+                <div className='d-flex align-items-center justify-content-between'>
+                  <div>
+                    <h6 className='text-sm fw-semibold text-primary-light mb-2'>New Favicon Selected</h6>
+                    <p className='text-xs text-secondary-light mb-0'>
+                      {selectedFaviconFile.name} ({(selectedFaviconFile.size / 1024).toFixed(2)} KB)
+                    </p>
+                  </div>
+                  <div className='d-flex gap-2'>
+                    <button
+                      type='button'
+                      className='btn btn-secondary btn-sm'
+                      onClick={() => {
+                        if (faviconInputRef.current) {
+                          faviconInputRef.current.value = "";
+                          setSelectedFaviconFile(null);
+                          setFaviconPreview(originalFaviconUrl);
+                        }
+                      }}
+                      disabled={uploadingFavicon}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type='button'
+                      className='btn btn-primary btn-sm'
+                      onClick={handleFaviconUpload}
+                      disabled={uploadingFavicon}
+                    >
+                      {uploadingFavicon ? "Uploading..." : "Upload Favicon"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className='mt-24 mb-24'>
+              <h6 className='text-xl mb-16'>Minified Logo</h6>
+              <div className='d-flex align-items-center gap-3'>
+                <div className='position-relative'>
+                  <img
+                    src={minifiedLogoPreview}
+                    alt='Minified Logo'
+                    className='border br-white border-width-2-px w-80-px h-80-px object-fit-contain bg-light radius-8 p-2'
+                    onError={(e) => { e.target.src = 'assets/images/logo-icon.png'; }}
+                  />
+                  <button
+                    type='button'
+                    className='btn btn-sm btn-primary position-absolute top-0 end-0 rounded-circle p-0 d-flex align-items-center justify-content-center'
+                    style={{ width: '28px', height: '28px', transform: 'translate(50%, -50%)', zIndex: 10 }}
+                    onClick={() => minifiedLogoInputRef.current?.click()}
+                    disabled={uploadingMinifiedLogo}
+                    title='Change Minified Logo'
+                  >
+                    <Icon icon='solar:camera-outline' className='icon' style={{ fontSize: '14px' }} />
+                  </button>
+                  <input
+                    ref={minifiedLogoInputRef}
+                    type='file'
+                    accept='image/*'
+                    style={{ display: 'none' }}
+                    onChange={handleMinifiedLogoChange}
+                  />
+                </div>
+                <div className='flex-grow-1'>
+                  <p className='text-sm text-secondary-light mb-2'>
+                    Upload compact logo used in minimized sidebar/header states (max 3MB).
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {selectedMinifiedLogoFile && (
+              <div className='card bg-base border mb-24 p-16 radius-8'>
+                <div className='d-flex align-items-center justify-content-between'>
+                  <div>
+                    <h6 className='text-sm fw-semibold text-primary-light mb-2'>New Minified Logo Selected</h6>
+                    <p className='text-xs text-secondary-light mb-0'>
+                      {selectedMinifiedLogoFile.name} ({(selectedMinifiedLogoFile.size / 1024).toFixed(2)} KB)
+                    </p>
+                  </div>
+                  <div className='d-flex gap-2'>
+                    <button
+                      type='button'
+                      className='btn btn-secondary btn-sm'
+                      onClick={() => {
+                        if (minifiedLogoInputRef.current) {
+                          minifiedLogoInputRef.current.value = "";
+                          setSelectedMinifiedLogoFile(null);
+                          setMinifiedLogoPreview(originalMinifiedLogoUrl);
+                        }
+                      }}
+                      disabled={uploadingMinifiedLogo}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type='button'
+                      className='btn btn-primary btn-sm'
+                      onClick={handleMinifiedLogoUpload}
+                      disabled={uploadingMinifiedLogo}
+                    >
+                      {uploadingMinifiedLogo ? "Uploading..." : "Upload Minified Logo"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className='mt-24 mb-24'>
+              <h6 className='text-xl mb-16'>Alternative Profile Image</h6>
+              <div className='d-flex align-items-center gap-3'>
+                <div className='position-relative'>
+                  <img
+                    src={profileAltPreview}
+                    alt='Alternative Profile'
+                    className='border br-white border-width-2-px w-120-px h-120-px rounded-circle object-fit-cover'
+                    onError={(e) => { e.target.src = 'assets/images/user-grid/user-grid-img13.png'; }}
+                  />
+                  <button
+                    type='button'
+                    className='btn btn-sm btn-primary position-absolute top-0 end-0 rounded-circle p-0 d-flex align-items-center justify-content-center'
+                    style={{ width: '30px', height: '30px', transform: 'translate(50%, -50%)', zIndex: 10 }}
+                    onClick={() => profileAltInputRef.current?.click()}
+                    disabled={uploadingProfileAlt}
+                    title='Change Alternative Profile Image'
+                  >
+                    <Icon icon='solar:camera-outline' className='icon' style={{ fontSize: '14px' }} />
+                  </button>
+                  <input
+                    ref={profileAltInputRef}
+                    type='file'
+                    accept='image/*'
+                    style={{ display: 'none' }}
+                    onChange={handleProfileAltChange}
+                  />
+                </div>
+                <div className='flex-grow-1'>
+                  <p className='text-sm text-secondary-light mb-2'>
+                    Upload alternate profile image for branding contexts (max 5MB).
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {selectedProfileAltFile && (
+              <div className='card bg-base border mb-24 p-16 radius-8'>
+                <div className='d-flex align-items-center justify-content-between'>
+                  <div>
+                    <h6 className='text-sm fw-semibold text-primary-light mb-2'>New Alternative Profile Image Selected</h6>
+                    <p className='text-xs text-secondary-light mb-0'>
+                      {selectedProfileAltFile.name} ({(selectedProfileAltFile.size / 1024).toFixed(2)} KB)
+                    </p>
+                  </div>
+                  <div className='d-flex gap-2'>
+                    <button
+                      type='button'
+                      className='btn btn-secondary btn-sm'
+                      onClick={() => {
+                        if (profileAltInputRef.current) {
+                          profileAltInputRef.current.value = "";
+                          setSelectedProfileAltFile(null);
+                          setProfileAltPreview(originalProfileAltUrl);
+                        }
+                      }}
+                      disabled={uploadingProfileAlt}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type='button'
+                      className='btn btn-primary btn-sm'
+                      onClick={handleProfileAltUpload}
+                      disabled={uploadingProfileAlt}
+                    >
+                      {uploadingProfileAlt ? "Uploading..." : "Upload Alternative Image"}
                     </button>
                   </div>
                 </div>

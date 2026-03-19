@@ -13,6 +13,9 @@ const IMAGE_UPLOAD_BASE_DIR = process.env.IMAGE_UPLOAD_PATH || path.join(__dirna
 const profileImagesDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'profile-images');
 const logosDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'logos');
 const signaturesDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'signatures');
+const faviconsDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'favicons');
+const minifiedLogosDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'minified-logos');
+const profileImageAltDir = path.join(IMAGE_UPLOAD_BASE_DIR, 'profile-image-alt');
 if (!fs.existsSync(profileImagesDir)) {
   fs.mkdirSync(profileImagesDir, { recursive: true });
 }
@@ -21,6 +24,15 @@ if (!fs.existsSync(logosDir)) {
 }
 if (!fs.existsSync(signaturesDir)) {
   fs.mkdirSync(signaturesDir, { recursive: true });
+}
+if (!fs.existsSync(faviconsDir)) {
+  fs.mkdirSync(faviconsDir, { recursive: true });
+}
+if (!fs.existsSync(minifiedLogosDir)) {
+  fs.mkdirSync(minifiedLogosDir, { recursive: true });
+}
+if (!fs.existsSync(profileImageAltDir)) {
+  fs.mkdirSync(profileImageAltDir, { recursive: true });
 }
 
 // Configure storage for profile images
@@ -47,6 +59,42 @@ const logoStorage = multer.diskStorage({
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     const filename = `logo-${uniqueSuffix}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const faviconStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, faviconsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname) || '.png';
+    const filename = `favicon-${uniqueSuffix}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const minifiedLogoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, minifiedLogosDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname) || '.png';
+    const filename = `minified-logo-${uniqueSuffix}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const profileImageAltStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, profileImageAltDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname) || '.png';
+    const filename = `profile-alt-${uniqueSuffix}${ext}`;
     cb(null, filename);
   }
 });
@@ -102,6 +150,30 @@ export const uploadSignature = multer({
   fileFilter: fileFilter
 });
 
+export const uploadFavicon = multer({
+  storage: faviconStorage,
+  limits: {
+    fileSize: 2 * 1024 * 1024
+  },
+  fileFilter: fileFilter
+});
+
+export const uploadMinifiedLogo = multer({
+  storage: minifiedLogoStorage,
+  limits: {
+    fileSize: 3 * 1024 * 1024
+  },
+  fileFilter: fileFilter
+});
+
+export const uploadProfileImageAlt = multer({
+  storage: profileImageAltStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  },
+  fileFilter: fileFilter
+});
+
 /**
  * Get the relative URL path for the uploaded profile image
  * @param {string} filename - The filename of the uploaded image
@@ -128,6 +200,21 @@ export const getLogoUrl = (filename) => {
  * @returns {string} Relative URL path
  */
 export const getSignatureUrl = (filename) => {
+  if (!filename) return null;
+  return filename;
+};
+
+export const getFaviconUrl = (filename) => {
+  if (!filename) return null;
+  return filename;
+};
+
+export const getMinifiedLogoUrl = (filename) => {
+  if (!filename) return null;
+  return filename;
+};
+
+export const getProfileImageAltUrl = (filename) => {
   if (!filename) return null;
   return filename;
 };
@@ -160,6 +247,21 @@ export const getLogoPath = (filename) => {
 export const getSignaturePath = (filename) => {
   if (!filename) return null;
   return path.join(signaturesDir, filename);
+};
+
+export const getFaviconPath = (filename) => {
+  if (!filename) return null;
+  return path.join(faviconsDir, filename);
+};
+
+export const getMinifiedLogoPath = (filename) => {
+  if (!filename) return null;
+  return path.join(minifiedLogosDir, filename);
+};
+
+export const getProfileImageAltPath = (filename) => {
+  if (!filename) return null;
+  return path.join(profileImageAltDir, filename);
 };
 
 /**
