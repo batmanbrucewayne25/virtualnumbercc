@@ -55,6 +55,7 @@ app.use((req, res, next) => {
     req.on("end", () => {
       const rawBuf = Buffer.concat(data);
       req.rawBody = rawBuf.toString("utf8");
+      req.rawBodyBuffer = rawBuf;
       console.log(`[RawBody] Captured ${rawBuf.length} bytes`);
       // Parse JSON body so controllers can access req.body
       try {
