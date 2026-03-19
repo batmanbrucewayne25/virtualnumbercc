@@ -29,10 +29,10 @@ export const getVirtualNumberAssignedTemplate = (recipientName, virtualNumber, r
           
           <p>Your virtual number is now active and ready to use. You can start using it for your business communications.</p>
           
-          <p><strong>Reseller:</strong> ${resellerName}</p>
+          <p><strong>Team:</strong> ${resellerName}</p>
           
           <p style="color: #6c757d; font-size: 13px; margin-top: 30px;">
-            If you have any questions or need assistance, please contact your reseller: ${resellerName}
+            If you have any questions or need assistance, please contact your team: ${resellerName}
           </p>
         </div>
         
@@ -53,9 +53,9 @@ export const getVirtualNumberAssignedTemplate = (recipientName, virtualNumber, r
       
       Your virtual number is now active and ready to use. You can start using it for your business communications.
       
-      Reseller: ${resellerName}
+      Team: ${resellerName}
       
-      If you have any questions or need assistance, please contact your reseller: ${resellerName}
+      If you have any questions or need assistance, please contact your team: ${resellerName}
       
       © ${new Date().getFullYear()} Virtual Number. All rights reserved.
     `,

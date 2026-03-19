@@ -138,6 +138,7 @@ const WalletRequestsLayer = () => {
                   <th scope="col">#</th>
                   <th scope="col">Reseller</th>
                   <th scope="col">Amount</th>
+                  <th scope="col">Payment Type</th>
                   <th scope="col">Reference</th>
                   <th scope="col">Description</th>
                   <th scope="col">Status</th>
@@ -151,6 +152,7 @@ const WalletRequestsLayer = () => {
                     <td>{index + 1}</td>
                     <td>{getResellerDisplay(row)}</td>
                     <td>{formatCurrency(row.amount)}</td>
+                    <td>{row.payment_type === "upi" ? "UPI" : "Bank Transfer"}</td>
                     <td>{row.reference || "-"}</td>
                     <td>{row.description || "-"}</td>
                     <td>

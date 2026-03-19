@@ -24,6 +24,7 @@ const WalletLayer = () => {
   const [validityDate, setValidityDate] = useState("");
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [requestAmount, setRequestAmount] = useState("");
+  const [requestPaymentType, setRequestPaymentType] = useState("bank_transfer");
   const [requestReference, setRequestReference] = useState("");
   const [requestDescription, setRequestDescription] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
@@ -178,8 +179,12 @@ const WalletLayer = () => {
       setError("Please enter a valid amount");
       return;
     }
+    if (!requestPaymentType || (requestPaymentType !== "bank_transfer" && requestPaymentType !== "upi")) {
+      setError("Please select payment type (Bank Transfer or UPI)");
+      return;
+    }
     if (!requestReference.trim()) {
-      setError("Reference is required");
+      setError("Reference number is required");
       return;
     }
     setRequestSubmitting(true);
@@ -187,7 +192,8 @@ const WalletLayer = () => {
     try {
       const result = await insertWalletRequest(selectedResellerId, {
         amount,
-        reference: requestReference.trim() || null,
+        payment_type: requestPaymentType,
+        reference: requestReference.trim(),
         description: requestDescription.trim() || null,
       });
       if (result.success) {
@@ -195,6 +201,7 @@ const WalletLayer = () => {
         setTimeout(() => {
           setRequestModalOpen(false);
           setRequestAmount("");
+          setRequestPaymentType("bank_transfer");
           setRequestReference("");
           setRequestDescription("");
           setRequestSuccess("");
@@ -267,6 +274,7 @@ const WalletLayer = () => {
                   className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
                   onClick={() => {
                     setRequestAmount("");
+                    setRequestPaymentType("bank_transfer");
                     setRequestReference("");
                     setRequestDescription("");
                     setRequestSuccess("");
@@ -477,6 +485,7 @@ const WalletLayer = () => {
                   onClick={() => {
                     setRequestModalOpen(false);
                     setRequestAmount("");
+                    setRequestPaymentType("bank_transfer");
                     setRequestReference("");
                     setRequestDescription("");
                     setRequestSuccess("");
@@ -517,12 +526,27 @@ const WalletLayer = () => {
                   </div>
                   <div className="mb-20">
                     <label className="form-label fw-semibold text-primary-light text-sm mb-8">
-                      Reference <span className="text-danger-600">*</span>
+                      Payment Type <span className="text-danger-600">*</span>
+                    </label>
+                    <select
+                      className="form-select radius-8"
+                      value={requestPaymentType}
+                      onChange={(e) => setRequestPaymentType(e.target.value)}
+                      required
+                      disabled={requestSubmitting}
+                    >
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="upi">UPI</option>
+                    </select>
+                  </div>
+                  <div className="mb-20">
+                    <label className="form-label fw-semibold text-primary-light text-sm mb-8">
+                      Reference Number <span className="text-danger-600">*</span>
                     </label>
                     <input
                       type="text"
                       className="form-control radius-8"
-                      placeholder="Enter reference"
+                      placeholder="Enter reference number"
                       value={requestReference}
                       onChange={(e) => setRequestReference(e.target.value)}
                       required

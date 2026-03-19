@@ -234,10 +234,11 @@ const CustomerListLayer = () => {
                 <thead>
                   <tr>
                     <th scope="col">S.L</th>
+                    <th scope="col">Customer Name</th>
+                    <th scope="col">Phone</th>
                     <th scope="col">Date</th>
                     {!isReseller && <th scope="col">Reseller</th>}
                     <th scope="col">Email</th>
-                    <th scope="col">Phone</th>
                     {/* <th scope="col">Business Email</th> */}
                     <th scope="col" className="text-center">
                       Status
@@ -254,6 +255,16 @@ const CustomerListLayer = () => {
                   {filteredCustomers.map((customer, index) => (
                     <tr key={customer.id}>
                       <td>{index + 1}</td>
+                      <td>
+                        <span className="text-md mb-0 fw-normal text-secondary-light">
+                          {customer.profile_name || customer.business_name || customer.pan_full_name || customer.email || "-"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-md mb-0 fw-normal text-secondary-light">
+                          {customer.phone || "-"}
+                        </span>
+                      </td>
                       <td>{formatDate(customer.created_at)}</td>
                       {!isReseller && (
                         <td>
@@ -268,11 +279,6 @@ const CustomerListLayer = () => {
                       <td>
                         <span className="text-md mb-0 fw-normal text-secondary-light">
                           {customer.email || "-"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-md mb-0 fw-normal text-secondary-light">
-                          {customer.phone || "-"}
                         </span>
                       </td>
                       {/* <td>

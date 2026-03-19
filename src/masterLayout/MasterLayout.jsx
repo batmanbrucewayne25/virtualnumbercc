@@ -858,6 +858,19 @@ const MasterLayout = ({ children }) => {
                   </NavLink>
                 </li>
 
+                {/* CMS - Reseller: manage own pages */}
+                <li>
+                  <NavLink
+                    to='/cms'
+                    className={(navData) =>
+                      navData.isActive ? "active-page" : ""
+                    }
+                  >
+                    <Icon icon='ri-file-text-line' className='menu-icon' />
+                    <span>CMS</span>
+                  </NavLink>
+                </li>
+
               </>
             )}
 
@@ -2542,7 +2555,15 @@ const MasterLayout = ({ children }) => {
         <footer className='d-footer'>
           <div className='row align-items-center justify-content-between'>
             <div className='col-auto'>
-              <p className='mb-0'>© 2026. All Rights Reserved.</p>
+              <p className='mb-0'>
+                © 2026 {(() => {
+                  if (userRole === "reseller") {
+                    const u = getUserData();
+                    if (u && (u.brand_name || u.business_name)) return u.brand_name || u.business_name;
+                  }
+                  return import.meta.env.VITE_BRAND_NAME || "Virtual Number";
+                })()}. All Rights Reserved.
+              </p>
             </div>
             {/* <div className='col-auto'>
               <p className='mb-0'>

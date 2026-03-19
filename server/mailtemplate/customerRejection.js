@@ -32,12 +32,12 @@ export const getCustomerRejectionTemplate = (
             <p style="margin: 8px 0 0 0;">${rejectionReason || "Please contact support for more information."}</p>
           </div>
           
-          <p>If you believe this is an error or would like to resubmit with corrected information, please contact your reseller.</p>
+          <p>If you believe this is an error or would like to resubmit with corrected information, please contact your team.</p>
           
-          <p><strong>Reseller:</strong> ${resellerName}</p>
+          <p><strong>Team:</strong> ${resellerName}</p>
           
           <p style="color: #6c757d; font-size: 13px; margin-top: 30px;">
-            For assistance, please contact your reseller: ${resellerName}
+            For assistance, please contact your team: ${resellerName}
           </p>
         </div>
         
@@ -56,11 +56,11 @@ export const getCustomerRejectionTemplate = (
 
       Reason: ${rejectionReason || "Please contact support for more information."}
 
-      If you believe this is an error or would like to resubmit with corrected information, please contact your reseller.
+      If you believe this is an error or would like to resubmit with corrected information, please contact your team.
 
-      Reseller: ${resellerName}
+      Team: ${resellerName}
 
-      For assistance, please contact your reseller: ${resellerName}
+      For assistance, please contact your team: ${resellerName}
 
       © ${new Date().getFullYear()} Virtual Number. All rights reserved.
     `,

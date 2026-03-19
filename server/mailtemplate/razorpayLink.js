@@ -40,7 +40,7 @@ export const getRazorpayLinkTemplate = (recipientName, razorpayLink, planName, p
             ${razorpayLink}
           </p>
           
-          <p><strong>Reseller:</strong> ${resellerName}</p>
+          <p><strong>Team:</strong> ${resellerName}</p>
           
           <p style="color: #dc3545; font-size: 13px; margin-top: 30px;">
             <strong>Note:</strong> Your virtual number will be activated automatically after successful payment.
@@ -65,7 +65,7 @@ export const getRazorpayLinkTemplate = (recipientName, razorpayLink, planName, p
       
       Payment Link: ${razorpayLink}
       
-      Reseller: ${resellerName}
+      Team: ${resellerName}
       
       Note: Your virtual number will be activated automatically after successful payment.
       

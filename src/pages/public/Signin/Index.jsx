@@ -7,6 +7,7 @@ import { saveAuthToken, isAuthenticated } from "@/utils/auth";
 import { getUserWithPermissions } from "@/hasura/mutations/userPermissions";
 import { getPublishedCmsPages, getCmsPageBySlug } from "@/hasura/mutations/cms";
 import CmsPageModal from "@/components/CmsPageModal";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 
 const SignInLayer = () => {
   const navigate = useNavigate();
@@ -20,6 +21,8 @@ const SignInLayer = () => {
   const [cmsModalOpen, setCmsModalOpen] = useState(false);
   const [selectedCmsPage, setSelectedCmsPage] = useState(null);
   const [cmsPageLoading, setCmsPageLoading] = useState(false);
+  const [resellerBrandName, setResellerBrandName] = useState(null);
+  const [resellerId, setResellerId] = useState(null);
 
   // If already authenticated, redirect based on build type and role
   useEffect(() => {
@@ -54,11 +57,43 @@ const SignInLayer = () => {
     }
   }, [navigate]);
 
-  // Fetch published CMS pages for footer
+  // When ClientHub build, fetch reseller by domain for footer brand name and resellerId
+  useEffect(() => {
+    if (!isClientHubBuild) return;
+    const domain = typeof window !== "undefined" ? window.location.hostname : "";
+    if (!domain) return;
+    const fetchResellerByDomain = async () => {
+      try {
+        const API_BASE_URL = getApiBaseUrl();
+        const response = await fetch(
+          `${API_BASE_URL}/reseller/by-domain?domain=${encodeURIComponent(domain)}`
+        );
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            const name =
+              result.data.brandName ||
+              result.data.businessName ||
+              result.data.resellerName ||
+              null;
+            if (name) setResellerBrandName(name);
+            if (result.data.resellerId) setResellerId(result.data.resellerId);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching reseller for sign-in footer:", err);
+      }
+    };
+    fetchResellerByDomain();
+  }, [isClientHubBuild]);
+
+  // Fetch published CMS pages for footer: admin pages on admin build, reseller pages on ClientHub
   useEffect(() => {
     const fetchCmsPages = async () => {
+      if (isClientHubBuild && resellerId == null) return;
       try {
-        const result = await getPublishedCmsPages();
+        const cmsResellerId = isClientHubBuild ? resellerId : null;
+        const result = await getPublishedCmsPages(cmsResellerId);
         if (result.success && result.data) {
           setCmsPages(result.data);
         }
@@ -67,17 +102,17 @@ const SignInLayer = () => {
       }
     };
     fetchCmsPages();
-  }, []);
+  }, [isClientHubBuild, resellerId]);
 
-  // Handle CMS page click
+  // Handle CMS page click (admin page when admin build, reseller page when ClientHub)
   const handleCmsPageClick = async (e, page) => {
     e.preventDefault();
     setCmsPageLoading(true);
     setCmsModalOpen(true);
     setSelectedCmsPage(null);
-
+    const cmsResellerId = isClientHubBuild ? resellerId : null;
     try {
-      const result = await getCmsPageBySlug(page.slug);
+      const result = await getCmsPageBySlug(page.slug, cmsResellerId);
       if (result.success && result.data) {
         setSelectedCmsPage(result.data);
       } else {
@@ -357,7 +392,7 @@ const SignInLayer = () => {
           </form>
 
           <p className="mt-32 text-center text-sm text-secondary-light mb-0">
-            2026 © {import.meta.env.VITE_BRAND_NAME || "Virtual Number"}. All Rights Reserved.
+            2026 © {resellerBrandName || import.meta.env.VITE_BRAND_NAME || "Virtual Number"}. All Rights Reserved.
           </p>
         </div>
       </div>

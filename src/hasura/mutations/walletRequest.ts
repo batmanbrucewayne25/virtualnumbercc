@@ -4,6 +4,7 @@ export type WalletRequestRow = {
   id: string;
   reseller_id: string;
   amount: number;
+  payment_type: string;
   reference: string | null;
   description: string | null;
   status: string;
@@ -26,26 +27,29 @@ export type WalletRequestRow = {
  */
 export const insertWalletRequest = async (
   resellerId: string,
-  payload: { amount: number; reference?: string | null; description?: string | null }
+  payload: { amount: number; payment_type: string; reference?: string | null; description?: string | null }
 ): Promise<{ success: boolean; data?: WalletRequestRow; message?: string }> => {
   const amount = Number(payload.amount);
   if (isNaN(amount) || amount <= 0) {
     return { success: false, message: "Amount must be greater than 0." };
   }
+  const paymentType = payload.payment_type === "upi" ? "upi" : "bank_transfer";
   const reference = payload.reference?.trim();
   if (!reference) {
-    return { success: false, message: "Reference is required." };
+    return { success: false, message: "Reference number is required." };
   }
   const MUTATION = `mutation InsertWalletRequest(
     $reseller_id: uuid!
     $amount: numeric!
-    $reference: String
+    $payment_type: String!
+    $reference: String!
     $description: String
   ) {
     insert_wallet_request_one(
       object: {
         reseller_id: $reseller_id
         amount: $amount
+        payment_type: $payment_type
         reference: $reference
         description: $description
         status: "PENDING"
@@ -54,6 +58,7 @@ export const insertWalletRequest = async (
       id
       reseller_id
       amount
+      payment_type
       reference
       description
       status
@@ -64,6 +69,7 @@ export const insertWalletRequest = async (
     const result = await graphqlRequest(MUTATION, {
       reseller_id: resellerId,
       amount,
+      payment_type: paymentType,
       reference,
       description: payload.description?.trim() || null,
     });
@@ -99,6 +105,7 @@ export const getWalletRequests = async (): Promise<{
       id
       reseller_id
       amount
+      payment_type
       reference
       description
       status
@@ -148,6 +155,7 @@ export const getWalletRequestsByResellerId = async (
       id
       reseller_id
       amount
+      payment_type
       reference
       description
       status

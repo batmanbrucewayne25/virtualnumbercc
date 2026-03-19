@@ -855,7 +855,7 @@ export class CustomerService {
           reseller.brand_name ||
           reseller.business_name ||
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
-          "Reseller";
+          "Team";
         await sendVirtualNumberEmail(
           customer.email,
           customer.profile_name || customer.email,
@@ -1030,7 +1030,7 @@ export class CustomerService {
           reseller.brand_name ||
           reseller.business_name ||
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
-          "Reseller";
+          "Team";
         await sendRazorpayLinkEmail(
           customer.email,
           customer.profile_name || customer.email,
@@ -1246,7 +1246,7 @@ export class CustomerService {
         reseller.brand_name ||
         reseller.business_name ||
         `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
-        "Reseller";
+        "Team";
 
       const planDisplayName = `${subscriptionPlan.plan_name} (₹${planAmount.toFixed(2)} - ${subscriptionPlan.duration_days || 360} days) - Renewal for ${vn.virtual_number}`;
 
@@ -1686,7 +1686,7 @@ export class CustomerService {
           reseller.brand_name ||
           reseller.business_name ||
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
-          "Reseller";
+          "Team";
         try {
           await sendVirtualNumberEmail(
             customer.email,
@@ -1809,7 +1809,7 @@ export class CustomerService {
           reseller.brand_name ||
           reseller.business_name ||
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
-          "Reseller";
+          "Team";
         await sendRazorpayLinkEmail(
           customer.email,
           customer.profile_name || customer.email,

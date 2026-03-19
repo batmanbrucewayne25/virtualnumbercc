@@ -807,6 +807,8 @@ const ViewUserLayer = () => {
                       <span className={`badge ${customer.gstin_status === "Active" ? "bg-success" : "bg-warning"}`}>
                         {customer.gstin_status}
                       </span>
+                    ) : (customer.gstin && String(customer.gstin).trim()) ? (
+                      <span className="badge bg-success">Active</span>
                     ) : (
                       "N/A"
                     )}

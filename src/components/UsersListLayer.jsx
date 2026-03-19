@@ -205,26 +205,19 @@ const UsersListLayer = () => {
       }
     }
 
-    // Filter by search term
+    // Filter by search term (global: name, email, phone)
     if (!searchTerm) return true;
 
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = searchTerm.toLowerCase().trim();
+    const searchPhone = searchTerm.replace(/\s/g, "");
     const name = getCustomerName(customer).toLowerCase();
-    const virtualNumber = getVirtualNumber(customer).toLowerCase();
-    const callForward = getCallForwardNumber(customer).toLowerCase();
-    const resellerName = (
-      customer.mst_reseller?.business_name ||
-      `${customer.mst_reseller?.first_name || ""} ${
-        customer.mst_reseller?.last_name || ""
-      }`.trim() ||
-      ""
-    ).toLowerCase();
+    const email = (customer.email || "").toLowerCase();
+    const phone = (customer.phone || "").replace(/\s/g, "");
 
     return (
       name.includes(searchLower) ||
-      virtualNumber.includes(searchLower) ||
-      callForward.includes(searchLower) ||
-      resellerName.includes(searchLower)
+      email.includes(searchLower) ||
+      (searchPhone && phone.includes(searchPhone))
     );
   });
 
@@ -289,7 +282,7 @@ const UsersListLayer = () => {
               <input
                 type="text"
                 className="form-control form-control-sm"
-                placeholder="Search"
+                placeholder="Search by name, email, or phone"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSearch()}
@@ -383,6 +376,8 @@ const UsersListLayer = () => {
                 <thead>
                   <tr>
                     <th scope="col">S.L</th>
+                    <th scope="col">Customer Name</th>
+                    <th scope="col">Phone</th>
                     {(userRole === "admin" || userRole === "super_admin") && (
                       <th scope="col">Reseller</th>
                     )}
@@ -411,6 +406,14 @@ const UsersListLayer = () => {
                   {filteredCustomers.map((customer, index) => (
                     <tr key={customer.id}>
                       <td>{index + 1}</td>
+                      <td>
+                        <span className="text-sm fw-medium">
+                          {getCustomerName(customer)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm">{customer.phone || "-"}</span>
+                      </td>
                       {(userRole === "admin" || userRole === "super_admin") && (
                         <td>
                           <span className="text-sm fw-medium">

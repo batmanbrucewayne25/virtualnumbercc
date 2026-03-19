@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
+import { getPublishedCmsPages } from "@/hasura/mutations/cms";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
@@ -87,9 +88,24 @@ const ClientHubLayer = ({
     signature: null,
   });
   const [progressRestored, setProgressRestored] = useState(false);
+  const [cmsPages, setCmsPages] = useState<any[]>([]);
 
   useEffect(() => {
     setProgressRestored(false);
+  }, [resellerId]);
+
+  // Fetch reseller's published CMS pages for footer
+  useEffect(() => {
+    if (!resellerId) return;
+    const fetchCms = async () => {
+      try {
+        const result = await getPublishedCmsPages(resellerId);
+        if (result.success && result.data) setCmsPages(result.data);
+      } catch (err) {
+        console.error("Failed to fetch CMS pages for ClientHub footer:", err);
+      }
+    };
+    fetchCms();
   }, [resellerId]);
 
   useEffect(() => {
@@ -435,6 +451,8 @@ const ClientHubLayer = ({
               resellerId={resellerId}
               brandName={resellerData?.brand_name || resellerData?.business_name}
               allowExistingCustomer={resellerData?.allow_existing_customer === true}
+              resellerEmail={resellerData?.email}
+              resellerPhone={resellerData?.phone}
               onSignUp={() => handleStepChange(2)}
               onLogin={() => {
                 // Login handled in Step1 component
@@ -548,6 +566,22 @@ const ClientHubLayer = ({
                   Login as Admin
                 </button>
               </p>
+            </div>
+          )}
+
+          {cmsPages.length > 0 && (
+            <div className="mt-24 text-center">
+              <div className="d-flex flex-wrap justify-content-center gap-3">
+                {cmsPages.map((page: any) => (
+                  <Link
+                    key={page.id}
+                    to={`/page/${page.slug}?reseller_id=${resellerId}`}
+                    className="text-sm text-secondary-light text-decoration-none"
+                  >
+                    {page.page_title}
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
 

@@ -20,7 +20,7 @@ const Step11 = ({ resellerName }: Step11Props) => {
           <div>
             <p className="mb-0 fw-semibold">What's Next?</p>
             <p className="mb-0 text-sm mt-4">
-              Admin <strong>{resellerName}</strong> will contact you soon to complete your onboarding process.
+              Team <strong>{resellerName}</strong> will contact you soon to complete your onboarding process.
             </p>
           </div>
         </div>

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { getCmsPageBySlug } from "@/hasura/mutations/cms";
 
 const ViewCmsPage = () => {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const resellerIdParam = searchParams.get("reseller_id") || undefined;
   const [page, setPage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -17,7 +19,7 @@ const ViewCmsPage = () => {
       }
 
       try {
-        const result = await getCmsPageBySlug(slug);
+        const result = await getCmsPageBySlug(slug, resellerIdParam ?? null);
         if (result.success && result.data) {
           setPage(result.data);
         } else {
@@ -32,7 +34,7 @@ const ViewCmsPage = () => {
     };
 
     fetchPage();
-  }, [slug]);
+  }, [slug, resellerIdParam]);
 
   if (loading) {
     return (
@@ -86,9 +88,15 @@ const ViewCmsPage = () => {
 
           {/* Back Link */}
           <div className="mt-32">
-            <Link to="/sign-up" className="btn btn-outline-secondary">
-              ← Back to Sign Up
-            </Link>
+            {resellerIdParam ? (
+              <Link to={`/clienthub/${resellerIdParam}`} className="btn btn-outline-secondary">
+                ← Back to Client Hub
+              </Link>
+            ) : (
+              <Link to="/sign-up" className="btn btn-outline-secondary">
+                ← Back to Sign Up
+              </Link>
+            )}
           </div>
         </div>
       </div>

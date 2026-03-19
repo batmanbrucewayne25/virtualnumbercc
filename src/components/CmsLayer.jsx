@@ -9,6 +9,8 @@ import {
   deleteCmsPage,
 } from "@/hasura/mutations/cms";
 import { generateSlug } from "@/utils/slugGenerator";
+import { getMstResellers } from "@/hasura/mutations/reseller";
+import { getUserData } from "@/utils/auth";
 
 const CmsLayer = () => {
   const [pages, setPages] = useState([]);
@@ -20,23 +22,46 @@ const CmsLayer = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const quillRef = useRef(null);
 
+  const userData = getUserData();
+  const isResellerRole = userData?.role === "reseller";
+  const currentResellerId = isResellerRole ? userData?.id : null;
+
+  const [resellerFilter, setResellerFilter] = useState("all");
+  const [resellers, setResellers] = useState([]);
+
   const [formData, setFormData] = useState({
     page_title: "",
     content: "",
     slug: "",
     is_published: false,
+    reseller_id: null,
   });
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
 
   useEffect(() => {
+    if (!isResellerRole) {
+      getMstResellers().then((res) => {
+        if (res.success && res.data) setResellers(res.data);
+      });
+    }
+  }, [isResellerRole]);
+
+  useEffect(() => {
     fetchPages();
-  }, []);
+  }, [resellerFilter, currentResellerId]);
 
   const fetchPages = async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await getCmsPages();
+      const filter = isResellerRole
+        ? { resellerId: currentResellerId }
+        : resellerFilter === "all"
+          ? undefined
+          : resellerFilter === "admin"
+            ? { resellerId: null }
+            : { resellerId: resellerFilter };
+      const result = await getCmsPages(filter);
       if (result.success) {
         setPages(result.data || []);
       } else {
@@ -58,6 +83,7 @@ const CmsLayer = () => {
         content: page.content || "",
         slug: page.slug || "",
         is_published: page.is_published || false,
+        reseller_id: page.reseller_id ?? null,
       });
       setSlugManuallyEdited(true);
     } else {
@@ -67,6 +93,7 @@ const CmsLayer = () => {
         content: "",
         slug: "",
         is_published: false,
+        reseller_id: isResellerRole ? currentResellerId : null,
       });
       setSlugManuallyEdited(false);
     }
@@ -83,6 +110,7 @@ const CmsLayer = () => {
       content: "",
       slug: "",
       is_published: false,
+      reseller_id: null,
     });
     setSlugManuallyEdited(false);
     setError("");
@@ -143,6 +171,7 @@ const CmsLayer = () => {
 
     setActionLoading(true);
     try {
+      const resellerId = isResellerRole ? currentResellerId : formData.reseller_id ?? null;
       let result;
       if (editingPage) {
         result = await updateCmsPage(editingPage.id, {
@@ -150,6 +179,7 @@ const CmsLayer = () => {
           content: formData.content,
           slug: formData.slug.trim(),
           is_published: formData.is_published,
+          ...(isResellerRole ? {} : { reseller_id: resellerId }),
         });
       } else {
         result = await createCmsPage({
@@ -157,6 +187,7 @@ const CmsLayer = () => {
           content: formData.content,
           slug: formData.slug.trim(),
           is_published: formData.is_published,
+          reseller_id: resellerId,
         });
       }
 
@@ -254,16 +285,34 @@ const CmsLayer = () => {
     <div>
       <div className="card h-100 p-0 radius-12">
         <div className="card-header border-bottom bg-base py-16 px-24">
-          <div className="d-flex justify-content-between align-items-center">
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h5 className="text-md text-primary-light mb-0">CMS Pages</h5>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => handleOpenModal()}
-            >
-              <Icon icon="lucide:plus" className="icon me-2" />
-              Add New Page
-            </button>
+            <div className="d-flex align-items-center gap-2">
+              {!isResellerRole && (
+                <select
+                  className="form-select form-select-sm w-auto"
+                  value={resellerFilter}
+                  onChange={(e) => setResellerFilter(e.target.value)}
+                  aria-label="Filter by owner"
+                >
+                  <option value="all">All</option>
+                  <option value="admin">Admin only</option>
+                  {resellers.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      Reseller: {r.brand_name || r.business_name || r.email || r.id}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => handleOpenModal()}
+              >
+                <Icon icon="lucide:plus" className="icon me-2" />
+                Add New Page
+              </button>
+            </div>
           </div>
         </div>
         <div className="card-body p-24">
@@ -318,6 +367,7 @@ const CmsLayer = () => {
                     <th scope="col">S.L</th>
                     <th scope="col">Page Title</th>
                     <th scope="col">Slug</th>
+                    {!isResellerRole && <th scope="col">Owner</th>}
                     <th scope="col" className="text-center">Published</th>
                     <th scope="col">Created Date</th>
                     <th scope="col">Updated Date</th>
@@ -338,6 +388,18 @@ const CmsLayer = () => {
                           {page.slug}
                         </span>
                       </td>
+                      {!isResellerRole && (
+                        <td>
+                          <span className="text-sm">
+                            {page.reseller_id == null
+                              ? "Admin"
+                              : (page.mst_reseller?.brand_name ||
+                                  page.mst_reseller?.business_name ||
+                                  page.mst_reseller?.email ||
+                                  "Reseller")}
+                          </span>
+                        </td>
+                      )}
                       <td className="text-center">
                         <span
                           className={`${
@@ -456,6 +518,39 @@ const CmsLayer = () => {
                       disabled={actionLoading}
                     />
                   </div>
+
+                  {!isResellerRole && (
+                    <div className="mb-20">
+                      <label
+                        htmlFor="owner"
+                        className="form-label fw-semibold text-primary-light text-sm mb-8"
+                      >
+                        Owner
+                      </label>
+                      <select
+                        className="form-select radius-8"
+                        id="owner"
+                        value={formData.reseller_id || ""}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            reseller_id: e.target.value || null,
+                          }))
+                        }
+                        disabled={actionLoading}
+                      >
+                        <option value="">Admin</option>
+                        {resellers.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.brand_name || r.business_name || r.email || r.id}
+                          </option>
+                        ))}
+                      </select>
+                      <small className="text-xs text-secondary-light mt-4 d-block">
+                        Leave as Admin for pages shown on admin login/footer; select a reseller for that reseller&apos;s ClientHub/footer.
+                      </small>
+                    </div>
+                  )}
 
                   <div className="mb-20">
                     <label

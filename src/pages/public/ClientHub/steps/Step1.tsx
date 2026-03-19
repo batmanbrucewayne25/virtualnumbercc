@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "@iconify/react";
 import PasswordField from "@/components/Form/PasswordField";
 import { useNavigate } from "react-router-dom";
 // @ts-ignore - JavaScript module imports
@@ -10,17 +11,49 @@ interface Step1Props {
   resellerId: string;
   brandName?: string;
   allowExistingCustomer?: boolean;
+  resellerEmail?: string | null;
+  resellerPhone?: string | null;
   onSignUp: () => void;
   onLogin: () => void;
 }
 
-const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
+const Step1 = ({
+  resellerId,
+  brandName,
+  allowExistingCustomer,
+  resellerEmail,
+  resellerPhone,
+  onSignUp,
+  onLogin,
+}: Step1Props) => {
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showExistingCustomerModal, setShowExistingCustomerModal] = useState(false);
+  const [showContactTeamModal, setShowContactTeamModal] = useState(false);
   const navigate = useNavigate();
+
+  const displayBrandName = brandName || "Client Hub";
+
+  const handleVirtualNumberClick = () => {
+    if (allowExistingCustomer) {
+      setShowExistingCustomerModal(true);
+    } else {
+      onSignUp();
+    }
+  };
+
+  const handleExistingCustomerYes = () => {
+    setShowExistingCustomerModal(false);
+    onSignUp();
+  };
+
+  const handleExistingCustomerNo = () => {
+    setShowExistingCustomerModal(false);
+    setShowContactTeamModal(true);
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,9 +179,9 @@ const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
 
   return (
     <>
-      <h4 className="mb-12">Welcome to {brandName || "Client Hub"}</h4>
+      <h4 className="mb-12">Welcome to {displayBrandName}</h4>
       <p className="text-sm text-secondary-light mb-24">
-        Get started by creating your account 
+        Get started by creating your account
       </p>
 
       <button
@@ -156,11 +189,116 @@ const Step1 = ({ resellerId, brandName, onSignUp, onLogin }: Step1Props) => {
         className="btn btn-primary w-100 radius-12 mb-12"
         onClick={(e) => {
           e.preventDefault();
-          onSignUp();
+          handleVirtualNumberClick();
         }}
       >
         Get Your Virtual Number
       </button>
+
+      {/* Are you existing customer? (only when allow_existing_customer is true) */}
+      {showExistingCustomerModal && (
+        <div
+          className="modal show d-block"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          tabIndex={-1}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">
+                  Existing Customer?
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  onClick={() => setShowExistingCustomerModal(false)}
+                />
+              </div>
+              <div className="modal-body p-24">
+                <p className="mb-0 text-md">
+                  Are you an existing <strong>{displayBrandName}</strong> customer?
+                </p>
+              </div>
+              <div className="modal-footer border-top gap-2">
+                <button
+                  type="button"
+                  className="btn btn-primary radius-8"
+                  onClick={handleExistingCustomerYes}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary radius-8"
+                  onClick={handleExistingCustomerNo}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact team popup (when user selects No) */}
+      {showContactTeamModal && (
+        <div
+          className="modal show d-block"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          tabIndex={-1}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">
+                  Contact Team
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  onClick={() => setShowContactTeamModal(false)}
+                />
+              </div>
+              <div className="modal-body p-24">
+                <p className="mb-20 text-md">
+                  Kindly contact Team <strong>{displayBrandName}</strong>.
+                </p>
+                {(resellerEmail || resellerPhone) && (
+                  <div className="d-flex flex-column gap-12 text-sm">
+                    {resellerPhone && (
+                      <div className="d-flex align-items-center gap-8">
+                        <Icon icon="solar:phone-bold" className="text-primary-600" />
+                        <a href={`tel:${resellerPhone}`} className="text-primary-600">
+                          {resellerPhone}
+                        </a>
+                      </div>
+                    )}
+                    {resellerEmail && (
+                      <div className="d-flex align-items-center gap-8">
+                        <Icon icon="solar:letter-bold" className="text-primary-600" />
+                        <a href={`mailto:${resellerEmail}`} className="text-primary-600">
+                          {resellerEmail}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-primary radius-8"
+                  onClick={() => setShowContactTeamModal(false)}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import SuccessPopup from "../../../components/Modal";
 import CmsPageModal from "@/components/CmsPageModal";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
 import Step3 from "./steps/Step3";
@@ -34,6 +35,9 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
   const [cmsModalOpen, setCmsModalOpen] = useState(false);
   const [selectedCmsPage, setSelectedCmsPage] = useState<any>(null);
   const [cmsPageLoading, setCmsPageLoading] = useState(false);
+  const buildType = import.meta.env.VITE_BUILD_TYPE || "admin";
+  const isClientHubBuild = buildType === "clienthub";
+  const [resellerId, setResellerId] = useState<string | null>(null);
 
   useEffect(() => {
     // Read step from URL query parameter
@@ -65,11 +69,37 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // Fetch published CMS pages for footer
+  // When ClientHub build, fetch reseller by domain for CMS context
+  useEffect(() => {
+    if (!isClientHubBuild) return;
+    const domain = typeof window !== "undefined" ? window.location.hostname : "";
+    if (!domain) return;
+    const fetchResellerByDomain = async () => {
+      try {
+        const API_BASE_URL = getApiBaseUrl();
+        const response = await fetch(
+          `${API_BASE_URL}/reseller/by-domain?domain=${encodeURIComponent(domain)}`
+        );
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data?.resellerId) {
+            setResellerId(result.data.resellerId);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching reseller for Signup CMS:", err);
+      }
+    };
+    fetchResellerByDomain();
+  }, [isClientHubBuild]);
+
+  // Fetch published CMS pages: admin only when admin build, reseller pages when ClientHub (after resellerId)
   useEffect(() => {
     const fetchCmsPages = async () => {
+      if (isClientHubBuild && resellerId == null) return;
       try {
-        const result = await getPublishedCmsPages();
+        const cmsResellerId = isClientHubBuild ? resellerId : null;
+        const result = await getPublishedCmsPages(cmsResellerId);
         if (result.success && result.data) {
           setCmsPages(result.data);
         }
@@ -78,17 +108,17 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
       }
     };
     fetchCmsPages();
-  }, []);
+  }, [isClientHubBuild, resellerId]);
 
-  // Handle CMS page click
+  // Handle CMS page click (admin page when admin build, reseller page when ClientHub)
   const handleCmsPageClick = async (e: React.MouseEvent, page: any) => {
     e.preventDefault();
     setCmsPageLoading(true);
     setCmsModalOpen(true);
     setSelectedCmsPage(null);
-
+    const cmsResellerId = isClientHubBuild ? resellerId : null;
     try {
-      const result = await getCmsPageBySlug(page.slug);
+      const result = await getCmsPageBySlug(page.slug, cmsResellerId ?? undefined);
       if (result.success && result.data) {
         setSelectedCmsPage(result.data);
       }

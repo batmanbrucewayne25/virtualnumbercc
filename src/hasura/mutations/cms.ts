@@ -1,10 +1,16 @@
 import { graphqlRequest } from "@/hasura";
 
-/**
- * Get all CMS pages
- */
-export const getCmsPages = async () => {
-  const QUERY = `query GetCmsPages {
+/** Filter for getCmsPages: undefined/"all" = all, null/"admin" = admin only, "<uuid>" = that reseller */
+export const getCmsPages = async (filter?: { resellerId?: string | null }) => {
+  const resellerId = filter?.resellerId;
+  const isAll = resellerId === undefined || resellerId === "all";
+  const isAdminOnly = resellerId === null || resellerId === "admin";
+  const isReseller = typeof resellerId === "string" && resellerId !== "all" && resellerId !== "admin";
+
+  let QUERY: string;
+  let variables: Record<string, unknown> | undefined;
+  if (isAll) {
+    QUERY = `query GetCmsPages {
     cms_pages(
       order_by: { created_date: desc }
     ) {
@@ -15,11 +21,84 @@ export const getCmsPages = async () => {
       updated_date
       is_published
       slug
+      reseller_id
+      mst_reseller {
+        id
+        business_name
+        brand_name
+      }
     }
   }`;
+    variables = undefined;
+  } else if (isAdminOnly) {
+    QUERY = `query GetCmsPagesAdminOnly {
+    cms_pages(
+      order_by: { created_date: desc }
+      where: { reseller_id: { _is_null: true } }
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+      reseller_id
+      mst_reseller {
+        id
+        business_name
+        brand_name
+      }
+    }
+  }`;
+    variables = undefined;
+  } else if (isReseller) {
+    QUERY = `query GetCmsPagesByReseller($resellerId: uuid!) {
+    cms_pages(
+      order_by: { created_date: desc }
+      where: { reseller_id: { _eq: $resellerId } }
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+      reseller_id
+      mst_reseller {
+        id
+        business_name
+        brand_name
+      }
+    }
+  }`;
+    variables = { resellerId };
+  } else {
+    QUERY = `query GetCmsPages {
+    cms_pages(
+      order_by: { created_date: desc }
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+      reseller_id
+      mst_reseller {
+        id
+        business_name
+        brand_name
+      }
+    }
+  }`;
+    variables = undefined;
+  }
 
   try {
-    const result = await graphqlRequest(QUERY);
+    const result = await graphqlRequest(QUERY, variables);
     if (result?.errors) {
       return {
         success: false,
@@ -47,12 +126,33 @@ export const getCmsPages = async () => {
 };
 
 /**
- * Get published CMS pages only
+ * Get published CMS pages only.
+ * resellerId null/undefined = admin pages only; string = that reseller's pages only.
  */
-export const getPublishedCmsPages = async () => {
-  const QUERY = `query GetPublishedCmsPages {
+export const getPublishedCmsPages = async (resellerId?: string | null) => {
+  const isAdmin = resellerId === null || resellerId === undefined;
+  const whereAdmin = "{ is_published: { _eq: true }, reseller_id: { _is_null: true } }";
+  const whereReseller = "{ is_published: { _eq: true }, reseller_id: { _eq: $resellerId } }";
+  const useReseller = typeof resellerId === "string";
+
+  const QUERY = isAdmin
+    ? `query GetPublishedCmsPages {
     cms_pages(
-      where: { is_published: { _eq: true } }
+      where: ${whereAdmin}
+      order_by: { created_date: desc }
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+    }
+  }`
+    : `query GetPublishedCmsPagesByReseller($resellerId: uuid!) {
+    cms_pages(
+      where: ${whereReseller}
       order_by: { created_date: desc }
     ) {
       id
@@ -66,7 +166,7 @@ export const getPublishedCmsPages = async () => {
   }`;
 
   try {
-    const result = await graphqlRequest(QUERY);
+    const result = await graphqlRequest(QUERY, useReseller ? { resellerId } : undefined);
     if (result?.errors) {
       return {
         success: false,
@@ -94,10 +194,10 @@ export const getPublishedCmsPages = async () => {
 };
 
 /**
- * Get CMS page by slug
+ * Get CMS page by slug. resellerId null/undefined = admin page; string = that reseller's page.
  */
-export const getCmsPageBySlug = async (slug: string) => {
-  if (!slug || typeof slug !== 'string') {
+export const getCmsPageBySlug = async (slug: string, resellerId?: string | null) => {
+  if (!slug || typeof slug !== "string") {
     return {
       success: false,
       message: "Invalid slug",
@@ -105,9 +205,31 @@ export const getCmsPageBySlug = async (slug: string) => {
     };
   }
 
-  const QUERY = `query GetCmsPageBySlug($slug: String!) {
+  const isAdmin = resellerId === null || resellerId === undefined;
+  const whereAdmin =
+    "{ slug: { _eq: $slug }, is_published: { _eq: true }, reseller_id: { _is_null: true } }";
+  const whereReseller =
+    "{ slug: { _eq: $slug }, is_published: { _eq: true }, reseller_id: { _eq: $resellerId } }";
+  const useReseller = typeof resellerId === "string";
+
+  const QUERY = isAdmin
+    ? `query GetCmsPageBySlug($slug: String!) {
     cms_pages(
-      where: { slug: { _eq: $slug }, is_published: { _eq: true } }
+      where: ${whereAdmin}
+      limit: 1
+    ) {
+      id
+      page_title
+      content
+      created_date
+      updated_date
+      is_published
+      slug
+    }
+  }`
+    : `query GetCmsPageBySlugReseller($slug: String!, $resellerId: uuid!) {
+    cms_pages(
+      where: ${whereReseller}
       limit: 1
     ) {
       id
@@ -121,7 +243,7 @@ export const getCmsPageBySlug = async (slug: string) => {
   }`;
 
   try {
-    const result = await graphqlRequest(QUERY, { slug });
+    const result = await graphqlRequest(QUERY, useReseller ? { slug, resellerId } : { slug });
     if (result?.errors) {
       return {
         success: false,
@@ -171,6 +293,7 @@ export const getCmsPageById = async (id: string) => {
       updated_date
       is_published
       slug
+      reseller_id
     }
   }`;
 
@@ -204,25 +327,28 @@ export const getCmsPageById = async (id: string) => {
 };
 
 /**
- * Create CMS page
+ * Create CMS page. reseller_id optional; null/omit = admin page.
  */
 export const createCmsPage = async (data: {
   page_title: string;
   content: string;
   slug: string;
   is_published?: boolean;
+  reseller_id?: string | null;
 }) => {
   const MUTATION = `mutation CreateCmsPage(
     $page_title: String!
     $content: String!
     $slug: String!
     $is_published: Boolean
+    $reseller_id: uuid
   ) {
     insert_cms_pages_one(object: {
       page_title: $page_title
       content: $content
       slug: $slug
       is_published: $is_published
+      reseller_id: $reseller_id
     }) {
       id
       page_title
@@ -231,6 +357,7 @@ export const createCmsPage = async (data: {
       is_published
       created_date
       updated_date
+      reseller_id
     }
   }`;
 
@@ -240,6 +367,7 @@ export const createCmsPage = async (data: {
       content: data.content,
       slug: data.slug,
       is_published: data.is_published || false,
+      reseller_id: data.reseller_id ?? null,
     });
 
     if (result?.errors) {
@@ -282,10 +410,11 @@ export const updateCmsPage = async (
     content?: string;
     slug?: string;
     is_published?: boolean;
+    reseller_id?: string | null;
   }
 ) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!id || typeof id !== 'string' || !uuidRegex.test(id)) {
+  if (!id || typeof id !== "string" || !uuidRegex.test(id)) {
     return {
       success: false,
       message: "Invalid CMS page ID format",
@@ -299,6 +428,7 @@ export const updateCmsPage = async (
     $content: String
     $slug: String
     $is_published: Boolean
+    $reseller_id: uuid
     $updated_date: timestamptz
   ) {
     update_cms_pages_by_pk(
@@ -308,6 +438,7 @@ export const updateCmsPage = async (
         content: $content
         slug: $slug
         is_published: $is_published
+        reseller_id: $reseller_id
         updated_date: $updated_date
       }
     ) {
@@ -318,6 +449,7 @@ export const updateCmsPage = async (
       is_published
       created_date
       updated_date
+      reseller_id
     }
   }`;
 
@@ -327,6 +459,7 @@ export const updateCmsPage = async (
     if (data.content !== undefined) updateData.content = data.content;
     if (data.slug !== undefined) updateData.slug = data.slug;
     if (data.is_published !== undefined) updateData.is_published = data.is_published;
+    if (data.reseller_id !== undefined) updateData.reseller_id = data.reseller_id;
 
     const result = await graphqlRequest(MUTATION, {
       id,
