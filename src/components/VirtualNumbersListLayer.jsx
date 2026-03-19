@@ -396,7 +396,7 @@ const VirtualNumbersListLayer = () => {
                       Action
                     </th>
                   )}
-                  <th scope="col">Grace Period</th>
+                  {/* <th scope="col">Grace Period</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -557,7 +557,7 @@ const VirtualNumbersListLayer = () => {
                         </td>
                       )}
 
-                      <td>
+                      {/* <td>
                         {vn.grace_period_end ? (
                           <span
                             className={`badge ${graceActive ? "bg-warning-focus text-warning-main" : "bg-neutral-200 text-secondary-light"}`}
@@ -568,7 +568,7 @@ const VirtualNumbersListLayer = () => {
                         ) : (
                           "-"
                         )}
-                      </td>
+                      </td> */}
                     </tr>
                   );
                 })}

@@ -10,7 +10,7 @@ import {
 } from "@/hasura/mutations/cms";
 import { generateSlug } from "@/utils/slugGenerator";
 import { getMstResellers } from "@/hasura/mutations/reseller";
-import { getUserData } from "@/utils/auth";
+import { getUserData, getAuthToken } from "@/utils/auth";
 
 const CmsLayer = () => {
   const [pages, setPages] = useState([]);
@@ -23,8 +23,18 @@ const CmsLayer = () => {
   const quillRef = useRef(null);
 
   const userData = getUserData();
-  const isResellerRole = userData?.role === "reseller";
-  const currentResellerId = isResellerRole ? userData?.id : null;
+  const roleFromToken = (() => {
+    try {
+      const token = getAuthToken();
+      if (!token) return null;
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return payload?.role ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  const isResellerRole = userData?.role === "reseller" || roleFromToken === "reseller";
+  const currentResellerId = isResellerRole ? (userData?.id ?? null) : null;
 
   const [resellerFilter, setResellerFilter] = useState("all");
   const [resellers, setResellers] = useState([]);

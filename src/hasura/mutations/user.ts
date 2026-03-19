@@ -11,7 +11,7 @@ export const getAllApprovedCustomers = async (filters?: {
 }) => {
   const QUERY = `query GetAllApprovedCustomers {
     mst_customer(
-      where: { status: { _eq: "approved" } }
+      where: { approval: { _eq: "approved" } }
       order_by: { created_at: desc }
     ) {
       id

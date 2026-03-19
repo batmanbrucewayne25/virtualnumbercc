@@ -105,6 +105,7 @@ const WalletRequestsLayer = () => {
         reference: selectedRequest.reference || "",
         description: selectedRequest.description || "",
         validityDate: "",
+        paymentType: selectedRequest.payment_type || "bank_transfer",
       }
     : undefined;
 

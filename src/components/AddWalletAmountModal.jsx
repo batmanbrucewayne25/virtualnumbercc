@@ -8,8 +8,13 @@ import { getMstResellers } from "@/hasura/mutations/reseller";
  * Props:
  * - isOpen, onClose
  * - onSuccess: () => void - called after wallet is credited successfully
- * - initialValues: { resellerId, resellerDisplayName?, amount?, reference?, description?, validityDate? } - when set, reseller is read-only and form is prefilled
+ * - initialValues: { resellerId, resellerDisplayName?, amount?, reference?, description?, validityDate?, paymentType? } - when set, reseller is read-only and form is prefilled
  */
+const PAYMENT_TYPE_OPTIONS = [
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "upi", label: "UPI" },
+];
+
 const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => {
   const [formData, setFormData] = useState({
     reseller_id: "",
@@ -17,6 +22,7 @@ const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
     description: "",
     reference: "",
     validity_date: "",
+    payment_type: "bank_transfer",
   });
   const [resellers, setResellers] = useState([]);
   const [loadingResellers, setLoadingResellers] = useState(false);
@@ -33,12 +39,15 @@ const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
       setError("");
       setSuccess("");
       if (initialValues) {
+        const paymentType = initialValues.paymentType ?? initialValues.payment_type ?? "bank_transfer";
+        const normalizedPayment = paymentType === "upi" ? "upi" : "bank_transfer";
         setFormData({
           reseller_id: initialValues.resellerId || "",
           amount: initialValues.amount != null ? String(initialValues.amount) : "",
           description: initialValues.description || "",
           reference: initialValues.reference || "",
           validity_date: initialValues.validityDate || "",
+          payment_type: normalizedPayment,
         });
       } else {
         setFormData({
@@ -47,6 +56,7 @@ const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
           description: "",
           reference: "",
           validity_date: "",
+          payment_type: "bank_transfer",
         });
       }
       setResellerSearchTerm("");
@@ -144,7 +154,7 @@ const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
   };
 
   const handleClose = () => {
-    setFormData({ reseller_id: "", amount: "", description: "", reference: "", validity_date: "" });
+    setFormData({ reseller_id: "", amount: "", description: "", reference: "", validity_date: "", payment_type: "bank_transfer" });
     setResellerSearchTerm("");
     setResellerDropdownOpen(false);
     setError("");
@@ -250,6 +260,26 @@ const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
                     )}
                   </div>
                 )}
+              </div>
+
+              <div className="mb-20">
+                <label htmlFor="payment_type" className="form-label fw-semibold text-primary-light text-sm mb-8">
+                  Payment Type
+                </label>
+                <select
+                  id="payment_type"
+                  name="payment_type"
+                  className="form-select radius-8"
+                  value={formData.payment_type}
+                  onChange={handleChange}
+                  disabled={actionLoading}
+                >
+                  {PAYMENT_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="mb-20">
