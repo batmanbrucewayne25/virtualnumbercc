@@ -899,15 +899,16 @@ export const approveMstReseller = async (
       const resellerDetails = await getMstResellerById(id);
       if (resellerDetails.success && resellerDetails.data) {
         const reseller = resellerDetails.data;
-        const resellerName = reseller.business_name || `${reseller.first_name} ${reseller.last_name}`.trim() || reseller.email;
-        
+        const resellerName = `${reseller.first_name || ''} ${reseller.last_name || ''}`.trim() || reseller.email;
+        const companyName = reseller.business_name || reseller.brand_name || resellerName;
+
         // Call notification API endpoint
         try {
           // Get API base URL using utility function
           const API_BASE_URL = getApiBaseUrl();
           
           console.log('[Reseller Approval] Calling notification API:', `${API_BASE_URL}/notifications/reseller-approval`);
-          console.log('[Reseller Approval] Reseller data:', { email: reseller.email, phone: reseller.phone, name: resellerName });
+          console.log('[Reseller Approval] Reseller data:', { email: reseller.email, phone: reseller.phone, name: resellerName, company: companyName });
           
           const response = await fetch(`${API_BASE_URL}/notifications/reseller-approval`, {
             method: 'POST',
@@ -919,6 +920,7 @@ export const approveMstReseller = async (
               email: reseller.email,
               phone: reseller.phone,
               resellerName: resellerName,
+              companyName: companyName,
               walletBalance: data.wallet_balance || null,
               validityDate: data.validity_date || null,
             }),

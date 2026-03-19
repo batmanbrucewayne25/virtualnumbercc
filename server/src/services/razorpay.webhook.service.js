@@ -1110,23 +1110,57 @@ async function _debitResellerWalletForOnlinePayment(
       return;
     }
 
-    // Idempotency: check if this transactionId was already debited
+    // Idempotency: check if this transactionId was already debited.
+    // We scope the lookup to wallet_id + reference so the check is as specific
+    // as the DB unique constraint that backs it up.
     if (transactionId) {
       const idempotencyQuery = `
-        query CheckWalletTxnExists($reference: String!) {
-          mst_wallet_transaction(where: { reference: { _eq: $reference } }, limit: 1) {
+        query CheckWalletTxnExists($reference: String!, $wallet_id: uuid!) {
+          mst_wallet_transaction(
+            where: {
+              reference: { _eq: $reference }
+              wallet_id: { _eq: $wallet_id }
+            }
+            limit: 1
+          ) {
             id
           }
         }
       `;
-      const idempotencyResult = await client.client.request(idempotencyQuery, {
-        reference: transactionId,
-      });
-      if (idempotencyResult?.mst_wallet_transaction?.length > 0) {
-        console.log(
-          `[postPayment][walletDebit] Already debited for transactionId=${transactionId} (mst_wallet_transaction.id=${idempotencyResult.mst_wallet_transaction[0].id}) — skipping`,
+
+      // We need wallet.id here — fetch wallet first for the idempotency check.
+      // (We re-use the same wallet object below; no extra round-trip needed because
+      //  the wallet fetch is unconditional just below this block.)
+      const earlyWalletQuery = `
+        query GetResellerWalletIdempotency($reseller_id: uuid!) {
+          mst_wallet(where: { reseller_id: { _eq: $reseller_id } }, limit: 1) {
+            id
+          }
+        }
+      `;
+      try {
+        const earlyWalletData = await client.client.request(earlyWalletQuery, {
+          reseller_id: resellerId || customer?.mst_reseller?.id,
+        });
+        const earlyWalletId = earlyWalletData?.mst_wallet?.[0]?.id;
+        if (earlyWalletId) {
+          const idempotencyResult = await client.client.request(
+            idempotencyQuery,
+            { reference: transactionId, wallet_id: earlyWalletId },
+          );
+          if (idempotencyResult?.mst_wallet_transaction?.length > 0) {
+            console.log(
+              `[postPayment][walletDebit] Already debited for transactionId=${transactionId} (mst_wallet_transaction.id=${idempotencyResult.mst_wallet_transaction[0].id}) — skipping`,
+            );
+            return "already_debited";
+          }
+        }
+      } catch (idemErr) {
+        // Non-fatal — fall through; DB unique constraint is the final safety net
+        console.warn(
+          `[postPayment][walletDebit] Idempotency pre-check failed (non-fatal):`,
+          idemErr.message,
         );
-        return "already_debited";
       }
     }
 
@@ -1182,6 +1216,10 @@ async function _debitResellerWalletForOnlinePayment(
     console.log(
       `[postPayment][walletDebit] Inserting into mst_wallet_transaction...`,
     );
+    // on_conflict: do nothing — the DB unique constraint on (wallet_id, reference)
+    // is the absolute last line of defence against duplicate debits arriving
+    // concurrently. When it fires, `insert_mst_wallet_transaction_one` returns
+    // null (0 rows inserted). We detect that and skip the balance update.
     const insertWalletTxnMutation = `
       mutation CreateWalletTxnOnlinePayment(
         $wallet_id: uuid!
@@ -1193,17 +1231,23 @@ async function _debitResellerWalletForOnlinePayment(
         $customer_id: uuid
         $virtual_number_id: uuid
       ) {
-        insert_mst_wallet_transaction_one(object: {
-          wallet_id: $wallet_id
-          transaction_type: "DEBIT"
-          amount: $amount
-          balance_before: $balance_before
-          balance_after: $balance_after
-          description: $description
-          reference: $reference
-          customer_id: $customer_id
-          virtual_number_id: $virtual_number_id
-        }) {
+        insert_mst_wallet_transaction_one(
+          object: {
+            wallet_id: $wallet_id
+            transaction_type: "DEBIT"
+            amount: $amount
+            balance_before: $balance_before
+            balance_after: $balance_after
+            description: $description
+            reference: $reference
+            customer_id: $customer_id
+            virtual_number_id: $virtual_number_id
+          }
+          on_conflict: {
+            constraint: uq_wallet_txn_wallet_reference
+            update_columns: []
+          }
+        ) {
           id
         }
       }
@@ -1225,6 +1269,15 @@ async function _debitResellerWalletForOnlinePayment(
       `[postPayment][walletDebit] mst_wallet_transaction insert result=`,
       JSON.stringify(walletTxnResult),
     );
+
+    // If the DB unique constraint fired (duplicate), the insert returns null.
+    // Skip the balance update — it was already done by the winning request.
+    if (!walletTxnResult?.insert_mst_wallet_transaction_one?.id) {
+      console.log(
+        `[postPayment][walletDebit] DB on_conflict fired — duplicate debit suppressed for transactionId=${transactionId}. Balance NOT updated again.`,
+      );
+      return "already_debited";
+    }
 
     // Step B: Update mst_wallet balance
     console.log(

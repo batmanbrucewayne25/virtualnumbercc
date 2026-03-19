@@ -44,6 +44,10 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
   // Validate step access
   const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 7 });
   const [logo, setLogo] = useState<string>("");
+  // logoPreviewUrl holds the full URL used for the <img> preview.
+  // After a fresh upload we use the API server origin (always correct in any env).
+  // For a logo already stored in the DB we fall back to VITE_IMAGE_UPLOAD_PATH.
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoUploaded, setLogoUploaded] = useState<boolean>(false);
   const [uploadingLogo, setUploadingLogo] = useState<boolean>(false);
@@ -73,6 +77,9 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
             const logoValue = result.mst_reseller[0].logo;
             const logoFilename = logoValue.includes('/') ? logoValue.split('/').pop() || logoValue : logoValue;
             setLogo(logoFilename);
+            // Build preview URL from VITE_IMAGE_UPLOAD_PATH (DB-stored filenames use this base)
+            const uploadBase = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads";
+            setLogoPreviewUrl(`${uploadBase}/logos/${logoFilename}`);
           }
           if (result.mst_reseller[0].signatureImage) {
             setSignatureUploaded(true);
@@ -113,7 +120,9 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
 
       const reader = new FileReader();
       reader.onload = (event) => {
-        setLogo(event.target?.result as string);
+        const dataUrl = event.target?.result as string;
+        setLogo(dataUrl);
+        setLogoPreviewUrl(dataUrl); // show instant local preview before upload
       };
       reader.readAsDataURL(file);
       setError("");
@@ -161,6 +170,10 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
           setLogo(filename);
           setLogoUploaded(true);
           setError("");
+          // Build preview URL from the API server origin — always correct in any env
+          // (the file was just uploaded to this server, so use its base URL directly)
+          const apiOrigin = new URL(API_BASE_URL).origin;
+          setLogoPreviewUrl(`${apiOrigin}/uploads/logos/${filename}`);
         } else {
           setError(result.message || "Failed to upload logo.");
         }
@@ -501,21 +514,25 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
           Upload your business logo (JPEG, PNG, GIF or WebP, max 5MB).
         </p>
         <div className="d-flex align-items-center gap-12">
-          {logo ? (
+          {logoPreviewUrl ? (
             <div
               className="border radius-8 overflow-hidden bg-light d-flex align-items-center justify-content-center"
               style={{ width: "100px", height: "100px", flexShrink: 0 }}
             >
               <img
-                src={
-                  logo.startsWith("data:")
-                    ? logo
-                    : `${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads"}/logos/${logo}`
-                }
+                src={logoPreviewUrl}
                 alt="Logo preview"
                 style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
                 onError={(e) => {
-                  e.currentTarget.src = "assets/images/logo-icon.png";
+                  // If the primary URL fails (e.g. env mismatch), try the API server origin
+                  const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:3001/api/";
+                  const apiOrigin = apiBase.replace(/\/api\/?$/, "");
+                  const fallback = `${apiOrigin}/uploads/logos/${logo}`;
+                  if (e.currentTarget.src !== fallback) {
+                    e.currentTarget.src = fallback;
+                  } else {
+                    e.currentTarget.src = "assets/images/logo-icon.png";
+                  }
                 }}
               />
             </div>
