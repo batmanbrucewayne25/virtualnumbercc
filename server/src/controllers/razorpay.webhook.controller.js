@@ -21,17 +21,15 @@ export const handleWebhook = asyncHandler(async (req, res) => {
   }
 
   // Use the preserved raw body for signature verification.
-  // req.rawBody is set by the global middleware in index.js BEFORE any JSON parsing.
-  // Using JSON.stringify(req.body) is WRONG — it does not reproduce the original
-  // byte sequence (key order, whitespace, number formatting differ), causing HMAC
-  // mismatch and every webhook returning 401.
-  const rawBody = req.rawBody;
+  // req.rawBodyBuffer (Buffer) is preferred — byte-exact for HMAC. Fallback to req.rawBody (string).
+  // Using JSON.stringify(req.body) is WRONG — it does not reproduce the original byte sequence.
+  const rawBodyForVerify = req.rawBodyBuffer ?? req.rawBody;
   const signature = req.headers["x-razorpay-signature"];
 
-  console.log(`[Webhook] Received for reseller=${resellerId}, hasRawBody=${!!rawBody}, rawBodyLen=${rawBody?.length}, hasSignature=${!!signature}`);
+  console.log(`[Webhook] Received for reseller=${resellerId}, hasRawBody=${!!rawBodyForVerify}, rawBodyLen=${rawBodyForVerify?.length ?? rawBodyForVerify?.byteLength}, hasSignature=${!!signature}`);
   console.log(`[Webhook] req._body=${req._body}, content-type=${req.headers["content-type"]}`);
 
-  if (!rawBody) {
+  if (!rawBodyForVerify) {
     console.error(
       "[Webhook] rawBody is missing — req.rawBody was not set by middleware. Check index.js body capture middleware."
     );
@@ -74,13 +72,16 @@ export const handleWebhook = asyncHandler(async (req, res) => {
   if (config?.webhook_secret) {
     console.log(`[Webhook] Verifying signature for reseller=${resellerId}`);
     const isValid = WebhookService.verifyWebhookSignature(
-      rawBody,
+      rawBodyForVerify,
       signature,
       config.webhook_secret
     );
 
     if (!isValid) {
-      console.error(`Webhook signature verification failed for reseller: ${resellerId}`);
+      console.error(
+        `Webhook signature verification failed for reseller: ${resellerId}. ` +
+        `Ensure webhook_secret in mst_razorpay_config matches the secret from Razorpay Dashboard → Settings → Webhooks for this webhook URL.`
+      );
       return res.status(401).json({
         success: false,
         message: "Invalid webhook signature",
@@ -136,16 +137,30 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         );
         break;
 
-      case "payment_link.paid":
-        // payment_link.paid fires when a Razorpay Payment Link is paid.
-        // payment.captured should also fire for the same payment, but we
-        // handle this event as a safety net to ensure VN creation runs
-        // even if payment.captured was missed or processed out of order.
+      case "payment_link.paid": {
+       
+        const paymentId = payload.payload?.payment?.entity?.id;
+        const orderId = payload.payload?.order?.entity?.id;
+        if (paymentId || orderId) {
+          const existing = await WebhookService.transactionExists(paymentId, orderId);
+          if (existing?.virtual_number_id) {
+            console.log(
+              `[Webhook] payment_link.paid: Payment ${paymentId} already fully processed (vn_id=${existing.virtual_number_id}) — skipping to prevent duplicate VN`
+            );
+            result = {
+              success: true,
+              data: existing,
+              message: "Payment already processed (payment.captured handled it)",
+            };
+            break;
+          }
+        }
         result = await WebhookService.processPaymentCaptured(
           resellerId,
           payload
         );
         break;
+      }
 
       case "subscription.completed":
       case "subscription.halted":

@@ -4,23 +4,36 @@ import { VnApiClient } from "../utils/vnApiClient.js";
 
 export function verifyWebhookSignature(body, signature, webhookSecret) {
   if (!webhookSecret || !signature) {
-    // If no webhook secret configured, skip verification (not recommended for production)
     console.warn(
       "Webhook signature verification skipped - no webhook secret configured",
     );
     return true;
   }
 
+  if (process.env.SKIP_WEBHOOK_SIGNATURE_VERIFICATION === "true") {
+    console.warn(
+      "[Webhook] SKIP_WEBHOOK_SIGNATURE_VERIFICATION=true — skipping verification (development only)",
+    );
+    return true;
+  }
+
   try {
+    const secret = String(webhookSecret).trim();
+    const bodyBuffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body), "utf8");
     const expectedSignature = crypto
-      .createHmac("sha256", webhookSecret)
-      .update(body)
+      .createHmac("sha256", secret)
+      .update(bodyBuffer)
       .digest("hex");
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature),
-    );
+    const sigBuffer = Buffer.from(String(signature).trim(), "utf8");
+    const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+    if (sigBuffer.length !== expectedBuffer.length) {
+      console.error(
+        `[Webhook] Signature length mismatch: received ${sigBuffer.length}, expected ${expectedBuffer.length}`,
+      );
+      return false;
+    }
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
   } catch (error) {
     console.error("Webhook signature verification error:", error);
     return false;
@@ -319,16 +332,17 @@ export async function transactionExists(razorpayPaymentId, orderId = null) {
  * @returns {Promise<object|null>}
  */
 export async function findCustomerByEmail(email, resellerId) {
-  if (!email) return null;
+  if (!email || !resellerId) return null;
 
   const client = getHasuraClient();
+  const emailTrimmed = String(email).trim().toLowerCase();
 
   const query = `
     query FindCustomerByEmail($email: String!, $reseller_id: uuid!) {
       mst_customer(
-        where: { 
-          email: { _eq: $email }
+        where: {
           reseller_id: { _eq: $reseller_id }
+          email: { _ilike: $email }
         }
         limit: 1
       ) {
@@ -342,7 +356,7 @@ export async function findCustomerByEmail(email, resellerId) {
 
   try {
     const result = await client.client.request(query, {
-      email,
+      email: emailTrimmed,
       reseller_id: resellerId,
     });
     return result.mst_customer?.[0] || null;
@@ -753,12 +767,48 @@ export async function updatePendingTransactionWithPayment(
 }
 
 /**
+ * Normalize payment data from webhook payload.
+ * Handles both payment.captured (payload.payload.payment.entity) and
+ * payment_link.paid (payload.payload.payment_link.entity with payments array).
+ * @param {object} payload - Raw webhook payload
+ * @returns {{ paymentData: object|null, effectiveResellerId: string|null }}
+ */
+function normalizePaymentDataFromPayload(payload) {
+  let paymentData = payload?.payload?.payment?.entity ?? null;
+  const plEntity = payload?.payload?.payment_link?.entity ?? null;
+
+  if (!paymentData && plEntity) {
+    const payments = Array.isArray(plEntity.payments) ? plEntity.payments : [];
+    const capturedPayment = payments.find((p) => p?.status === "captured") || payments[0];
+    if (capturedPayment) {
+      const paymentId = capturedPayment.id ?? capturedPayment.payment_id ?? capturedPayment.paymentId;
+      paymentData = {
+        id: paymentId,
+        amount: capturedPayment.amount ?? plEntity.amount_paid ?? plEntity.amount,
+        status: capturedPayment.status ?? "captured",
+        email: capturedPayment.email ?? plEntity.customer?.email ?? null,
+        contact: capturedPayment.contact ?? plEntity.customer?.contact ?? null,
+        order_id: capturedPayment.order_id ?? null,
+        notes: { ...(plEntity.notes || {}), ...(capturedPayment.notes || {}) },
+        ...capturedPayment,
+      };
+    }
+  }
+
+  const effectiveResellerId =
+    paymentData?.notes?.reseller_id ?? plEntity?.notes?.reseller_id ?? null;
+  return { paymentData, effectiveResellerId };
+}
+
+/**
  * Create transaction record from Razorpay webhook payload
  * @param {string} resellerId - Reseller UUID
  * @param {object} paymentData - Payment data from webhook
+ * @param {object} options - Optional overrides
+ * @param {string|null} options.preResolvedCustomerId - Customer ID already resolved by caller (avoids re-lookup)
  * @returns {Promise<object>}
  */
-export async function createTransactionFromWebhook(resellerId, paymentData) {
+export async function createTransactionFromWebhook(resellerId, paymentData, options = {}) {
   const client = getHasuraClient();
 
   // CRITICAL: The webhook URL reseller_id may differ from the reseller who actually
@@ -791,17 +841,15 @@ export async function createTransactionFromWebhook(resellerId, paymentData) {
   // Convert amount from paise to rupees for storage
   const amountInRupees = (paymentData.amount || 0) / 100;
 
-  // Extract customer_id from notes first (most reliable)
-  let customerId = paymentData.notes?.customer_id || null;
+  // Extract customer_id: prefer pre-resolved from caller, then notes, then email lookup
+  let customerId = options.preResolvedCustomerId ?? paymentData.notes?.customer_id ?? null;
 
-  // Declare customerEmail at function scope so it's accessible throughout
   const customerEmail =
     paymentData.email ||
     paymentData.notes?.email ||
     paymentData.notes?.customer_email ||
     null;
 
-  // Fallback: Find by email using effective reseller id
   if (!customerId && customerEmail) {
     const customer = await findCustomerByEmail(
       customerEmail,
@@ -1216,10 +1264,8 @@ async function _debitResellerWalletForOnlinePayment(
     console.log(
       `[postPayment][walletDebit] Inserting into mst_wallet_transaction...`,
     );
-    // on_conflict: do nothing — the DB unique constraint on (wallet_id, reference)
-    // is the absolute last line of defence against duplicate debits arriving
-    // concurrently. When it fires, `insert_mst_wallet_transaction_one` returns
-    // null (0 rows inserted). We detect that and skip the balance update.
+    // Idempotency: pre-check above already skips if reference exists. Plain insert here.
+    // If uq_wallet_txn_wallet_reference exists in DB, duplicate would throw — we catch and treat as already_debited.
     const insertWalletTxnMutation = `
       mutation CreateWalletTxnOnlinePayment(
         $wallet_id: uuid!
@@ -1243,38 +1289,49 @@ async function _debitResellerWalletForOnlinePayment(
             customer_id: $customer_id
             virtual_number_id: $virtual_number_id
           }
-          on_conflict: {
-            constraint: uq_wallet_txn_wallet_reference
-            update_columns: []
-          }
         ) {
           id
         }
       }
     `;
-    const walletTxnResult = await client.client.request(
-      insertWalletTxnMutation,
-      {
-        wallet_id: wallet.id,
-        amount: pricePerNumber,
-        balance_before: balanceBefore,
-        balance_after: balanceAfter,
-        description: `Customer online payment - virtual number assigned`,
-        reference: transactionId || null,
-        customer_id: customer?.id || null,
-        virtual_number_id: virtualNumberId || null,
-      },
-    );
+    let walletTxnResult;
+    try {
+      walletTxnResult = await client.client.request(
+        insertWalletTxnMutation,
+        {
+          wallet_id: wallet.id,
+          amount: pricePerNumber,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          description: `Customer online payment - virtual number assigned`,
+          reference: transactionId || null,
+          customer_id: customer?.id || null,
+          virtual_number_id: virtualNumberId || null,
+        },
+      );
+    } catch (insertErr) {
+      const errMsg = String(insertErr?.message || insertErr?.response?.errors?.[0]?.message || "");
+      if (
+        errMsg.includes("duplicate key") ||
+        errMsg.includes("unique constraint") ||
+        errMsg.includes("uq_wallet_txn_wallet_reference")
+      ) {
+        console.log(
+          `[postPayment][walletDebit] Duplicate insert suppressed (constraint fired) for transactionId=${transactionId}. Balance NOT updated again.`,
+        );
+        return "already_debited";
+      }
+      throw insertErr;
+    }
+
     console.log(
       `[postPayment][walletDebit] mst_wallet_transaction insert result=`,
       JSON.stringify(walletTxnResult),
     );
 
-    // If the DB unique constraint fired (duplicate), the insert returns null.
-    // Skip the balance update — it was already done by the winning request.
     if (!walletTxnResult?.insert_mst_wallet_transaction_one?.id) {
       console.log(
-        `[postPayment][walletDebit] DB on_conflict fired — duplicate debit suppressed for transactionId=${transactionId}. Balance NOT updated again.`,
+        `[postPayment][walletDebit] Insert returned no id — duplicate debit suppressed for transactionId=${transactionId}. Balance NOT updated again.`,
       );
       return "already_debited";
     }
@@ -1323,9 +1380,10 @@ async function _debitResellerWalletForOnlinePayment(
     );
   } catch (walletErr) {
     console.error(
-      `[postPayment][walletDebit] CRITICAL: Exception during wallet deduction:`,
+      `[postPayment][walletDebit] CRITICAL: Exception during wallet deduction — manual reconciliation required:`,
       walletErr,
     );
+    return "debit_failed";
   }
   console.log(`[postPayment][walletDebit] --- END ---`);
 }
@@ -1547,6 +1605,15 @@ async function updateCustomerStatusAfterPayment(
     //   8.  Send email (best-effort, never throws)
     // ══════════════════════════════════════════════════════════════════════════
 
+    // Guard: VN creation requires a transaction to link to. Without it, we cannot
+    // debit wallet or link VN — skip to avoid orphan VNs.
+    if (!transactionId) {
+      console.warn(
+        `[postPayment] No transactionId — cannot create VN (would be orphan). Skipping VN creation.`,
+      );
+      return false;
+    }
+
     // ── 4a. Fetch available number from VN API ────────────────────────────────
     // Hard failure: no VN available = no charge.
     const availableRes = await VnApiClient.getAvailableNumbers();
@@ -1633,13 +1700,18 @@ async function updateCustomerStatusAfterPayment(
     // ── 5. Debit reseller wallet ──────────────────────────────────────────────
     // Runs ONLY after VN is confirmed in DB (step 4c succeeded).
     // Has its own idempotency guard — safe to retry for same transactionId.
-    await _debitResellerWalletForOnlinePayment(
+    const debitResult = await _debitResellerWalletForOnlinePayment(
       client,
       customer,
       resellerId,
       transactionId,
       vnRecord.id,
     );
+    if (debitResult === "debit_failed") {
+      console.error(
+        `[postPayment] CRITICAL: Wallet debit failed for customerId=${customerId} transactionId=${transactionId} — manual reconciliation required`,
+      );
+    }
 
     // ── 6. Link VN to transaction + restore status to success ────────────────
     // Best-effort: VN and wallet already committed; link failure is recoverable.
@@ -2081,7 +2153,9 @@ export async function processPaymentAuthorized(resellerId, payload) {
  * @returns {Promise<object>}
  */
 export async function processPaymentCaptured(resellerId, payload) {
-  const paymentData = payload.payload?.payment?.entity;
+  const { paymentData: normalizedPayment, effectiveResellerId: normalizedResellerId } =
+    normalizePaymentDataFromPayload(payload);
+  const paymentData = normalizedPayment ?? payload.payload?.payment?.entity;
   const eventId = payload.event_id || payload.id; // Razorpay event ID
 
   if (!paymentData) {
@@ -2091,8 +2165,9 @@ export async function processPaymentCaptured(resellerId, payload) {
     };
   }
 
-  // Use notes.reseller_id as the authoritative reseller
-  const effectiveResellerId = paymentData.notes?.reseller_id || resellerId;
+  // Use notes.reseller_id as the authoritative reseller (from payment or payment_link)
+  const effectiveResellerId =
+    paymentData.notes?.reseller_id || normalizedResellerId || resellerId;
 
   // Extract email early — needed across all steps for static payment link matching
   const earlyEmail =
@@ -2374,10 +2449,11 @@ export async function processPaymentCaptured(resellerId, payload) {
   // STEP 6: CREATE NEW TRANSACTION (Last Resort)
   // ========================================
   if (!result) {
-    result = await createTransactionFromWebhook(effectiveResellerId, {
-      ...paymentData,
-      status: "captured",
-    });
+    result = await createTransactionFromWebhook(
+      effectiveResellerId,
+      { ...paymentData, status: "captured" },
+      { preResolvedCustomerId: customerId },
+    );
     transactionId = result.data?.id;
   }
 
