@@ -27,6 +27,8 @@ export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) =>
     resellerId = filters?.resellerId;
   }
 
+  // Base VN fields — no nested wallet/transaction relationships to avoid
+  // dependency on Hasura array relationship names that may not be tracked.
   const vnFields = `
     id
     virtual_number
@@ -49,21 +51,6 @@ export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) =>
       business_name
       brand_name
       email
-    }
-    mst_transactions(
-      where: { status: { _in: ["success", "captured"] } }
-      limit: 1
-      order_by: { created_at: desc }
-    ) {
-      amount
-      payment_mode
-    }
-    mst_wallet_transactions(
-      where: { transaction_type: { _eq: "DEBIT" } }
-      limit: 1
-      order_by: { created_at: desc }
-    ) {
-      amount
     }
   `;
 
@@ -94,16 +81,93 @@ export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) =>
         data: [],
       };
     }
-    if (result?.data?.mst_virtual_number) {
-      return {
-        success: true,
-        data: result.data.mst_virtual_number,
-      };
+
+    const vns: any[] = result?.data?.mst_virtual_number ?? [];
+    if (vns.length === 0) {
+      return { success: true, data: [] };
     }
-    return {
-      success: false,
-      data: [],
-    };
+
+    // ── Enrich with wallet debit and customer payment amounts ─────────────────
+    // Strategy:
+    //  1. Fetch mst_transaction rows by virtual_number_id (gives Customer Paid amount)
+    //  2. Use those transaction IDs as `reference` values to look up mst_wallet_transaction
+    //     (wallet debit reference = mst_transaction.id, always set regardless of whether
+    //      mst_wallet_transaction.virtual_number_id was populated at debit time)
+    const vnIds = vns.map((v: any) => v.id);
+
+    // Step 1: Customer payments — most-recent success transaction per VN
+    const txnQuery = `
+      query GetTransactionsByVN($vn_ids: [uuid!]!) {
+        mst_transaction(
+          where: {
+            virtual_number_id: { _in: $vn_ids }
+            status: { _in: ["success", "captured"] }
+          }
+          order_by: { created_at: desc }
+        ) {
+          id
+          virtual_number_id
+          amount
+          payment_mode
+        }
+      }
+    `;
+
+    const txnResult = await graphqlRequest(txnQuery, { vn_ids: vnIds }).catch(() => null);
+    const txnRows: any[] = txnResult?.data?.mst_transaction ?? [];
+
+    // Build map: vnId → most-recent success transaction row
+    const txnMap = new Map<string, any>();
+    // Also collect all transaction IDs so we can look up wallet debits by reference
+    const txnIds: string[] = [];
+    for (const row of txnRows) {
+      if (!txnMap.has(row.virtual_number_id)) {
+        txnMap.set(row.virtual_number_id, row);
+      }
+      txnIds.push(row.id);
+    }
+
+    // Step 2: Wallet debits — look up by reference = transaction ID.
+    // mst_wallet_transaction.virtual_number_id can be null on older records, so
+    // we use `reference` (always = mst_transaction.id) as the reliable join key.
+    const walletDebitMap = new Map<string, any>(); // txnId → wallet debit row
+    if (txnIds.length > 0) {
+      const walletTxnQuery = `
+        query GetWalletDebitsByRef($refs: [String!]!) {
+          mst_wallet_transaction(
+            where: {
+              reference: { _in: $refs }
+              transaction_type: { _eq: "DEBIT" }
+            }
+            order_by: { created_at: desc }
+          ) {
+            reference
+            amount
+          }
+        }
+      `;
+      const walletTxnResult = await graphqlRequest(walletTxnQuery, { refs: txnIds }).catch(() => null);
+      for (const row of (walletTxnResult?.data?.mst_wallet_transaction ?? [])) {
+        if (!walletDebitMap.has(row.reference)) {
+          walletDebitMap.set(row.reference, row);
+        }
+      }
+    }
+
+    // Step 3: Attach enrichment data to each VN.
+    // mst_wallet_transactions → look up via txn.id → wallet debit for that transaction
+    // mst_transactions        → direct from txnMap
+    const enriched = vns.map((vn: any) => {
+      const txnRow = txnMap.get(vn.id) ?? null;
+      const walletRow = txnRow ? (walletDebitMap.get(txnRow.id) ?? null) : null;
+      return {
+        ...vn,
+        mst_wallet_transactions: walletRow ? [walletRow] : [],
+        mst_transactions: txnRow ? [txnRow] : [],
+      };
+    });
+
+    return { success: true, data: enriched };
   } catch (error: any) {
     return {
       success: false,

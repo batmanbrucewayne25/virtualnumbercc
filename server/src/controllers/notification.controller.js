@@ -11,7 +11,7 @@ import { sendResellerApprovalWhatsApp } from '../services/whatsapp.service.js';
  * @access  Private (Admin only)
  */
 export const sendResellerApprovalNotifications = asyncHandler(async (req, res) => {
-  const { email, phone, resellerName, walletBalance, validityDate } = req.body;
+  const { email, phone, resellerName, companyName, walletBalance, validityDate } = req.body;
 
   if (!email && !phone) {
     return res.status(400).json({
@@ -51,14 +51,15 @@ export const sendResellerApprovalNotifications = asyncHandler(async (req, res) =
     }
   }
 
-  // Send WhatsApp notification
+  // Send WhatsApp notification (two-layer: template → free-form text fallback)
   if (phone) {
     try {
       const whatsappResult = await sendResellerApprovalWhatsApp(
         phone,
         resellerName,
+        companyName || null,
         walletBalance || null,
-        validityDate || null
+        validityDate || null,
       );
       results.whatsapp = whatsappResult;
     } catch (error) {

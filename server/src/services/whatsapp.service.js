@@ -159,142 +159,176 @@ export const sendWhatsAppTemplateMessage = async (phone, templateName, languageC
 };
 
 /**
- * Send reseller approval WhatsApp message
- * Note: You'll need to create a WhatsApp template in Meta Business Manager for this
- * For now, we'll send a simple text message or use a generic template
+ * Send a free-form text message via WhatsApp Cloud API.
+ *
+ * IMPORTANT: WhatsApp only allows free-form (non-template) messages within the
+ * 24-hour customer-service window — i.e. the recipient must have messaged your
+ * business number first within the last 24 hours.  For business-initiated
+ * messages outside that window a pre-approved template is required.
+ *
+ * This function is used as a *fallback* when the template is not yet configured,
+ * so that the reseller still receives the notification in most real-world cases
+ * (they just signed up and likely interacted with the number during OTP flows).
  */
-export const sendResellerApprovalWhatsApp = async (phone, resellerName, walletBalance = null, validityDate = null) => {
+export const sendWhatsAppTextMessage = async (phone, messageText) => {
   try {
-    if (!phone) {
-      return {
-        success: false,
-        message: 'Phone number is required',
-      };
+    if (!phone || !messageText) {
+      return { success: false, message: 'Phone and message text are required' };
     }
 
-    // Get WhatsApp config
     const whatsappConfig = await getWhatsAppConfig();
-
-    // Format phone number
     const formattedPhone = formatPhoneNumber(phone);
     if (!formattedPhone) {
+      return { success: false, message: 'Invalid phone number format' };
+    }
+
+    const apiUrl = `${whatsappConfig.api_url}/${whatsappConfig.phone_number_id}/messages`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: formattedPhone,
+      type: 'text',
+      text: { body: messageText },
+    };
+
+    const response = await axios.post(apiUrl, payload, {
+      headers: {
+        Authorization: `Bearer ${whatsappConfig.api_key}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    console.log('[WhatsApp] Text message sent to', formattedPhone, response.data);
+    return { success: true, message: 'WhatsApp text message sent successfully', data: response.data };
+  } catch (error) {
+    const errorData = error.response?.data?.error || error.response?.data;
+    const errorDetails = errorData?.error_data?.details || errorData?.message || error.message || 'Failed to send WhatsApp text message';
+    console.error('[WhatsApp] Error sending text message:', errorDetails);
+    return { success: false, message: errorDetails };
+  }
+};
+
+/**
+ * Build the approval message body.
+ * Extracted so both the template-path and the text-fallback path use identical copy.
+ */
+const _buildApprovalMessageText = (resellerName, companyName, walletBalance, validityDate) => {
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const displayName = companyName || resellerName;
+
+  let msg = `🎉 *Congratulations ${resellerName}!*\n\n`;
+  msg += `Your reseller company *${displayName}* has been *successfully approved* on our platform.\n\n`;
+  msg += `You can now:\n`;
+  msg += `✅ Login to your dashboard\n`;
+  msg += `✅ Manage customers and virtual numbers\n`;
+  msg += `✅ Access all reseller features\n\n`;
+
+  if (walletBalance && Number(walletBalance) > 0) {
+    msg += `💰 *Initial Wallet Balance:* ₹${Number(walletBalance).toLocaleString('en-IN')}\n\n`;
+  }
+
+  if (validityDate) {
+    const expiryDate = new Date(validityDate).toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    msg += `📅 *Account Valid Until:* ${expiryDate}\n\n`;
+  }
+
+  msg += `🔗 *Login here:* ${FRONTEND_URL}/sign-in\n\n`;
+  msg += `Thank you for choosing Virtual Number! We look forward to growing together. 🚀`;
+  return msg;
+};
+
+/**
+ * Send reseller approval WhatsApp notification.
+ *
+ * Strategy (two-layer, non-blocking):
+ *  1. Try the pre-approved WhatsApp template "reseller_approval" — works for all
+ *     business-initiated messages regardless of the 24-hour window.
+ *  2. If the template is not yet configured in Meta Business Manager, fall back to
+ *     a free-form text message — works within the 24-hour customer-service window
+ *     (which is almost always open right after signup / OTP flows).
+ *
+ * Neither failure blocks the approval itself.
+ *
+ * @param {string}  phone         - Reseller's WhatsApp number (raw, with or without country code)
+ * @param {string}  resellerName  - Reseller's full name (used in greeting)
+ * @param {string}  [companyName] - Reseller's business / company name (featured in message)
+ * @param {number}  [walletBalance]
+ * @param {string}  [validityDate]
+ */
+export const sendResellerApprovalWhatsApp = async (
+  phone,
+  resellerName,
+  companyName = null,
+  walletBalance = null,
+  validityDate = null,
+) => {
+  if (!phone) {
+    return { success: false, message: 'Phone number is required' };
+  }
+
+  const TEMPLATE_NAME = 'reseller_approval';
+  const messageText = _buildApprovalMessageText(resellerName, companyName, walletBalance, validityDate);
+
+  // ── Layer 1: WhatsApp template (works outside 24-hour window) ─────────────
+  const templateComponents = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: resellerName },
+        { type: 'text', text: companyName || resellerName },
+        { type: 'text', text: walletBalance ? `₹${Number(walletBalance).toLocaleString('en-IN')}` : '₹0' },
+        { type: 'text', text: validityDate ? new Date(validityDate).toLocaleDateString('en-IN') : 'N/A' },
+      ],
+    },
+  ];
+
+  try {
+    const templateResult = await sendWhatsAppTemplateMessage(phone, TEMPLATE_NAME, 'en', templateComponents);
+
+    if (templateResult.success) {
+      console.log(`[WhatsApp] Approval template sent to ${phone} for reseller "${companyName || resellerName}"`);
+      return templateResult;
+    }
+
+    if (!templateResult.templateNotFound) {
+      // Template exists but send failed for another reason — log and fall through to text fallback
+      console.warn(`[WhatsApp] Template send failed (non-template error): ${templateResult.message}`);
+    }
+  } catch (templateError) {
+    console.warn('[WhatsApp] Template send threw unexpectedly:', templateError.message);
+  }
+
+  // ── Layer 2: Free-form text fallback (works within 24-hour window) ────────
+  console.log(`[WhatsApp] Template "${TEMPLATE_NAME}" not configured — falling back to text message for ${phone}`);
+
+  try {
+    const textResult = await sendWhatsAppTextMessage(phone, messageText);
+    if (textResult.success) {
       return {
-        success: false,
-        message: 'Invalid phone number format',
+        ...textResult,
+        fallback: true,
+        note: `Template "${TEMPLATE_NAME}" not found; free-form text message sent instead. Create the template in Meta Business Manager for guaranteed delivery outside the 24-hour window.`,
       };
     }
 
-    // Build message content
-    let messageText = `🎉 *Congratulations ${resellerName}!*\n\n`;
-    messageText += `Your reseller account has been *successfully approved*!\n\n`;
-    messageText += `You can now:\n`;
-    messageText += `✅ Login to your dashboard\n`;
-    messageText += `✅ Manage customers and virtual numbers\n`;
-    messageText += `✅ Access all reseller features\n\n`;
-    
-    if (walletBalance && walletBalance > 0) {
-      messageText += `💰 Initial Wallet Balance: ₹${walletBalance.toLocaleString('en-IN')}\n\n`;
-    }
-    
-    if (validityDate) {
-      const expiryDate = new Date(validityDate).toLocaleDateString('en-IN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-      messageText += `📅 Account Valid Until: ${expiryDate}\n\n`;
-    }
-
-    const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-    messageText += `🔗 Login: ${FRONTEND_URL}/sign-in\n\n`;
-    messageText += `Thank you for choosing Virtual Number!`;
-
-    // For now, we'll try to send as a text message (if your WhatsApp Business API supports it)
-    // Otherwise, you'll need to create a template in Meta Business Manager
-    // Using a generic template name - you should create a specific template for approval messages
-    const templateName = 'reseller_approval'; // Change this to your actual template name
-    
-    // If template doesn't exist, we'll use a fallback approach
-    // You can create a template in Meta Business Manager with variables for name, wallet balance, etc.
-    const components = [
-      {
-        type: 'body',
-        parameters: [
-          {
-            type: 'text',
-            text: resellerName,
-          },
-          {
-            type: 'text',
-            text: walletBalance ? `₹${walletBalance.toLocaleString('en-IN')}` : '₹0',
-          },
-          {
-            type: 'text',
-            text: validityDate ? new Date(validityDate).toLocaleDateString('en-IN') : 'N/A',
-          },
-        ],
-      },
-    ];
-
-    // Try to send using template first
-    try {
-      const result = await sendWhatsAppTemplateMessage(phone, templateName, 'en', components);
-      if (result.success) {
-        return result;
-      }
-      
-      // If template not found, return gracefully without failing
-      if (result.templateNotFound) {
-        // Silently handle - template not configured is not an error
-        // Uncomment below if you want to see a warning
-        // console.warn('WhatsApp template not configured. Skipping WhatsApp notification.');
-        return {
-          success: true,
-          message: 'Reseller approved (WhatsApp template not configured)',
-          note: `Please create a WhatsApp template named "${templateName}" in Meta Business Manager for automated messages`,
-          templateNotConfigured: true,
-        };
-      }
-    } catch (templateError) {
-      // Check if it's a template error - don't log it
-      const errorData = templateError.response?.data?.error || templateError.response?.data;
-      const isTemplateError = errorData?.code === 132001 || 
-                             (errorData?.error_data?.details?.includes('template name') && 
-                              errorData?.error_data?.details?.includes('does not exist'));
-      
-      if (!isTemplateError) {
-        console.warn('Template message failed:', templateError.message);
-      }
-    }
-
-    // Fallback: If template doesn't exist, log the message (you can implement SMS or other notification here)
-    console.log('WhatsApp approval message (template not configured):', messageText);
-    
+    // Both paths failed — return a soft success so approval is never blocked
+    console.warn(`[WhatsApp] Both template and text fallback failed for ${phone}. Approval proceeds regardless.`);
     return {
       success: true,
-      message: 'Approval notification prepared (template may need to be configured in Meta Business Manager)',
-      note: 'Please create a WhatsApp template named "reseller_approval" in Meta Business Manager for automated messages',
+      templateNotConfigured: true,
+      message: 'WhatsApp notification could not be delivered (template not configured, text fallback also failed). Approval was not affected.',
+      note: `Create a WhatsApp template named "${TEMPLATE_NAME}" in Meta Business Manager with body variables: {{1}} name, {{2}} company, {{3}} wallet balance, {{4}} validity date.`,
     };
-  } catch (error) {
-    // Check if it's a template error that was already handled in sendWhatsAppTemplateMessage
-    const errorData = error.response?.data?.error || error.response?.data;
-    const errorCode = errorData?.code;
-    const errorType = errorData?.type;
-    const errorDetails = errorData?.error_data?.details || errorData?.message || error.message || '';
-    const isTemplateError = 
-      (errorType === 'OAuthException' && errorCode === 132001) ||
-      (errorCode === 132001) ||
-      (errorDetails.includes('template name') && errorDetails.includes('does not exist'));
-    
-    // Don't log template errors - they're expected if template doesn't exist
-    if (!isTemplateError) {
-      console.error('Error sending reseller approval WhatsApp:', error);
-    }
-    
+  } catch (textError) {
+    console.warn('[WhatsApp] Text fallback threw:', textError.message);
     return {
-      success: false,
-      message: error.message || 'Failed to send WhatsApp message',
-      templateNotFound: isTemplateError,
+      success: true,
+      templateNotConfigured: true,
+      message: 'WhatsApp notification skipped (delivery error). Approval was not affected.',
     };
   }
 };
