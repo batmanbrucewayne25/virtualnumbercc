@@ -2,70 +2,99 @@ import MasterLayout from "../masterLayout/MasterLayout";
 import Breadcrumb from "../components/Breadcrumb";
 import ClientHubLayer from "../pages/public/ClientHub/Index";
 import { useState, useEffect } from "react";
+import { Navigate } from "react-router-dom";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getUserData, getAuthToken } from "@/utils/auth";
 
+/** Only admin / super_admin may add customers via this flow (resellers cannot). */
 const AdminAddCustomerPage = () => {
   const [resellers, setResellers] = useState([]);
   const [selectedResellerId, setSelectedResellerId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [userRole, setUserRole] = useState(null);
-  const [isReseller, setIsReseller] = useState(false);
+  const [roleChecked, setRoleChecked] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
 
   useEffect(() => {
-    // Check if user is reseller or admin
     const token = getAuthToken();
     const userData = getUserData();
-    
-    if (token) {
+
+    if (!token) {
+      setIsAdminUser(false);
+      setRoleChecked(true);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      const role = payload.role || userData?.role;
+      setIsAdminUser(role === "admin" || role === "super_admin");
+    } catch (err) {
+      console.error("Error decoding token:", err);
+      setIsAdminUser(false);
+    } finally {
+      setRoleChecked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!roleChecked || !isAdminUser) {
+      if (roleChecked && !isAdminUser) setLoading(false);
+      return;
+    }
+
+    const fetchResellers = async () => {
+      setLoading(true);
+      setError("");
       try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        const role = payload.role || userData?.role;
-        setUserRole(role);
-        setIsReseller(role === 'reseller');
-        
-        // If reseller, use their own ID directly
-        if (role === 'reseller' && userData?.id) {
-          setSelectedResellerId(userData.id);
-          setLoading(false);
-          return;
+        const result = await getMstResellers();
+        if (result.success) {
+          const activeResellers = (result.data || []).filter(
+            (r) => r.status && !r.suspended_at
+          );
+          setResellers(activeResellers);
+        } else {
+          setError("Failed to load resellers");
         }
       } catch (err) {
-        console.error("Error decoding token:", err);
+        console.error("Error fetching resellers:", err);
+        setError("An error occurred while loading resellers");
+      } finally {
+        setLoading(false);
       }
-    }
-    
-    // Only fetch resellers if admin
-    if (userRole === 'admin' || userRole === 'super_admin' || !userRole) {
-      fetchResellers();
-    }
-  }, [userRole]);
+    };
 
-  const fetchResellers = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await getMstResellers();
-      if (result.success) {
-        // Filter only active resellers
-        const activeResellers = (result.data || []).filter((r) => r.status && !r.suspended_at);
-        setResellers(activeResellers);
-      } else {
-        setError("Failed to load resellers");
-      }
-    } catch (err) {
-      console.error("Error fetching resellers:", err);
-      setError("An error occurred while loading resellers");
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetchResellers();
+  }, [roleChecked, isAdminUser]);
+
+  if (!roleChecked) {
+    return (
+      <MasterLayout>
+        <Breadcrumb title="Add New Customer" />
+        <div className="container-fluid">
+          <div className="row">
+            <div className="col-12">
+              <div className="card h-100 p-24">
+                <div className="text-center py-40">
+                  <p>Loading...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </MasterLayout>
+    );
+  }
+
+  if (!isAdminUser) {
+    return <Navigate to="/users-list" replace />;
+  }
 
   if (loading) {
     return (
       <MasterLayout>
-        <Breadcrumb title='Add New Customer' />
+        <Breadcrumb title="Add New Customer" />
         <div className="container-fluid">
           <div className="row">
             <div className="col-12">
@@ -84,7 +113,7 @@ const AdminAddCustomerPage = () => {
   if (error) {
     return (
       <MasterLayout>
-        <Breadcrumb title='Add New Customer' />
+        <Breadcrumb title="Add New Customer" />
         <div className="container-fluid">
           <div className="row">
             <div className="col-12">
@@ -98,11 +127,11 @@ const AdminAddCustomerPage = () => {
     );
   }
 
-  // Show reseller selector if admin and not selected yet (resellers skip this)
-  if (!selectedResellerId && !isReseller) {
+  // Super admin: select reseller first
+  if (!selectedResellerId) {
     return (
       <MasterLayout>
-        <Breadcrumb title='Add New Customer' />
+        <Breadcrumb title="Add New Customer" />
         <div className="container-fluid">
           <div className="row">
             <div className="col-12">
@@ -123,7 +152,9 @@ const AdminAddCustomerPage = () => {
                     <option value="">Select a reseller</option>
                     {resellers.map((reseller) => (
                       <option key={reseller.id} value={reseller.id}>
-                        {reseller.business_name || `${reseller.first_name} ${reseller.last_name}`.trim()} ({reseller.email})
+                        {reseller.business_name ||
+                          `${reseller.first_name} ${reseller.last_name}`.trim()}{" "}
+                        ({reseller.email})
                       </option>
                     ))}
                   </select>
@@ -141,15 +172,14 @@ const AdminAddCustomerPage = () => {
     );
   }
 
-  // Show ClientHub with skipOtpVerification and selected resellerId
   return (
     <MasterLayout>
-      <Breadcrumb title='Add New Customer' />
+      <Breadcrumb title="Add New Customer" />
       <div className="container-fluid">
         <div className="row">
           <div className="col-12">
-            <ClientHubLayer 
-              skipOtpVerification={true} 
+            <ClientHubLayer
+              skipOtpVerification={true}
               resellerId={selectedResellerId}
               isAdminMode={true}
             />
@@ -161,4 +191,3 @@ const AdminAddCustomerPage = () => {
 };
 
 export default AdminAddCustomerPage;
-

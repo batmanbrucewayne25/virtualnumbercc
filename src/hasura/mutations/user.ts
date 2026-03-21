@@ -307,6 +307,7 @@ export const getCustomerWithTransactions = async (customerId: string) => {
       business_email
       profile_name
       profile_image
+      aadhar_photo
       pan_number
       pan_full_name
       pan_dob

@@ -5,6 +5,7 @@ import { getMstCustomersByReseller, getAllMstCustomers } from "@/hasura/mutation
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
 import PermissionGuard from "@/components/PermissionGuard";
+import { useResellerValidityGate } from "@/contexts/ResellerValidityGateContext";
 
 const CustomerListLayer = () => {
   const [customers, setCustomers] = useState([]);
@@ -14,6 +15,11 @@ const CustomerListLayer = () => {
   const [statusFilter, setStatusFilter] = useState("all"); // Show all customers by default
   const [isAdmin, setIsAdmin] = useState(false);
   const [isReseller, setIsReseller] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const { loading: validityLoading, blocked: validityBlocked, reason: validityReason } =
+    useResellerValidityGate();
+  const resellerViewDisabled =
+    isReseller && !validityLoading && validityBlocked;
 
   useEffect(() => {
     // Check if user is admin or reseller
@@ -28,6 +34,7 @@ const CustomerListLayer = () => {
         const resellerStatus = role === "reseller";
         setIsAdmin(adminStatus);
         setIsReseller(resellerStatus);
+        setIsSuperAdmin(role === "super_admin");
         
         // Fetch customers after role is determined
         fetchCustomers(adminStatus, resellerStatus);
@@ -191,7 +198,7 @@ const CustomerListLayer = () => {
           </select>
         </div>
 
-        {(isAdmin || isReseller) && (
+        {isSuperAdmin && (
           <Link
             to="/add-customer"
             className="btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2"
@@ -294,16 +301,34 @@ const CustomerListLayer = () => {
                       </td> */}
                       <td className="text-center">
                         <div className="d-flex align-items-center gap-10 justify-content-center flex-wrap">
-                          <Link
-                            to={`/view-customer/${customer.id}`}
-                            className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
-                            title="View KYC Details"
-                          >
-                            <Icon
-                              icon="majesticons:eye-line"
-                              className="icon text-xl"
-                            />
-                          </Link>
+                          {resellerViewDisabled ? (
+                            <span
+                              className="d-inline-block"
+                              title={validityReason}
+                              style={{ cursor: "not-allowed" }}
+                            >
+                              <span
+                                className="bg-info-focus text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle opacity-50 pointer-events-none"
+                                aria-disabled="true"
+                              >
+                                <Icon
+                                  icon="majesticons:eye-line"
+                                  className="icon text-xl"
+                                />
+                              </span>
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/view-customer/${customer.id}`}
+                              className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                              title="View KYC Details"
+                            >
+                              <Icon
+                                icon="majesticons:eye-line"
+                                className="icon text-xl"
+                              />
+                            </Link>
+                          )}
                         </div>
                       </td>
                     </tr>

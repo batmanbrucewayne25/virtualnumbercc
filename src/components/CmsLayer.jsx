@@ -12,6 +12,21 @@ import { generateSlug } from "@/utils/slugGenerator";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getUserData, getAuthToken } from "@/utils/auth";
 
+/** Reseller CMS: only these two page types (fixed titles + slugs for ClientHub links) */
+const RESELLER_CMS_PAGE_TYPES = [
+  { page_title: "Terms and Conditions", slug: "terms-and-conditions" },
+  { page_title: "Privacy Policy", slug: "privacy-policy" },
+];
+
+const findResellerPageType = (page) => {
+  if (!page) return null;
+  return (
+    RESELLER_CMS_PAGE_TYPES.find(
+      (t) => t.page_title === page.page_title || t.slug === page.slug
+    ) || null
+  );
+};
+
 const CmsLayer = () => {
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +62,21 @@ const CmsLayer = () => {
     reseller_id: null,
   });
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+
+  /** Reseller: at most 2 CMS pages (one per type); hide Add when both exist */
+  const resellerCmsMaxReached = isResellerRole && pages.length >= RESELLER_CMS_PAGE_TYPES.length;
+
+  /** Options for reseller title dropdown: types not already used by another page */
+  const getResellerPageTypeOptions = (editingPage) => {
+    return RESELLER_CMS_PAGE_TYPES.filter((opt) => {
+      const usedByOther = pages.some(
+        (p) =>
+          p.id !== editingPage?.id &&
+          (p.page_title === opt.page_title || p.slug === opt.slug)
+      );
+      return !usedByOther;
+    });
+  };
 
   useEffect(() => {
     if (!isResellerRole) {
@@ -86,12 +116,16 @@ const CmsLayer = () => {
   };
 
   const handleOpenModal = (page = null) => {
+    if (!page && isResellerRole && resellerCmsMaxReached) {
+      return;
+    }
     if (page) {
       setEditingPage(page);
+      const meta = isResellerRole ? findResellerPageType(page) : null;
       setFormData({
-        page_title: page.page_title || "",
+        page_title: meta?.page_title ?? page.page_title ?? "",
         content: page.content || "",
-        slug: page.slug || "",
+        slug: meta?.slug ?? page.slug ?? "",
         is_published: page.is_published || false,
         reseller_id: page.reseller_id ?? null,
       });
@@ -144,6 +178,19 @@ const CmsLayer = () => {
     }
   };
 
+  /** Reseller: fixed title + slug from predefined page types */
+  const handleResellerPageTypeChange = (e) => {
+    const title = e.target.value;
+    const meta = RESELLER_CMS_PAGE_TYPES.find((t) => t.page_title === title);
+    setSlugManuallyEdited(true);
+    setFormData((prev) => ({
+      ...prev,
+      page_title: title,
+      slug: meta ? meta.slug : "",
+    }));
+    setError("");
+  };
+
   const handleSlugChange = (e) => {
     setSlugManuallyEdited(true);
     setFormData((prev) => ({
@@ -177,6 +224,27 @@ const CmsLayer = () => {
     if (!formData.content.trim()) {
       setError("Content is required");
       return;
+    }
+
+    if (isResellerRole) {
+      const meta = RESELLER_CMS_PAGE_TYPES.find(
+        (t) =>
+          t.page_title === formData.page_title.trim() &&
+          t.slug === formData.slug.trim()
+      );
+      if (!meta) {
+        setError("Please select Terms and Conditions or Privacy Policy");
+        return;
+      }
+      const duplicate = pages.some(
+        (p) =>
+          p.id !== editingPage?.id &&
+          (p.page_title === meta.page_title || p.slug === meta.slug)
+      );
+      if (duplicate) {
+        setError("A page with this title already exists. You can only have one of each type.");
+        return;
+      }
     }
 
     setActionLoading(true);
@@ -314,14 +382,16 @@ const CmsLayer = () => {
                   ))}
                 </select>
               )}
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => handleOpenModal()}
-              >
-                <Icon icon="lucide:plus" className="icon me-2" />
-                Add New Page
-              </button>
+              {(!isResellerRole || !resellerCmsMaxReached) && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => handleOpenModal()}
+                >
+                  <Icon icon="lucide:plus" className="icon me-2" />
+                  Add New Page
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -360,14 +430,16 @@ const CmsLayer = () => {
                 className="icon text-6xl text-muted mb-3"
               />
               <p className="text-muted">No CMS pages found</p>
-              <button
-                type="button"
-                className="btn btn-primary mt-3"
-                onClick={() => handleOpenModal()}
-              >
-                <Icon icon="lucide:plus" className="icon me-2" />
-                Add Your First Page
-              </button>
+              {(!isResellerRole || !resellerCmsMaxReached) && (
+                <button
+                  type="button"
+                  className="btn btn-primary mt-3"
+                  onClick={() => handleOpenModal()}
+                >
+                  <Icon icon="lucide:plus" className="icon me-2" />
+                  Add Your First Page
+                </button>
+              )}
             </div>
           ) : (
             <div className="table-responsive scroll-sm">
@@ -516,17 +588,41 @@ const CmsLayer = () => {
                     >
                       Page Title <span className="text-danger-600">*</span>
                     </label>
-                    <input
-                      type="text"
-                      className="form-control radius-8"
-                      id="page_title"
-                      name="page_title"
-                      placeholder="Enter page title"
-                      value={formData.page_title}
-                      onChange={handlePageTitleChange}
-                      required
-                      disabled={actionLoading}
-                    />
+                    {isResellerRole ? (
+                      <>
+                        <select
+                          className="form-select radius-8"
+                          id="page_title"
+                          name="page_title"
+                          value={formData.page_title}
+                          onChange={handleResellerPageTypeChange}
+                          required
+                          disabled={actionLoading}
+                        >
+                          <option value="">
+                           Select page type
+                          </option>
+                          {getResellerPageTypeOptions(editingPage).map((opt) => (
+                            <option key={opt.slug} value={opt.page_title}>
+                              {opt.page_title}
+                            </option>
+                          ))}
+                        </select>
+                      
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        className="form-control radius-8"
+                        id="page_title"
+                        name="page_title"
+                        placeholder="Enter page title"
+                        value={formData.page_title}
+                        onChange={handlePageTitleChange}
+                        required
+                        disabled={actionLoading}
+                      />
+                    )}
                   </div>
 
                   {!isResellerRole && (
@@ -578,11 +674,12 @@ const CmsLayer = () => {
                       value={formData.slug}
                       onChange={handleSlugChange}
                       required
-                      disabled={actionLoading}
+                      disabled={actionLoading || isResellerRole}
                     />
                     <small className="text-xs text-secondary-light mt-4 d-block">
-                      URL-friendly version of the page title. Auto-generated from
-                      title, but you can edit it manually.
+                      {isResellerRole
+                        ? "Set automatically from the page title you selected."
+                        : "URL-friendly version of the page title. Auto-generated from title, but you can edit it manually."}
                     </small>
                   </div>
 

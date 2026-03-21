@@ -5,10 +5,12 @@ import {
   getApprovedCustomersByReseller,
   getAllApprovedCustomers,
 } from "@/hasura/mutations/user";
+import { updateMstCustomer } from "@/hasura/mutations/customer";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getMaxVirtualNumbersForCustomer } from "@/hasura/mutations/numberLimits";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
+import { useResellerValidityGate } from "@/contexts/ResellerValidityGateContext";
 
 // Simple JWT decode function (or use jwt-decode library if available)
 const decodeJWT = (token) => {
@@ -40,6 +42,11 @@ const UsersListLayer = () => {
   const [userRole, setUserRole] = useState(null);
   const [resellers, setResellers] = useState([]);
   const [selectedResellerId, setSelectedResellerId] = useState("all");
+  const [editPhoneModalOpen, setEditPhoneModalOpen] = useState(false);
+  const [editPhoneCustomer, setEditPhoneCustomer] = useState(null);
+  const [editPhoneValue, setEditPhoneValue] = useState("");
+  const [editPhoneSaving, setEditPhoneSaving] = useState(false);
+  const [editPhoneError, setEditPhoneError] = useState("");
 
   useEffect(() => {
     const token = getAuthToken();
@@ -222,6 +229,57 @@ const UsersListLayer = () => {
   });
 
   const isAdmin = userRole === "admin" || userRole === "super_admin";
+  const isReseller = userRole === "reseller";
+  const { loading: validityLoading, blocked: validityBlocked, reason: validityReason } =
+    useResellerValidityGate();
+  const resellerActionsDisabled =
+    isReseller && !validityLoading && validityBlocked;
+
+  const openEditPhoneModal = (customer) => {
+    setEditPhoneCustomer(customer);
+    setEditPhoneValue((customer.phone || "").replace(/\D/g, "").slice(0, 10));
+    setEditPhoneError("");
+    setEditPhoneModalOpen(true);
+  };
+
+  const closeEditPhoneModal = () => {
+    if (editPhoneSaving) return;
+    setEditPhoneModalOpen(false);
+    setEditPhoneCustomer(null);
+    setEditPhoneValue("");
+    setEditPhoneError("");
+  };
+
+  const handleSaveCustomerPhone = async () => {
+    if (!editPhoneCustomer?.id) return;
+    const digits = editPhoneValue.replace(/\D/g, "").slice(0, 10);
+    if (digits.length !== 10) {
+      setEditPhoneError("Enter a valid 10-digit phone number.");
+      return;
+    }
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      setEditPhoneError("Phone must be 10 digits and start with 6–9.");
+      return;
+    }
+    setEditPhoneSaving(true);
+    setEditPhoneError("");
+    try {
+      const result = await updateMstCustomer(editPhoneCustomer.id, { phone: digits });
+      if (result.success) {
+        setEditPhoneModalOpen(false);
+        setEditPhoneCustomer(null);
+        setEditPhoneValue("");
+        fetchCustomers();
+      } else {
+        setEditPhoneError(result.message || "Failed to update phone number.");
+      }
+    } catch (err) {
+      console.error("Error updating phone:", err);
+      setEditPhoneError(err?.message || "An error occurred while updating.");
+    } finally {
+      setEditPhoneSaving(false);
+    }
+  };
 
   return (
     <div className="card h-100 p-0 radius-12">
@@ -478,27 +536,72 @@ const UsersListLayer = () => {
                         </button>
                       </td> */}
                       <td className="text-center">
-                        <div className="d-flex justify-content-center gap-2">
-                          <Link
-                            to={`/edit-user/${customer.id}`}
-                            className="bg-warning-focus bg-hover-warning-200 text-warning-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
-                            title="Edit Profile"
-                          >
-                            <Icon
-                              icon="lucide:edit"
-                              className="icon text-xl"
-                            />
-                          </Link>
-                          <Link
-                            to={`/view-user/${customer.id}`}
-                            className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
-                            title="View Details"
-                          >
-                            <Icon
-                              icon="majesticons:eye-line"
-                              className="icon text-xl"
-                            />
-                          </Link>
+                        <div className="d-flex justify-content-center align-items-center gap-2 flex-wrap">
+                          {isReseller && (
+                            <span
+                              className="d-inline-block"
+                              title={resellerActionsDisabled ? validityReason : undefined}
+                              style={
+                                resellerActionsDisabled
+                                  ? { cursor: "not-allowed" }
+                                  : undefined
+                              }
+                            >
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={() => openEditPhoneModal(customer)}
+                                disabled={resellerActionsDisabled}
+                                title={
+                                  resellerActionsDisabled
+                                    ? validityReason
+                                    : "Edit customer phone number"
+                                }
+                              >
+                                Edit
+                              </button>
+                            </span>
+                          )}
+                          {isAdmin && (
+                            <Link
+                              to={`/edit-user/${customer.id}`}
+                              className="bg-warning-focus bg-hover-warning-200 text-warning-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                              title="Edit Profile"
+                            >
+                              <Icon
+                                icon="lucide:edit"
+                                className="icon text-xl"
+                              />
+                            </Link>
+                          )}
+                          {isReseller && resellerActionsDisabled ? (
+                            <span
+                              className="d-inline-block"
+                              title={validityReason}
+                              style={{ cursor: "not-allowed" }}
+                            >
+                              <span
+                                className="bg-info-focus text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle opacity-50 pointer-events-none"
+                                aria-disabled="true"
+                              >
+                                <Icon
+                                  icon="majesticons:eye-line"
+                                  className="icon text-xl"
+                                />
+                              </span>
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/view-user/${customer.id}`}
+                              className="bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle"
+                              title="View Details"
+                            >
+                              <Icon
+                                icon="majesticons:eye-line"
+                                className="icon text-xl"
+                              />
+                            </Link>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -515,6 +618,91 @@ const UsersListLayer = () => {
           </>
         )}
       </div>
+
+      {editPhoneModalOpen && (
+        <div
+          className="modal show d-block"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1050 }}
+          tabIndex="-1"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5 className="modal-title text-md text-primary-light">Edit phone number</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={closeEditPhoneModal}
+                  disabled={editPhoneSaving}
+                  aria-label="Close"
+                />
+              </div>
+              <div className="modal-body p-24">
+                {editPhoneCustomer && (
+                  <p className="text-sm text-secondary-light mb-16">
+                    <span className="fw-medium text-primary-light">{getCustomerName(editPhoneCustomer)}</span>
+                    {editPhoneCustomer.email ? (
+                      <span className="d-block text-xs mt-4">{editPhoneCustomer.email}</span>
+                    ) : null}
+                  </p>
+                )}
+                {editPhoneError && (
+                  <div className="alert alert-danger py-12 radius-8 mb-16" role="alert">
+                    {editPhoneError}
+                  </div>
+                )}
+                <label className="form-label fw-semibold text-primary-light text-sm mb-8" htmlFor="edit-customer-phone">
+                  Phone number <span className="text-danger-600">*</span>
+                </label>
+                <input
+                  id="edit-customer-phone"
+                  type="tel"
+                  className="form-control radius-8"
+                  placeholder="10-digit mobile number"
+                  value={editPhoneValue}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setEditPhoneValue(v);
+                    setEditPhoneError("");
+                  }}
+                  disabled={editPhoneSaving}
+                  maxLength={10}
+                />
+                <small className="text-xs text-secondary-light d-block mt-8">
+                  10 digits, starting with 6–9.
+                </small>
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary radius-8"
+                  onClick={closeEditPhoneModal}
+                  disabled={editPhoneSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary radius-8"
+                  onClick={handleSaveCustomerPhone}
+                  disabled={editPhoneSaving}
+                >
+                  {editPhoneSaving ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

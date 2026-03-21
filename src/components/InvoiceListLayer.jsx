@@ -22,6 +22,9 @@ const InvoiceListLayer = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [isResellerView, setIsResellerView] = useState(false);
   const [debitModalOpen, setDebitModalOpen] = useState(false);
+  const [debitResellerId, setDebitResellerId] = useState("");
+  const [debitResellerSearchTerm, setDebitResellerSearchTerm] = useState("");
+  const [debitResellerDropdownOpen, setDebitResellerDropdownOpen] = useState(false);
   const [debitAmount, setDebitAmount] = useState("");
   const [debitDescription, setDebitDescription] = useState("");
   const [debitReference, setDebitReference] = useState("");
@@ -49,6 +52,37 @@ const InvoiceListLayer = () => {
   useEffect(() => {
     setCurrentPage(1); // Reset to first page when filters change
   }, [searchTerm, transactionTypeFilter, resellerFilter, itemsPerPage]);
+
+  /** Load wallet balance when debit modal is open and a reseller is selected */
+  useEffect(() => {
+    if (!debitModalOpen || !debitResellerId) {
+      setDebitModalWalletBalance(null);
+      setDebitModalWalletLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDebitModalWalletLoading(true);
+    (async () => {
+      try {
+        const result = await getMstWalletByResellerId(debitResellerId);
+        if (cancelled) return;
+        if (result.success && result.data) {
+          const balance = Number(String(result.data.balance).replace(/,/g, "")) || 0;
+          setDebitModalWalletBalance(balance);
+        } else {
+          setDebitModalWalletBalance(null);
+        }
+      } catch (err) {
+        console.error("Error fetching wallet for debit modal:", err);
+        if (!cancelled) setDebitModalWalletBalance(null);
+      } finally {
+        if (!cancelled) setDebitModalWalletLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debitModalOpen, debitResellerId]);
 
   const fetchResellers = async () => {
     setLoadingResellers(true);
@@ -129,8 +163,38 @@ const InvoiceListLayer = () => {
     return `₹${Number(amount).toFixed(2)}`;
   };
 
+  const filteredDebitResellers = resellers.filter((reseller) => {
+    if (!debitResellerSearchTerm) return true;
+    const searchLower = debitResellerSearchTerm.toLowerCase();
+    return (
+      reseller.business_name?.toLowerCase().includes(searchLower) ||
+      reseller.email?.toLowerCase().includes(searchLower) ||
+      reseller.first_name?.toLowerCase().includes(searchLower) ||
+      reseller.last_name?.toLowerCase().includes(searchLower) ||
+      `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim().toLowerCase().includes(searchLower) ||
+      (reseller.phone && String(reseller.phone).includes(debitResellerSearchTerm.trim()))
+    );
+  });
+
+  const selectedDebitReseller = resellers.find((r) => r.id === debitResellerId);
+
+  const debitAmountNum = parseFloat(debitAmount);
+  const debitNewBalance =
+    debitModalWalletBalance != null && !isNaN(debitAmountNum) && debitAmountNum >= 0
+      ? debitModalWalletBalance - debitAmountNum
+      : null;
+
+  /** Debit button: only when amount is positive and does not exceed wallet (no negative new balance) */
+  const canSubmitDebit =
+    Boolean(debitResellerId) &&
+    !debitModalWalletLoading &&
+    debitModalWalletBalance !== null &&
+    Number.isFinite(debitAmountNum) &&
+    debitAmountNum > 0 &&
+    debitAmountNum <= debitModalWalletBalance;
+
   const handleDebit = async () => {
-    if (resellerFilter === "all") {
+    if (!debitResellerId) {
       setError("Please select a reseller to debit");
       return;
     }
@@ -147,12 +211,15 @@ const InvoiceListLayer = () => {
     setError("");
     try {
       const result = await debitWallet(
-        resellerFilter,
+        debitResellerId,
         amount,
         debitDescription || "Wallet debit",
         debitReference || null
       );
       if (result.success) {
+        setDebitResellerId("");
+        setDebitResellerSearchTerm("");
+        setDebitResellerDropdownOpen(false);
         setDebitAmount("");
         setDebitDescription("");
         setDebitReference("");
@@ -228,32 +295,22 @@ const InvoiceListLayer = () => {
             <option value='CREDIT'>Credit</option>
             <option value='DEBIT'>Debit</option>
           </select>
-          {!isResellerView && resellerFilter !== "all" && (
+          {!isResellerView && (
             <button
               type='button'
               className='btn btn-danger text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-              onClick={async () => {
+              onClick={() => {
+                setDebitResellerId(resellerFilter !== "all" ? resellerFilter : "");
+                setDebitResellerSearchTerm("");
+                setDebitResellerDropdownOpen(false);
                 setDebitAmount("");
                 setDebitDescription("");
                 setDebitReference("");
                 setError("");
                 setDebitModalWalletBalance(null);
-                setDebitModalWalletLoading(true);
+                setDebitModalWalletLoading(false);
                 setDebitModalOpen(true);
-                try {
-                  const result = await getMstWalletByResellerId(resellerFilter);
-                  if (result.success && result.data) {
-                    const balance = Number(String(result.data.balance).replace(/,/g, "")) || 0;
-                    setDebitModalWalletBalance(balance);
-                  } else {
-                    setDebitModalWalletBalance(null);
-                  }
-                } catch (err) {
-                  console.error("Error fetching wallet for debit modal:", err);
-                  setDebitModalWalletBalance(null);
-                } finally {
-                  setDebitModalWalletLoading(false);
-                }
+                if (resellers.length === 0) fetchResellers();
               }}
             >
               <Icon icon='ic:baseline-minus' className='icon text-xl line-height-1' />
@@ -502,6 +559,9 @@ const InvoiceListLayer = () => {
                   className="btn-close"
                   onClick={() => {
                     setDebitModalOpen(false);
+                    setDebitResellerId("");
+                    setDebitResellerSearchTerm("");
+                    setDebitResellerDropdownOpen(false);
                     setDebitAmount("");
                     setDebitDescription("");
                     setDebitReference("");
@@ -514,15 +574,95 @@ const InvoiceListLayer = () => {
                 />
               </div>
               <div className="modal-body p-24">
-                {debitModalWalletLoading ? (
-                  <p className="text-muted text-sm mb-20">Loading balance...</p>
-                ) : debitModalWalletBalance === null ? (
-                  <p className="text-danger-600 text-sm mb-20">Unable to load balance. Debit is disabled.</p>
-                ) : (
-                  <p className="text-primary-light fw-medium text-sm mb-20">
-                    Available balance: {formatCurrency(debitModalWalletBalance)}
-                  </p>
-                )}
+                <div className="mb-20">
+                  <label className="form-label fw-semibold text-primary-light text-sm mb-8">
+                    Reseller <span className="text-danger-600">*</span>
+                  </label>
+                  <div className="position-relative">
+                    <div
+                      className={`form-control radius-8 d-flex align-items-center justify-content-between ${loadingResellers || debitLoading ? "opacity-50" : ""}`}
+                      style={{
+                        cursor: loadingResellers || debitLoading ? "not-allowed" : "pointer",
+                        minHeight: "38px",
+                      }}
+                      onClick={() => {
+                        if (!loadingResellers && !debitLoading) setDebitResellerDropdownOpen(!debitResellerDropdownOpen);
+                      }}
+                    >
+                      <span className={debitResellerId ? "text-primary-light" : "text-muted"}>
+                        {selectedDebitReseller
+                          ? `${selectedDebitReseller.business_name || selectedDebitReseller.email} (${[selectedDebitReseller.first_name, selectedDebitReseller.last_name].filter(Boolean).join(" ") || "—"})`
+                          : "Search and select reseller"}
+                      </span>
+                      <Icon icon={debitResellerDropdownOpen ? "ep:arrow-up" : "ep:arrow-down"} className="icon text-secondary-light" />
+                    </div>
+                    {debitResellerDropdownOpen && (
+                      <div
+                        className="position-absolute w-100 bg-base border border-secondary-200 radius-8 shadow-lg mt-2"
+                        style={{ zIndex: 1050, maxHeight: "300px", overflow: "hidden", display: "flex", flexDirection: "column" }}
+                      >
+                        <div className="p-12 border-bottom">
+                          <input
+                            type="text"
+                            className="form-control form-control-sm radius-8"
+                            placeholder="Search reseller name, email, phone..."
+                            value={debitResellerSearchTerm}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setDebitResellerSearchTerm(e.target.value);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="overflow-y-auto" style={{ maxHeight: "250px" }}>
+                          {loadingResellers ? (
+                            <div className="p-16 text-center">
+                              <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                            </div>
+                          ) : filteredDebitResellers.length === 0 ? (
+                            <div className="p-16 text-center text-muted small">No resellers found</div>
+                          ) : (
+                            filteredDebitResellers.map((reseller) => (
+                              <div
+                                key={reseller.id}
+                                className={`px-16 py-12 hover-bg-primary-50 cursor-pointer ${debitResellerId === reseller.id ? "bg-primary-50" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDebitResellerId(reseller.id);
+                                  setDebitResellerDropdownOpen(false);
+                                  setDebitResellerSearchTerm("");
+                                  setError("");
+                                }}
+                              >
+                                <div className="text-sm fw-medium text-primary-light">
+                                  {reseller.business_name || reseller.email}
+                                </div>
+                                <div className="text-xs text-secondary-light">
+                                  {[reseller.first_name, reseller.last_name].filter(Boolean).join(" ")} • {reseller.email}
+                                  {reseller.phone ? ` • ${reseller.phone}` : ""}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-20 p-16 radius-8 bg-primary-50 border border-primary-100">
+                  <span className="text-xs text-secondary-light d-block mb-4">Current wallet balance</span>
+                  {debitModalWalletLoading ? (
+                    <span className="text-muted text-sm">Loading balance...</span>
+                  ) : !debitResellerId ? (
+                    <span className="text-muted text-sm">Select a reseller to view balance</span>
+                  ) : debitModalWalletBalance === null ? (
+                    <span className="text-danger-600 text-sm">Unable to load balance</span>
+                  ) : (
+                    <span className="text-primary-light fw-semibold text-lg">{formatCurrency(debitModalWalletBalance)}</span>
+                  )}
+                </div>
+
                 {error && (
                   <div className="alert alert-danger radius-8 mb-20 py-12" role="alert">
                     <Icon icon="material-symbols:error-outline" className="icon me-2" />
@@ -531,7 +671,7 @@ const InvoiceListLayer = () => {
                 )}
                 <div className="mb-20">
                   <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
-                    Amount (₹) <span className='text-danger-600'>*</span>
+                    Reducing amount (₹) <span className='text-danger-600'>*</span>
                   </label>
                   <input
                     type='number'
@@ -541,14 +681,42 @@ const InvoiceListLayer = () => {
                     className='form-control radius-8'
                     placeholder='Enter amount to debit'
                     value={debitAmount}
+                    onKeyDown={(e) => {
+                      if (e.key === "-" || e.key === "+" || e.key === "e" || e.key === "E") {
+                        e.preventDefault();
+                      }
+                    }}
                     onChange={(e) => {
                       setDebitAmount(e.target.value);
                       setError("");
                     }}
                     required
-                    disabled={debitLoading}
+                    disabled={debitLoading || !debitResellerId}
                   />
                 </div>
+
+                {debitResellerId &&
+                  debitModalWalletBalance != null &&
+                  !debitModalWalletLoading &&
+                  !isNaN(debitAmountNum) &&
+                  debitAmountNum > 0 && (
+                    <div
+                      className={`mb-20 p-16 radius-8 border ${
+                        debitNewBalance != null && debitNewBalance < 0
+                          ? "bg-danger-focus border-danger-main"
+                          : "bg-success-focus border-success-main"
+                      }`}
+                    >
+                      <span className="text-xs text-secondary-light d-block mb-4">New balance after debit</span>
+                      {debitNewBalance != null && debitNewBalance < 0 ? (
+                        <span className="text-danger-600 fw-semibold text-sm">
+                          Insufficient balance — maximum debit is {formatCurrency(debitModalWalletBalance)}
+                        </span>
+                      ) : (
+                        <span className="text-success-600 fw-semibold text-lg">{formatCurrency(debitNewBalance)}</span>
+                      )}
+                    </div>
+                  )}
                 <div className="mb-20">
                   <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
                     Description
@@ -582,6 +750,9 @@ const InvoiceListLayer = () => {
                   className="btn btn-secondary radius-8"
                   onClick={() => {
                     setDebitModalOpen(false);
+                    setDebitResellerId("");
+                    setDebitResellerSearchTerm("");
+                    setDebitResellerDropdownOpen(false);
                     setDebitAmount("");
                     setDebitDescription("");
                     setDebitReference("");
@@ -597,7 +768,7 @@ const InvoiceListLayer = () => {
                   type="button"
                   className="btn btn-danger radius-8"
                   onClick={handleDebit}
-                  disabled={debitLoading || debitModalWalletLoading || debitModalWalletBalance === null}
+                  disabled={debitLoading || !canSubmitDebit}
                 >
                   {debitLoading ? (
                     <>

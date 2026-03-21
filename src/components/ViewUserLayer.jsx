@@ -14,6 +14,7 @@ import ApproveCustomerModal from "./ApproveCustomerModal";
 import AddVirtualNumberModal from "./AddVirtualNumberModal";
 import RenewalPlanModal from "./RenewalPlanModal";
 import AlertModal from "./AlertModal";
+import AadhaarPhotoDisplay from "./AadhaarPhotoDisplay";
 
 
 const RENEW_THRESHOLD_DAYS = 20;
@@ -44,6 +45,7 @@ const ViewUserLayer = () => {
   const [showAddVirtualNumberModal, setShowAddVirtualNumberModal] = useState(false);
 
   const isAdminUser = userRole === "admin" || userRole === "super_admin";
+  const isResellerUser = userRole === "reseller";
 
   useEffect(() => {
     fetchCustomer();
@@ -541,7 +543,7 @@ const ViewUserLayer = () => {
       <div className="card-header border-bottom bg-base py-16 px-24 d-flex align-items-center justify-content-between">
         <h5 className="text-md text-primary-light mb-0">Customer Details</h5>
         <div className="d-flex gap-2">
-          {customer.status !== "suspended" && (
+          {isAdminUser && customer.status !== "suspended" && (
             <button
               type="button"
               className="btn btn-danger btn-sm d-flex align-items-center gap-1"
@@ -736,7 +738,7 @@ const ViewUserLayer = () => {
           <div className="col-md-6">
             <div className="card bg-base border p-16 radius-8">
               <h6 className="text-sm text-secondary-light mb-12">
-                Aadhaar & GST Details
+                Aadhaar Card Details
               </h6>
               <div className="d-flex flex-column gap-2">
                 <div>
@@ -800,6 +802,17 @@ const ViewUserLayer = () => {
                     </p>
                   )}
                 </div>
+                <AadhaarPhotoDisplay customer={customer} isAdmin={isAdminUser} />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-md-6">
+            <div className="card bg-base border p-16 radius-8">
+              <h6 className="text-sm text-secondary-light mb-12">
+                GST Details
+              </h6>
+              <div className="d-flex flex-column gap-2">
                 <div>
                   <span className="text-xs text-secondary-light">GST Status:</span>
                   <p className="text-sm fw-medium mb-0">
@@ -877,7 +890,9 @@ const ViewUserLayer = () => {
               </span>
             </h6>
           
-            {(getMaxVirtualNumbersForCustomer(customer) != null && getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0)) && (
+            {isAdminUser &&
+              getMaxVirtualNumbersForCustomer(customer) != null &&
+              getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
@@ -993,7 +1008,7 @@ const ViewUserLayer = () => {
                         </td>
                         <td className="text-center">
                           <div className="d-flex gap-1 justify-content-center align-items-center flex-wrap">
-                            {shouldShowRenewButton(daysLeft) && (
+                            {isAdminUser && shouldShowRenewButton(daysLeft) && (
                               <button
                                 type="button"
                                 className="btn btn-sm btn-primary d-inline-flex align-items-center gap-1"
@@ -1011,7 +1026,7 @@ const ViewUserLayer = () => {
                                 )}
                               </button>
                             )}
-                            {editingVirtualNumber?.id === vn.id ? null : (
+                            {editingVirtualNumber?.id === vn.id ? null : (isAdminUser || isResellerUser) && (
                               <span
                                 data-bs-toggle="tooltip"
                                 data-bs-placement="top"

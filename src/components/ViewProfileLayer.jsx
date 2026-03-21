@@ -909,7 +909,7 @@ const ViewProfileLayer = () => {
             )}
 
             <div className='mt-24 mb-24'>
-              <h6 className='text-xl mb-16'>Alternative Profile Image</h6>
+              <h6 className='text-xl mb-16'> Profile Image</h6>
               <div className='d-flex align-items-center gap-3'>
                 <div className='position-relative'>
                   <img
@@ -948,7 +948,7 @@ const ViewProfileLayer = () => {
               <div className='card bg-base border mb-24 p-16 radius-8'>
                 <div className='d-flex align-items-center justify-content-between'>
                   <div>
-                    <h6 className='text-sm fw-semibold text-primary-light mb-2'>New Alternative Profile Image Selected</h6>
+                    <h6 className='text-sm fw-semibold text-primary-light mb-2'>New Profile Image Selected</h6>
                     <p className='text-xs text-secondary-light mb-0'>
                       {selectedProfileAltFile.name} ({(selectedProfileAltFile.size / 1024).toFixed(2)} KB)
                     </p>

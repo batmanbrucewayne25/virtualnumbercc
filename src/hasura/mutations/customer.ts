@@ -209,6 +209,7 @@ export const getMstCustomerById = async (id: string) => {
       business_email
       profile_name
       profile_image
+      aadhar_photo
       signature_hash
       signature_metadata
       signatureImage
@@ -933,6 +934,7 @@ export const updateCustomerAadhaarStep = async ({
         gender
         address
         profile_image
+        aadhar_photo
       }
     }
   }`;

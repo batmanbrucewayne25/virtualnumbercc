@@ -1,15 +1,24 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getCustomerWithTransactions } from "@/hasura/mutations/user";
 import { updateMstCustomer } from "@/hasura/mutations/customer";
 import { updateMstVirtualNumberPurchaseDate } from "@/hasura/mutations/virtualNumber";
 import { getMaxVirtualNumbersForCustomer, upsertNumberLimits } from "@/hasura/mutations/numberLimits";
+import { getUserData, getAuthToken } from "@/utils/auth";
 
 const toDateInput = (val) => {
   if (!val) return "";
   const d = typeof val === "string" ? val : (val && val.toString?.()) || "";
   return d.includes("T") ? d.split("T")[0] : d;
+};
+
+/** If status is missing but GSTIN is present, treat as Active (matches list/detail badges). */
+const normalizeGstinStatus = (gstin, gstinStatus) => {
+  const status = gstinStatus != null ? String(gstinStatus).trim() : "";
+  if (status) return status;
+  const hasGstin = Boolean(gstin && String(gstin).trim());
+  return hasGstin ? "Active" : "";
 };
 
 const EditUserApprovalLayer = () => {
@@ -20,6 +29,7 @@ const EditUserApprovalLayer = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [isAdminUser, setIsAdminUser] = useState(null);
   const [form, setForm] = useState({
     email: "",
     phone: "",
@@ -38,8 +48,25 @@ const EditUserApprovalLayer = () => {
   const firstVirtualNumber = customer?.mst_virtual_numbers?.[0];
 
   useEffect(() => {
+    const token = getAuthToken();
+    const userData = getUserData();
+    if (!token) {
+      setIsAdminUser(false);
+      return;
+    }
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      const role = payload.role || userData?.role;
+      setIsAdminUser(role === "admin" || role === "super_admin");
+    } catch {
+      setIsAdminUser(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdminUser !== true) return;
     fetchCustomer();
-  }, [id]);
+  }, [id, isAdminUser]);
 
   useEffect(() => {
     if (!customer) return;
@@ -53,7 +80,7 @@ const EditUserApprovalLayer = () => {
       pan_dob: toDateInput(customer.pan_dob),
       gender: customer.gender || "",
       gstin: customer.gstin || "",
-      gstin_status: customer.gstin_status || "",
+      gstin_status: normalizeGstinStatus(customer.gstin, customer.gstin_status),
       max_virtual_numbers:
         getMaxVirtualNumbersForCustomer(customer) != null ? String(getMaxVirtualNumbersForCustomer(customer)) : "",
       approval_date: firstVirtualNumber?.purchase_date
@@ -93,6 +120,8 @@ const EditUserApprovalLayer = () => {
     setSuccessMessage("");
 
     try {
+      const gstinTrim = form.gstin?.trim() || null;
+      const gstinStatusTrim = form.gstin_status?.trim() || null;
       const updateData = {
         phone: form.phone,
         first_name: form.first_name || null,
@@ -101,8 +130,8 @@ const EditUserApprovalLayer = () => {
         pan_full_name: form.pan_full_name || null,
         pan_dob: form.pan_dob || null,
         gender: form.gender || null,
-        gstin: form.gstin || null,
-        gstin_status: form.gstin_status || null,
+        gstin: gstinTrim,
+        gstin_status: gstinStatusTrim || (gstinTrim ? "Active" : null),
       };
 
       const result = await updateMstCustomer(id, updateData);
@@ -146,6 +175,25 @@ const EditUserApprovalLayer = () => {
       setSaving(false);
     }
   };
+
+  if (isAdminUser === false) {
+    return <Navigate to="/users-list" replace />;
+  }
+
+  if (isAdminUser === null) {
+    return (
+      <div className="card h-100 p-0 radius-12">
+        <div className="card-body p-24">
+          <div className="text-center py-40">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <p className="text-muted mt-3">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -389,9 +437,9 @@ const EditUserApprovalLayer = () => {
                 disabled={saving}
               >
                 <option value="">Select gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+                <option value="O">Other</option>
               </select>
             </div>
             <div className="col-md-4">

@@ -5,6 +5,7 @@ import { getMstSubscriptionPlans, deleteMstSubscriptionPlan } from "@/hasura/mut
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { formatDateIST } from "@/utils/dateUtils";
 import AlertModal from "./AlertModal";
+import { useResellerValidityGate } from "@/contexts/ResellerValidityGateContext";
 
 const SubscriptionPlanListLayer = () => {
   const [plans, setPlans] = useState([]);
@@ -15,6 +16,10 @@ const SubscriptionPlanListLayer = () => {
   const [userRole, setUserRole] = useState(null);
   const [resellerId, setResellerId] = useState(null);
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
+  const { loading: validityLoading, blocked: validityBlocked, reason: validityReason } =
+    useResellerValidityGate();
+  const resellerActionsDisabled =
+    userRole === "reseller" && !validityLoading && validityBlocked;
 
   useEffect(() => {
     // Get user role and reseller ID
@@ -147,16 +152,32 @@ const SubscriptionPlanListLayer = () => {
             <option value='inactive'>Inactive</option>
           </select>
         </div>
-        <Link
-          to='/add-subscription-plan'
-          className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
-        >
-          <Icon
-            icon='ic:baseline-plus'
-            className='icon text-xl line-height-1'
-          />
-          Add New Plan
-        </Link>
+        {resellerActionsDisabled ? (
+          <span
+            className='d-inline-block'
+            title={validityReason}
+            style={{ cursor: "not-allowed" }}
+          >
+            <span className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2 opacity-50 pointer-events-none'>
+              <Icon
+                icon='ic:baseline-plus'
+                className='icon text-xl line-height-1'
+              />
+              Add New Plan
+            </span>
+          </span>
+        ) : (
+          <Link
+            to='/add-subscription-plan'
+            className='btn btn-primary text-sm btn-sm px-12 py-12 radius-8 d-flex align-items-center gap-2'
+          >
+            <Icon
+              icon='ic:baseline-plus'
+              className='icon text-xl line-height-1'
+            />
+            Add New Plan
+          </Link>
+        )}
       </div>
       <div className='card-body p-24'>
         {error && (
@@ -263,39 +284,79 @@ const SubscriptionPlanListLayer = () => {
                       </td>
                       <td className='text-center'>
                         <div className='d-flex align-items-center gap-10 justify-content-center'>
-                          <Link
-                            to={`/view-subscription-plan/${plan.id}`}
-                            className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='View'
-                          >
-                            <Icon
-                              icon='majesticons:eye-line'
-                              className='icon text-xl'
-                            />
-                          </Link>
-                          <Link
-                            to={`/edit-subscription-plan/${plan.id}`}
-                            className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
-                            title='Edit'
-                          >
-                            <Icon icon='lucide:edit' className='menu-icon' />
-                          </Link>
-                          <button
-                            type='button'
-                            onClick={() =>
-                              handleDelete(
-                                plan.id,
-                                plan.plan_name
-                              )
-                            }
-                            className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
-                            title='Delete'
-                          >
-                            <Icon
-                              icon='fluent:delete-24-regular'
-                              className='menu-icon'
-                            />
-                          </button>
+                          {resellerActionsDisabled ? (
+                            <>
+                              <span
+                                className='d-inline-block'
+                                title={validityReason}
+                                style={{ cursor: "not-allowed" }}
+                              >
+                                <span className='bg-info-focus text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle opacity-50 pointer-events-none'>
+                                  <Icon
+                                    icon='majesticons:eye-line'
+                                    className='icon text-xl'
+                                  />
+                                </span>
+                              </span>
+                              <span
+                                className='d-inline-block'
+                                title={validityReason}
+                                style={{ cursor: "not-allowed" }}
+                              >
+                                <span className='bg-success-focus text-success-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle opacity-50 pointer-events-none'>
+                                  <Icon icon='lucide:edit' className='menu-icon' />
+                                </span>
+                              </span>
+                              <span
+                                className='d-inline-block'
+                                title={validityReason}
+                                style={{ cursor: "not-allowed" }}
+                              >
+                                <span className='remove-item-btn bg-danger-focus text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0 opacity-50 pointer-events-none'>
+                                  <Icon
+                                    icon='fluent:delete-24-regular'
+                                    className='menu-icon'
+                                  />
+                                </span>
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <Link
+                                to={`/view-subscription-plan/${plan.id}`}
+                                className='bg-info-focus bg-hover-info-200 text-info-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
+                                title='View'
+                              >
+                                <Icon
+                                  icon='majesticons:eye-line'
+                                  className='icon text-xl'
+                                />
+                              </Link>
+                              <Link
+                                to={`/edit-subscription-plan/${plan.id}`}
+                                className='bg-success-focus text-success-600 bg-hover-success-200 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle'
+                                title='Edit'
+                              >
+                                <Icon icon='lucide:edit' className='menu-icon' />
+                              </Link>
+                              <button
+                                type='button'
+                                onClick={() =>
+                                  handleDelete(
+                                    plan.id,
+                                    plan.plan_name
+                                  )
+                                }
+                                className='remove-item-btn bg-danger-focus bg-hover-danger-200 text-danger-600 fw-medium w-40-px h-40-px d-flex justify-content-center align-items-center rounded-circle border-0'
+                                title='Delete'
+                              >
+                                <Icon
+                                  icon='fluent:delete-24-regular'
+                                  className='menu-icon'
+                                />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

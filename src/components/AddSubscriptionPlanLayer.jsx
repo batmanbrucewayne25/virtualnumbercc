@@ -5,6 +5,7 @@ import { createMstSubscriptionPlan } from "@/hasura/mutations/subscriptionPlan";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { getUserData } from "@/utils/auth";
 import { createRazorpayPlanAndSubscription } from "@/services/razorpayApi";
+import { useResellerValidityGate } from "@/contexts/ResellerValidityGateContext";
 
 const AddSubscriptionPlanLayer = () => {
   const navigate = useNavigate();
@@ -15,7 +16,11 @@ const AddSubscriptionPlanLayer = () => {
   const [resellers, setResellers] = useState([]);
   const [isReseller, setIsReseller] = useState(false);
   const [loggedInResellerId, setLoggedInResellerId] = useState(null);
-  
+  const { loading: validityLoading, blocked: validityBlocked, reason: validityReason } =
+    useResellerValidityGate();
+  const resellerFormBlocked =
+    isReseller && !validityLoading && validityBlocked;
+
   const [formData, setFormData] = useState({
     reseller_id: "",
     plan_name: "",
@@ -123,6 +128,9 @@ const AddSubscriptionPlanLayer = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (resellerFormBlocked) {
+      return;
+    }
     setError("");
     setSuccess(false);
 
@@ -242,7 +250,7 @@ const AddSubscriptionPlanLayer = () => {
                         value={formData.reseller_id}
                         onChange={handleChange}
                         required={!isReseller}
-                        disabled={loadingResellers}
+                        disabled={loadingResellers || resellerFormBlocked}
                       >
                         <option value=''>Select Reseller</option>
                         {resellers.map((reseller) => (
@@ -273,6 +281,7 @@ const AddSubscriptionPlanLayer = () => {
                       value={formData.plan_name}
                       onChange={handleChange}
                       required
+                      disabled={loading || resellerFormBlocked}
                     />
                   </div>
 
@@ -313,6 +322,7 @@ const AddSubscriptionPlanLayer = () => {
                           name='currency'
                           value={formData.currency}
                           onChange={handleChange}
+                          disabled={loading || resellerFormBlocked}
                         >
                           <option value='INR'>INR</option>
                           <option value='USD'>USD</option>
@@ -341,6 +351,7 @@ const AddSubscriptionPlanLayer = () => {
                       value={formData.duration_days}
                       onChange={handleChange}
                       required
+                      disabled={loading || resellerFormBlocked}
                     />
                   </div>
 
@@ -412,6 +423,7 @@ const AddSubscriptionPlanLayer = () => {
                       placeholder='Enter plan description'
                       value={formData.description}
                       onChange={handleChange}
+                      disabled={loading || resellerFormBlocked}
                     />
                   </div>
 
@@ -424,6 +436,7 @@ const AddSubscriptionPlanLayer = () => {
                         name='is_active'
                         checked={formData.is_active}
                         onChange={handleChange}
+                        disabled={loading || resellerFormBlocked}
                       />
                       <label className='form-check-label text-sm' htmlFor='is_active'>
                         Active Status
@@ -443,7 +456,8 @@ const AddSubscriptionPlanLayer = () => {
                     <button
                       type='submit'
                       className='btn btn-primary border border-primary-600 text-md px-56 py-12 radius-8'
-                      disabled={loading}
+                      disabled={loading || resellerFormBlocked}
+                      title={resellerFormBlocked ? validityReason : undefined}
                     >
                       {loading ? (
                         <>

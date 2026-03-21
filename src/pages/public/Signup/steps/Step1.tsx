@@ -3,6 +3,7 @@ import { insertMstReseller, checkMstResellerExists } from "@/hasura/mutations";
 import { Step1Props } from "@/types/auth/signup";
 import { useState } from "react";
 import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
+import { getStrongPasswordError, STRONG_PASSWORD_HINT } from "@/utils/passwordPolicy";
 
 const Step1 = ({ onSuccess }: Step1Props) => {
   const [firstName, setFirstName] = useState<string>("");
@@ -67,6 +68,12 @@ const Step1 = ({ onSuccess }: Step1Props) => {
 
     if (isPersonalEmailDomain(email)) {
       setEmailError("Please use a company email address. Personal email domains (e.g. Gmail, Yahoo) are not allowed.");
+      return;
+    }
+
+    const passwordError = getStrongPasswordError(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -208,9 +215,10 @@ const Step1 = ({ onSuccess }: Step1Props) => {
         placeholder="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="mb-16"
+        className="mb-8"
         required
       />
+      <small className="text-secondary-light d-block mb-16">{STRONG_PASSWORD_HINT}</small>
 
       <PasswordField
         id="signup-confirm-password"

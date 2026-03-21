@@ -3,6 +3,7 @@ import { useState } from "react";
 import { checkMstCustomerExists, createMstCustomer } from "@/hasura/mutations/customer";
 import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import { getStrongPasswordError, STRONG_PASSWORD_HINT } from "@/utils/passwordPolicy";
 
 interface Step2Props {
   resellerId: string;
@@ -81,8 +82,9 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
+    const passwordError = getStrongPasswordError(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -287,7 +289,7 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
           className="mb-0"
           required
         />
-        <small className="text-secondary-light">Minimum 6 characters</small>
+        <small className="text-secondary-light">{STRONG_PASSWORD_HINT}</small>
       </div>
 
       <div className="mb-16">

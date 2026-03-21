@@ -8,6 +8,8 @@ import PermissionGuard from "@/components/PermissionGuard";
 import { getMstWalletByResellerId } from "@/hasura/mutations/wallet";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
+import { computeResellerValidityGate } from "@/utils/resellerValidityGate";
+import { ResellerValidityGateProvider } from "@/contexts/ResellerValidityGateContext";
 
 const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads";
 const DEFAULT_TITLE = "Virtual Number";
@@ -24,6 +26,11 @@ const MasterLayout = ({ children }) => {
   const [showValidityModal, setShowValidityModal] = useState(false);
   const [pricePerNumber, setPricePerNumber] = useState(null);
   const [lowBalanceAlertDismissed, setLowBalanceAlertDismissed] = useState(false);
+  const [validityGate, setValidityGate] = useState({
+    loading: false,
+    blocked: false,
+    reason: "",
+  });
   const location = useLocation(); // Hook to get the current route
   const navigate = useNavigate();
 
@@ -144,13 +151,24 @@ const MasterLayout = ({ children }) => {
     return () => window.removeEventListener("wallet-should-refresh", onWalletShouldRefresh);
   }, []);
 
+  // Non-reseller: clear validity gate
+  useEffect(() => {
+    if (userRole !== "reseller") {
+      setValidityGate({ loading: false, blocked: false, reason: "" });
+    }
+  }, [userRole]);
+
   // Reseller: fetch validity and price_per_number; show validity-expired modal when applicable
   useEffect(() => {
     if (userRole !== "reseller") return;
     const userData = getUserData();
-    if (!userData?.id) return;
+    if (!userData?.id) {
+      setValidityGate({ loading: false, blocked: false, reason: "" });
+      return;
+    }
 
     const checkValidityAndReseller = async () => {
+      setValidityGate({ loading: true, blocked: false, reason: "" });
       try {
         const [validityResult, resellerResult] = await Promise.all([
           getResellerValidity(userData.id),
@@ -187,21 +205,22 @@ const MasterLayout = ({ children }) => {
           }
         }
 
-        if (validityResult.success && validityResult.data) {
-          const v = validityResult.data;
-          const endDate = v.validity_end_date ? new Date(v.validity_end_date) : null;
-          const now = new Date();
-          const isExpiredByDate = endDate && endDate < now;
-          const isExpiredStatus = v.status === "EXPIRED" || v.status === "SUSPENDED";
-          if (isExpiredByDate || isExpiredStatus) {
-            // Do not show validity modal when already on wallet page
-            if (location.pathname !== "/wallet") {
-              setShowValidityModal(true);
-            }
-          }
-        }
+        const gate =
+          validityResult.success && validityResult.data
+            ? computeResellerValidityGate(validityResult.data)
+            : { blocked: false, reason: "" };
+
+        setValidityGate({
+          loading: false,
+          blocked: gate.blocked,
+          reason: gate.reason,
+        });
+
+        // Do not show validity modal when already on wallet page
+        setShowValidityModal(gate.blocked && location.pathname !== "/wallet");
       } catch (err) {
         console.error("Error checking reseller validity or price:", err);
+        setValidityGate({ loading: false, blocked: false, reason: "" });
       }
     };
 
@@ -2596,7 +2615,9 @@ const MasterLayout = ({ children }) => {
               </div>
             </div>
           )}
-        <div className='dashboard-main-body'>{children}</div>
+        <ResellerValidityGateProvider value={validityGate}>
+          <div className='dashboard-main-body'>{children}</div>
+        </ResellerValidityGateProvider>
 
         {/* Footer section */}
         <footer className='d-footer'>

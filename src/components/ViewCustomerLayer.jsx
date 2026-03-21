@@ -9,11 +9,13 @@ import { getMaxVirtualNumbersForCustomer } from "@/hasura/mutations/numberLimits
 import ApproveCustomerModal from "./ApproveCustomerModal";
 import RejectCustomerModal from "./RejectCustomerModal";
 import { getUserData, getAuthToken } from "@/utils/auth";
-import { formatDateIST } from "@/utils/dateUtils";
+import { formatDateIST, parseDateAsUTC } from "@/utils/dateUtils";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 import AddVirtualNumberModal from "./AddVirtualNumberModal";
 import AlertModal from "./AlertModal";
 import SignatureImage from "./SignatureImage";
 import { getSignatureImageAbsoluteUrl } from "@/utils/signatureImageUrl";
+import AadhaarPhotoDisplay from "./AadhaarPhotoDisplay";
 
 // Helper function to format address object into readable string
 const formatAddress = (address) => {
@@ -83,6 +85,10 @@ const ViewCustomerLayer = () => {
   const [userRole, setUserRole] = useState(null);
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isReseller, setIsReseller] = useState(false);
+  const [editingVirtualNumber, setEditingVirtualNumber] = useState(null);
+  const [editCallForwardNumber, setEditCallForwardNumber] = useState("");
+  const [updatingCallForward, setUpdatingCallForward] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editValues, setEditValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -99,6 +105,7 @@ const ViewCustomerLayer = () => {
         const payload = JSON.parse(atob(token.split('.')[1]));
         const role = payload.role || userData?.role;
         setUserRole(role);
+        setIsReseller(role === "reseller");
         if (role === "admin" || role === "super_admin") {
           setIsAdmin(true);
         }
@@ -287,6 +294,96 @@ const ViewCustomerLayer = () => {
     }
   };
 
+  // Call forwarding edit window: 48h admin, 24h reseller (same as view-user)
+  const getEditWindowHours = () => (isAdmin ? 48 : 24);
+
+  const canEditCallForwarding = (virtualNumber) => {
+    const raw = virtualNumber.created_at || virtualNumber.purchase_date;
+    if (!raw) return false;
+    const createdDate = parseDateAsUTC(raw);
+    if (!createdDate) return false;
+    const editWindowHours = getEditWindowHours();
+    const now = new Date();
+    const diffHours = (now - createdDate) / (1000 * 60 * 60);
+    return diffHours <= editWindowHours;
+  };
+
+  const getEditTooltipMessage = (virtualNumber) => {
+    const raw = virtualNumber.created_at || virtualNumber.purchase_date;
+    const createdDate = parseDateAsUTC(raw);
+    if (!createdDate) return "Edit call forwarding number";
+    const editWindowHours = getEditWindowHours();
+    const now = new Date();
+    const diffHours = (now - createdDate) / (1000 * 60 * 60);
+    if (canEditCallForwarding(virtualNumber)) {
+      const hoursLeft = Math.floor(editWindowHours - diffHours);
+      return `Edit call forwarding number (${hoursLeft} hours remaining)`;
+    }
+    const hoursElapsed = Math.floor(diffHours - editWindowHours);
+    return `Edit disabled: ${editWindowHours}-hour edit window has passed (${hoursElapsed} hours ago)`;
+  };
+
+  const handleEditCallForwarding = (virtualNumber) => {
+    setEditingVirtualNumber(virtualNumber);
+    setEditCallForwardNumber(virtualNumber.call_forwarding_number || "");
+  };
+
+  const handleCancelCallForwardEdit = () => {
+    setEditingVirtualNumber(null);
+    setEditCallForwardNumber("");
+  };
+
+  const handleSaveCallForwarding = async () => {
+    if (!editingVirtualNumber) return;
+    if (!editCallForwardNumber.trim()) {
+      setAlertModal({
+        isOpen: true,
+        title: "Validation Error",
+        message: "Call forwarding number is required",
+        type: "error",
+      });
+      return;
+    }
+    setUpdatingCallForward(true);
+    setError("");
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const response = await fetch(`${API_BASE_URL}/virtual-numbers/call-forward`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          virtual_number_id: editingVirtualNumber.id,
+          number: editingVirtualNumber.virtual_number,
+          forward_type: "mobile",
+          forward_value: editCallForwardNumber.trim(),
+        }),
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        setAlertModal({
+          isOpen: true,
+          title: "Success",
+          message: "Call forwarding number updated successfully",
+          type: "success",
+        });
+        await fetchCustomer();
+        handleCancelCallForwardEdit();
+      } else {
+        setError(result.message || "Failed to update call forwarding number");
+      }
+    } catch (err) {
+      console.error("Error updating call forwarding number:", err);
+      setError(err.message || "An error occurred while updating call forwarding number");
+    } finally {
+      setUpdatingCallForward(false);
+    }
+  };
+
+  const canEditCustomerNumber = isAdmin || isReseller;
+
   if (loading) {
     return (
       <div className="card h-100 p-0 radius-12">
@@ -387,7 +484,7 @@ const ViewCustomerLayer = () => {
 
         {/* Action Buttons - Only show if status is pending */}
         
-        {customer.approval !== "approved"   && (
+        { (customer.approval?.toLowerCase() !== "approved" && customer.approval?.toLowerCase() !== "active") && (
           <div className="d-flex gap-3 mb-24">
             <button
               type="button"
@@ -679,6 +776,7 @@ const ViewCustomerLayer = () => {
                     </p>
                   )}
                 </div>
+                <AadhaarPhotoDisplay customer={customer} isAdmin={isAdmin} />
                 {/* <div>
                   <span className="text-xs text-secondary-light">
                     DOB Match Verified:
@@ -814,7 +912,9 @@ const ViewCustomerLayer = () => {
                 ({(customer.mst_virtual_numbers?.length || 0)} / {getMaxVirtualNumbersForCustomer(customer) ?? "-"})
               </span>
             </h6>
-            {(getMaxVirtualNumbersForCustomer(customer) != null && getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0)) && (
+            {isAdmin &&
+              getMaxVirtualNumbersForCustomer(customer) != null &&
+              getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
@@ -840,6 +940,11 @@ const ViewCustomerLayer = () => {
                     <th scope="col">Expiry Date</th>
                     <th scope="col">Days Left</th>
                     <th scope="col">Status</th>
+                    {canEditCustomerNumber && (
+                      <th scope="col" className="text-center">
+                        Actions
+                      </th>
+                    )}
                     {/* <th scope="col" className="text-center">Auto Renew</th> */}
                   </tr>
                 </thead>
@@ -867,9 +972,42 @@ const ViewCustomerLayer = () => {
                           </span>
                         </td>
                         <td>
-                          <span className="text-sm">
-                            {vn.call_forwarding_number || "-"}
-                          </span>
+                          {editingVirtualNumber?.id === vn.id ? (
+                            <div className="d-flex gap-2 align-items-center flex-wrap">
+                              <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                value={editCallForwardNumber}
+                                onChange={(e) => setEditCallForwardNumber(e.target.value)}
+                                placeholder="Call forwarding number"
+                                style={{ maxWidth: "200px" }}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-success"
+                                onClick={handleSaveCallForwarding}
+                                disabled={updatingCallForward}
+                              >
+                                {updatingCallForward ? (
+                                  <span className="spinner-border spinner-border-sm" role="status"></span>
+                                ) : (
+                                  <Icon icon="material-symbols:check" className="icon" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-secondary"
+                                onClick={handleCancelCallForwardEdit}
+                                disabled={updatingCallForward}
+                              >
+                                <Icon icon="material-symbols:close" className="icon" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-sm">
+                              {vn.call_forwarding_number || "-"}
+                            </span>
+                          )}
                         </td>
                         <td>{formatDate(vn.purchase_date) || "-"}</td>
                         <td>
@@ -897,6 +1035,26 @@ const ViewCustomerLayer = () => {
                             {vn.status || "N/A"}
                           </span>
                         </td>
+                        {canEditCustomerNumber && (
+                          <td className="text-center">
+                            {editingVirtualNumber?.id === vn.id ? null : (
+                              <span
+                                title={getEditTooltipMessage(vn)}
+                                style={{ cursor: canEditCallForwarding(vn) ? "pointer" : "not-allowed" }}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={() => handleEditCallForwarding(vn)}
+                                  disabled={!canEditCallForwarding(vn)}
+                                  style={{ pointerEvents: canEditCallForwarding(vn) ? "auto" : "none" }}
+                                >
+                                  <Icon icon="material-symbols:edit" className="icon" />
+                                </button>
+                              </span>
+                            )}
+                          </td>
+                        )}
                         {/* <td className="text-center">
                           {vn.is_auto_renew ? (
                             <span className="badge bg-success">Enabled</span>
