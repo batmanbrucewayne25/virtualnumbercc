@@ -1562,6 +1562,89 @@ export class CustomerService {
   }
 
   /**
+   * Check if customer has a recent successful add_virtual_number transaction (prevents duplicate offline adds).
+   * @param {string} customerId
+   * @param {string} resellerId
+   * @param {number} withinSeconds
+   * @returns {Promise<object|null>}
+   */
+  static async getRecentSuccessfulAddVirtualNumberTransaction(
+    customerId,
+    resellerId,
+    withinSeconds = 15,
+  ) {
+    try {
+      const client = getHasuraClient();
+      const since = new Date(Date.now() - withinSeconds * 1000).toISOString();
+      const query = `
+        query GetRecentAddVN($customer_id: uuid!, $reseller_id: uuid!, $since: timestamptz!) {
+          mst_transaction(
+            where: {
+              customer_id: { _eq: $customer_id }
+              reseller_id: { _eq: $reseller_id }
+              status: { _eq: "success" }
+              created_at: { _gte: $since }
+              notes: { _contains: { transaction_type: "add_virtual_number" } }
+            }
+            order_by: { created_at: desc }
+            limit: 1
+          ) {
+            id
+            created_at
+          }
+        }
+      `;
+      const result = await client.client.request(query, {
+        customer_id: customerId,
+        reseller_id: resellerId,
+        since,
+      });
+      return result.mst_transaction?.[0] || null;
+    } catch (err) {
+      console.error("[getRecentSuccessfulAddVirtualNumberTransaction]", err);
+      return null;
+    }
+  }
+
+  /**
+   * Check if customer has a pending add_virtual_number transaction (prevents duplicate payment links).
+   * @param {string} customerId
+   * @param {string} resellerId
+   * @returns {Promise<object|null>}
+   */
+  static async getPendingAddVirtualNumberTransaction(customerId, resellerId) {
+    try {
+      const client = getHasuraClient();
+      const query = `
+        query GetPendingAddVN($customer_id: uuid!, $reseller_id: uuid!) {
+          mst_transaction(
+            where: {
+              customer_id: { _eq: $customer_id }
+              reseller_id: { _eq: $reseller_id }
+              status: { _in: ["pending", "authorized"] }
+              notes: { _contains: { transaction_type: "add_virtual_number" } }
+            }
+            order_by: { created_at: desc }
+            limit: 1
+          ) {
+            id
+            transaction_number
+            created_at
+          }
+        }
+      `;
+      const result = await client.client.request(query, {
+        customer_id: customerId,
+        reseller_id: resellerId,
+      });
+      return result.mst_transaction?.[0] || null;
+    } catch (err) {
+      console.error("[getPendingAddVirtualNumberTransaction]", err);
+      return null;
+    }
+  }
+
+  /**
    * Add an additional virtual number to an already-approved customer.
    * Supports both online (send Razorpay payment link) and offline (debit wallet + create VN immediately) flows.
    * Unlike approveCustomer, this has NO re-approval guards and does NOT change customer status.
@@ -1615,6 +1698,18 @@ export class CustomerService {
       const forwardNumber = call_forwarding_number || customer.phone || null;
 
       if (payment_method === "offline") {
+        // Idempotency: prevent duplicate VN from double-click (recent successful add).
+        const recentAdd = await this.getRecentSuccessfulAddVirtualNumberTransaction(
+          customer_id,
+          effectiveResellerId,
+          15,
+        );
+        if (recentAdd) {
+          throw new Error(
+            "A virtual number was just added for this customer. If you did not receive it, please refresh and try again.",
+          );
+        }
+
         const amountToDebit = pricePerNumber;
 
         // ── Step 1: Acquire VN from external API BEFORE touching the wallet ──
@@ -1709,6 +1804,18 @@ export class CustomerService {
           await this.getSubscriptionPlanById(subscription_plan_id);
         if (!subscriptionPlan) {
           throw new Error("Subscription plan not found");
+        }
+
+        // Idempotency: prevent duplicate pending transactions (e.g. double-click).
+        // If a pending add_virtual_number txn exists, reject to avoid two payment links.
+        const existingPending = await this.getPendingAddVirtualNumberTransaction(
+          customer_id,
+          effectiveResellerId,
+        );
+        if (existingPending) {
+          throw new Error(
+            "A payment link was already sent for adding a virtual number. Please wait for the customer to pay or the link to expire before sending another.",
+          );
         }
 
         await this.createTransaction({

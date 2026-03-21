@@ -126,9 +126,33 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         result = await WebhookService.processRefundCreated(resellerId, payload);
         break;
 
-      case "order.paid":
+      case "order.paid": {
+        // CRITICAL: Razorpay sends order.paid + payment.captured + payment_link.paid for payment links.
+        // Skip order.paid entirely when a transaction already exists — payment.captured is the
+        // single handler for VN creation. Prevents race where both update the same pending txn.
+        const orderPaymentId = payload.payload?.payment?.entity?.id;
+        const orderId = payload.payload?.order?.entity?.id;
+        if (orderPaymentId || orderId) {
+          const existing = await WebhookService.transactionExists(
+            orderPaymentId,
+            orderId
+          );
+          if (existing) {
+            console.log(
+              `[Webhook] order.paid: Transaction already exists for payment ${orderPaymentId} ` +
+                `(txn=${existing.id}) — skipping (payment.captured handles it)`
+            );
+            result = {
+              success: true,
+              data: existing,
+              message: "Payment already processed (payment.captured handles it)",
+            };
+            break;
+          }
+        }
         result = await WebhookService.processOrderPaid(resellerId, payload);
         break;
+      }
 
       case "subscription.charged":
         result = await WebhookService.processSubscriptionCharged(
@@ -138,19 +162,29 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         break;
 
       case "payment_link.paid": {
-       
-        const paymentId = payload.payload?.payment?.entity?.id;
-        const orderId = payload.payload?.order?.entity?.id;
+        // CRITICAL: Razorpay sends BOTH payment.captured AND payment_link.paid for the same
+        // payment when using payment links. They have different event IDs, so both would be
+        // processed and could trigger duplicate VN creation. Skip payment_link.paid entirely
+        // if a transaction with this payment_id already exists (payment.captured handles it).
+        const paymentEntity = payload.payload?.payment?.entity;
+        const plEntity = payload.payload?.payment_link?.entity;
+        const payments = Array.isArray(plEntity?.payments) ? plEntity.payments : [];
+        const capturedPayment = payments.find((p) => p?.status === "captured") || payments[0];
+        const paymentIdFromPl = capturedPayment?.id ?? capturedPayment?.payment_id ?? capturedPayment?.paymentId;
+        const paymentId = paymentEntity?.id ?? paymentIdFromPl;
+        const orderId = payload.payload?.order?.entity?.id ?? capturedPayment?.order_id;
+
         if (paymentId || orderId) {
           const existing = await WebhookService.transactionExists(paymentId, orderId);
-          if (existing?.virtual_number_id) {
+          if (existing) {
             console.log(
-              `[Webhook] payment_link.paid: Payment ${paymentId} already fully processed (vn_id=${existing.virtual_number_id}) — skipping to prevent duplicate VN`
+              `[Webhook] payment_link.paid: Transaction already exists for payment ${paymentId} ` +
+                `(txn=${existing.id}, vn_id=${existing.virtual_number_id}) — skipping to prevent duplicate VN (payment.captured handles it)`
             );
             result = {
               success: true,
               data: existing,
-              message: "Payment already processed (payment.captured handled it)",
+              message: "Payment already processed (payment.captured handles payment links)",
             };
             break;
           }

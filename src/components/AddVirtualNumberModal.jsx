@@ -1,10 +1,12 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getMstSubscriptionPlans } from "@/hasura/mutations/subscriptionPlan";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 
 const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
+  const isSubmittingRef = useRef(false);
+
   const [formData, setFormData] = useState({
     payment_method: "",
     subscription_plan_id: "",
@@ -92,6 +94,7 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
     setError("");
     setSuccess(false);
 
@@ -121,6 +124,7 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
       }
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
 
     try {
@@ -156,6 +160,7 @@ const AddVirtualNumberModal = ({ isOpen, onClose, customer, onSuccess }) => {
       setError(err.message || "An error occurred while adding virtual number");
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

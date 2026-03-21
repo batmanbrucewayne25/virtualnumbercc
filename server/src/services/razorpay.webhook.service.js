@@ -2147,7 +2147,12 @@ export async function processPaymentAuthorized(resellerId, payload) {
 }
 
 /**
- * Process payment.captured event
+ * Process payment.captured event (and payment_link.paid when not skipped by controller).
+ * NOTE: Razorpay sends BOTH payment.captured AND payment_link.paid for payment-link flows.
+ * The controller skips payment_link.paid when a transaction with this payment_id exists,
+ * so only one code path runs. The claim guard in postPayment prevents duplicate VN creation
+ * if both events were ever to reach here concurrently.
+ *
  * @param {string} resellerId - Reseller UUID
  * @param {object} payload - Webhook payload
  * @returns {Promise<object>}
@@ -2179,6 +2184,27 @@ export async function processPaymentCaptured(resellerId, payload) {
   console.log(
     `[processPaymentCaptured] Processing payment ${paymentData.id}, Event: ${eventId}, effectiveReseller: ${effectiveResellerId}, email: ${earlyEmail}, notes: ${JSON.stringify(paymentData.notes)}`,
   );
+
+  // ========================================
+  // STEP 0: PAYMENT-ID EARLY EXIT (prevents duplicate VN from any webhook race)
+  // ========================================
+  // If a transaction with this payment_id already has a VN linked, we're done.
+  if (paymentData.id) {
+    const existingByPayment = await transactionExists(
+      paymentData.id,
+      paymentData.order_id || null,
+    );
+    if (existingByPayment?.virtual_number_id) {
+      console.log(
+        `[processPaymentCaptured] STEP0 Payment ${paymentData.id} already has VN linked (vn_id=${existingByPayment.virtual_number_id}) — early exit`,
+      );
+      return {
+        success: true,
+        data: existingByPayment,
+        message: "Payment already fully processed (VN linked)",
+      };
+    }
+  }
 
   // ========================================
   // STEP 1: IDEMPOTENCY CHECK (Event-based)
