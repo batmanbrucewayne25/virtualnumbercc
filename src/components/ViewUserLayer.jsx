@@ -890,9 +890,8 @@ const ViewUserLayer = () => {
               </span>
             </h6>
           
-            {isAdminUser &&
-              getMaxVirtualNumbersForCustomer(customer) != null &&
-              getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0) && (
+            {(isAdminUser || isResellerUser) &&
+              (getMaxVirtualNumbersForCustomer(customer) ?? 1) > (customer?.mst_virtual_numbers?.length ?? 0) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"

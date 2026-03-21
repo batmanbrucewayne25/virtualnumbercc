@@ -912,15 +912,24 @@ const ViewCustomerLayer = () => {
                 ({(customer.mst_virtual_numbers?.length || 0)} / {getMaxVirtualNumbersForCustomer(customer) ?? "-"})
               </span>
             </h6>
-            {isAdmin &&
-              getMaxVirtualNumbersForCustomer(customer) != null &&
-              getMaxVirtualNumbersForCustomer(customer) > (customer?.mst_virtual_numbers?.length ?? 0) && (
+            {(isAdmin || isReseller) &&
+              (getMaxVirtualNumbersForCustomer(customer) ?? 1) > (customer?.mst_virtual_numbers?.length ?? 0) && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm d-flex align-items-center gap-1"
                 onClick={() => setShowAddVirtualNumberModal(true)}
-                disabled={customer.approval !== "approved"}
-                title={customer.approval !== "approved" ? "Approve the customer first to assign virtual numbers" : ""}
+                disabled={
+                  customer.approval !== "approved" &&
+                  customer.status !== "approved" &&
+                  customer.status !== "active"
+                }
+                title={
+                  customer.approval !== "approved" &&
+                  customer.status !== "approved" &&
+                  customer.status !== "active"
+                    ? "Approve the customer first to assign virtual numbers"
+                    : ""
+                }
               >
                 <Icon icon="ic:baseline-plus" className="icon text-xl line-height-1" />
                 Add Virtual Number
