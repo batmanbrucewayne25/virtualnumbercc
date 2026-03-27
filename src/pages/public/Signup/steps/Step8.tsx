@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getMstResellerByEmail } from "@/hasura/mutations";
 
 interface Step8Props {
   email: string;
   onBack: () => void;
   onConfirm: () => void;
+  /** Published CMS Terms page route */
+  termsPageHref?: string;
 }
 
 const IMAGE_UPLOAD_PATH =
@@ -72,7 +75,12 @@ const SectionCard = ({
   </div>
 );
 
-const Step8 = ({ email, onBack, onConfirm }: Step8Props) => {
+const Step8 = ({
+  email,
+  onBack,
+  onConfirm,
+  termsPageHref = "/page/terms-and-conditions",
+}: Step8Props) => {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -288,7 +296,14 @@ const Step8 = ({ email, onBack, onConfirm }: Step8Props) => {
       </div>
 
       <div className="alert alert-info mb-20 text-sm">
-        By confirming, you agree that all the information provided is accurate and you accept the Terms &amp; Conditions.
+        By confirming, you agree that all the information provided is accurate and you accept the{" "}
+        <Link
+          to={termsPageHref}
+          className="fw-semibold text-primary-600 text-decoration-underline"
+        >
+          Terms &amp; Conditions
+        </Link>
+        .
       </div>
 
       <button

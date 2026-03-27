@@ -274,10 +274,10 @@ const RenewalPlanModal = ({
                       required
                       disabled={loading}
                     />
-                    <p className="text-muted text-sm mt-8 mb-0">
+                    {/* <p className="text-muted text-sm mt-8 mb-0">
                       Your reseller price per number will be deducted from your
                       wallet.
-                    </p>
+                    </p> */}
                   </div>
 
                   <div className="mb-20">

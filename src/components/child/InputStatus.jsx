@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
+import PasswordField from "../Form/PasswordField";
 
 const InputStatus = () => {
   return (
@@ -85,12 +86,11 @@ const InputStatus = () => {
                 <span className='icon'>
                   <Icon icon='solar:lock-password-outline' />
                 </span>
-                <input
-                  type='password'
+                <PasswordField
                   name='#0'
-                  className='form-control'
                   placeholder='*******'
-                  required=''
+                  defaultValue=''
+                  required
                 />
                 <div className='invalid-feedback'>Please provide password</div>
               </div>
@@ -101,12 +101,11 @@ const InputStatus = () => {
                 <span className='icon'>
                   <Icon icon='solar:lock-password-outline' />
                 </span>
-                <input
-                  type='password'
+                <PasswordField
                   name='#0'
-                  className='form-control'
                   placeholder='*******'
-                  required=''
+                  defaultValue=''
+                  required
                 />
                 <div className='invalid-feedback'>Please confirm password</div>
               </div>

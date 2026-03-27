@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
+import PasswordField from "../Form/PasswordField";
 
 const HorizontalInputFormWithIcons = () => {
   return (
@@ -79,12 +80,7 @@ const HorizontalInputFormWithIcons = () => {
                 <span className='icon'>
                   <Icon icon='solar:lock-password-outline' />
                 </span>
-                <input
-                  type='password'
-                  name='#0'
-                  className='form-control'
-                  placeholder='*******'
-                />
+                <PasswordField name='#0' placeholder='*******' defaultValue='' />
               </div>
             </div>
           </div>

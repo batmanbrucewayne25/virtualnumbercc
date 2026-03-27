@@ -4,6 +4,7 @@ import { getMstResellerById, updateMstResellerProfileImage, updateMstResellerLog
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getApiBaseUrl } from "@/utils/apiUrl";
+import { getAddressDisplayLines } from "@/utils/addressDisplay.js";
 const IMAGE_UPLOAD_PATH = (import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads').replace(/\/+$/, '');
 
 const ViewProfileLayer = () => {
@@ -65,9 +66,14 @@ const ViewProfileLayer = () => {
     gst_pan_number: "",
     gstin_status: "",
     custom_domain: "",
+    support_number: "",
+    support_email: "",
   });
 
   const [domainData, setDomainData] = useState(null);
+  const [savingSupport, setSavingSupport] = useState(false);
+  const [editingSupport, setEditingSupport] = useState(false);
+  const supportBackupRef = useRef({ support_number: "", support_email: "" });
 
   useEffect(() => {
     // Get logged-in reseller ID
@@ -128,6 +134,8 @@ const ViewProfileLayer = () => {
           gst_pan_number: result.data.gst_pan_number || "",
           gstin_status: result.data.gstin_status || "",
           custom_domain: "",
+          support_number: result.data.support_number || "",
+          support_email: result.data.support_email || "",
         });
 
         // Set profile image if available
@@ -207,6 +215,66 @@ const ViewProfileLayer = () => {
       setError("An error occurred while loading profile");
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleSupportInfoChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleStartEditSupport = () => {
+    supportBackupRef.current = {
+      support_number: formData.support_number,
+      support_email: formData.support_email,
+    };
+    setEditingSupport(true);
+    setError("");
+  };
+
+  const handleCancelEditSupport = () => {
+    setFormData((prev) => ({
+      ...prev,
+      support_number: supportBackupRef.current.support_number,
+      support_email: supportBackupRef.current.support_email,
+    }));
+    setEditingSupport(false);
+    setError("");
+  };
+
+  const handleSaveSupportInfo = async (e) => {
+    e?.preventDefault?.();
+    if (!resellerId) {
+      setError("Unable to determine reseller ID. Please log in again.");
+      return;
+    }
+    setSavingSupport(true);
+    setError("");
+    setSuccess(false);
+    try {
+      const supportNumber = formData.support_number.trim();
+      const supportEmail = formData.support_email.trim();
+      const result = await updateMstReseller(resellerId, {
+        support_number: supportNumber || null,
+        support_email: supportEmail || null,
+      });
+      if (result.success) {
+        setSuccess(true);
+        setSuccessMessage("Support information saved successfully.");
+        setEditingSupport(false);
+        await fetchResellerData(resellerId);
+        setTimeout(() => {
+          setSuccess(false);
+          setSuccessMessage("");
+        }, 3000);
+      } else {
+        setError(result.message || "Failed to save support information");
+      }
+    } catch (err) {
+      console.error("Error saving support info:", err);
+      setError(err.message || "An error occurred while saving");
+    } finally {
+      setSavingSupport(false);
     }
   };
 
@@ -1059,12 +1127,15 @@ const ViewProfileLayer = () => {
                   </li>
                 )}
                 {formData.address && (
-                  <li className='d-flex align-items-center gap-1'>
+                  <li className='d-flex align-items-start gap-1'>
                     <span className='w-30 text-md fw-semibold text-primary-light'>
                       Address
                     </span>
-                    <span className='w-70 text-secondary-light fw-medium'>
-                      : {Array.isArray(formData.address) ? formData.address.join(', ') : formData.address}
+                    <span
+                      className='w-70 text-secondary-light fw-medium'
+                      style={{ whiteSpace: "pre-line" }}
+                    >
+                      : {getAddressDisplayLines(formData.address).join("\n")}
                     </span>
                   </li>
                 )}
@@ -1080,7 +1151,7 @@ const ViewProfileLayer = () => {
               <h5 className='mb-0'>Business Information</h5>
               <div className='alert alert-info mb-0 py-8 px-16'>
                 <Icon icon='solar:info-circle-outline' className='icon me-2' />
-                <small>Only Super Admin can edit reseller profiles. Please contact admin for any changes.</small>
+                <small>You don’t have permission to edit this profile. Contact support for assistance.</small>
               </div>
             </div>
 
@@ -1209,6 +1280,122 @@ const ViewProfileLayer = () => {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className='mt-24 pt-24 border-top border-neutral-200'>
+                <div className='d-flex justify-content-between align-items-start flex-wrap gap-2 mb-16'>
+                  <div>
+                    <h5 className='mb-4'>Support Information</h5>
+                    <p className='text-sm text-secondary-light mb-0'>
+                      Phone and email your customers can use for help (e.g. on Client Hub or invoices).
+                    </p>
+                  </div>
+                  {!editingSupport && (
+                    <button
+                      type='button'
+                      className='btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1'
+                      onClick={handleStartEditSupport}
+                      disabled={fetching || savingSupport}
+                      title='Edit support information'
+                      aria-label='Edit support information'
+                    >
+                      <Icon icon='lucide:pencil' className='icon' />
+                      <span>Edit</span>
+                    </button>
+                  )}
+                </div>
+
+                {!editingSupport ? (
+                  <div className='row'>
+                    <div className='col-sm-6 mb-12'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Support phone
+                      </label>
+                      <p className='text-secondary-light mb-0'>
+                        {formData.support_number?.trim() ? formData.support_number : "—"}
+                      </p>
+                    </div>
+                    <div className='col-sm-6 mb-12'>
+                      <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
+                        Support email
+                      </label>
+                      <p className='text-secondary-light mb-0'>
+                        {formData.support_email?.trim() ? formData.support_email : "—"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveSupportInfo}>
+                    <div className='row'>
+                      <div className='col-sm-6 mb-16'>
+                        <label
+                          htmlFor='support_number'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          Support phone
+                        </label>
+                        <input
+                          id='support_number'
+                          name='support_number'
+                          type='tel'
+                          className='form-control radius-8'
+                          placeholder='e.g. +91 98765 43210'
+                          value={formData.support_number}
+                          onChange={handleSupportInfoChange}
+                          disabled={savingSupport || fetching}
+                          autoComplete='tel'
+                        />
+                      </div>
+                      <div className='col-sm-6 mb-16'>
+                        <label
+                          htmlFor='support_email'
+                          className='form-label fw-semibold text-primary-light text-sm mb-8'
+                        >
+                          Support email
+                        </label>
+                        <input
+                          id='support_email'
+                          name='support_email'
+                          type='email'
+                          className='form-control radius-8'
+                          placeholder='support@yourbusiness.com'
+                          value={formData.support_email}
+                          onChange={handleSupportInfoChange}
+                          disabled={savingSupport || fetching}
+                          autoComplete='email'
+                        />
+                      </div>
+                    </div>
+                    <div className='d-flex flex-wrap gap-2'>
+                      <button
+                        type='submit'
+                        className='btn btn-primary radius-8'
+                        disabled={savingSupport || fetching}
+                      >
+                        {savingSupport ? (
+                          <>
+                            <span
+                              className='spinner-border spinner-border-sm me-2'
+                              role='status'
+                              aria-hidden='true'
+                            />
+                            Saving...
+                          </>
+                        ) : (
+                          "Save"
+                        )}
+                      </button>
+                      <button
+                        type='button'
+                        className='btn btn-secondary radius-8'
+                        onClick={handleCancelEditSupport}
+                        disabled={savingSupport || fetching}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
           </div>
         </div>

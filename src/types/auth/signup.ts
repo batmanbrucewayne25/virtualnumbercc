@@ -22,7 +22,11 @@ export type Step2Props = BaseStepProps & { onVerify: StepCallback };
 export type Step3Props = BaseStepProps & { onSubmit: StepCallback };
 export type Step4Props = BaseStepProps & { onSubmit: StepCallback };
 export type Step5Props = BaseStepProps & { onContinue: StepCallback };
-export type Step6Props = BaseStepProps & { onSubmit: StepCallback };
+export type Step6Props = BaseStepProps & {
+  onSubmit: StepCallback;
+  /** Route to published CMS Terms page (admin or reseller-scoped) */
+  termsPageHref?: string;
+};
 
 export interface SignupFormData {
     email: string;

@@ -3,8 +3,16 @@
  */
 
 export const getRazorpayLinkTemplate = (recipientName, razorpayLink, planName, planAmount, resellerName) => {
+  const brandFooter =
+    resellerName != null && String(resellerName).trim()
+      ? String(resellerName).trim()
+      : "Virtual Number";
+  const subject =
+    resellerName != null && String(resellerName).trim()
+      ? `Complete Your Payment – ${String(resellerName).trim()}`
+      : "Complete Your Payment - Virtual Number Subscription";
   return {
-    subject: 'Complete Your Payment - Virtual Number Subscription',
+    subject,
     html: `
       <!DOCTYPE html>
       <html>
@@ -48,7 +56,7 @@ export const getRazorpayLinkTemplate = (recipientName, razorpayLink, planName, p
         </div>
         
         <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-          <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} ${brandFooter}. All rights reserved.</p>
         </div>
       </body>
       </html>
@@ -69,7 +77,7 @@ export const getRazorpayLinkTemplate = (recipientName, razorpayLink, planName, p
       
       Note: Your virtual number will be activated automatically after successful payment.
       
-      © ${new Date().getFullYear()} Virtual Number. All rights reserved.
+      © ${new Date().getFullYear()} ${brandFooter}. All rights reserved.
     `,
   };
 };

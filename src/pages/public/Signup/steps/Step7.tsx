@@ -1,8 +1,10 @@
 import { getMstResellerByEmail, completeSignupStep } from "@/hasura/mutations";
 import { Step6Props } from "@/types/auth/signup";
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import SignaturePad from "@/components/SignaturePad";
 import { getAuthToken } from "@/utils/auth";
+import { formatAddressDisplayMultiline } from "@/utils/addressDisplay.js";
 import { useStepValidation } from "@/hooks/useStepValidation";
 
 interface UserData {
@@ -40,7 +42,12 @@ interface UserData {
   id?: string;
 }
 
-const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
+const Step6 = ({
+  email,
+  onBack,
+  onSubmit,
+  termsPageHref = "/page/terms-and-conditions",
+}: Step6Props) => {
   // Validate step access
   const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 7 });
   const [logo, setLogo] = useState<string>("");
@@ -277,6 +284,14 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
     return "";
   };
 
+  /** Raw KYC address for display (same source priority as getAddressFromKYC). */
+  const getKycAddressSourceForDisplay = (): string | string[] | undefined => {
+    if (!userData) return undefined;
+    if (userData.address) return userData.address;
+    if (userData.business_address) return userData.business_address;
+    return undefined;
+  };
+
   const handleSubmit = async () => {
     setError("");
     
@@ -373,6 +388,8 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
     );
   }
 
+  const kycAddressSrc = getKycAddressSourceForDisplay();
+
   return (
     <>
       <h4 className="mb-24 text-center">KYC Details Completion</h4>
@@ -391,7 +408,18 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
                 <p className="text-sm mb-4"><strong>Business Name:</strong> {userData.business_name || "N/A"}</p>
                 <p className="text-sm mb-4"><strong>Business Type:</strong> {userData.constitution_of_business || "N/A"}</p>
                 <p className="text-sm mb-4"><strong>Business PAN:</strong> {userData.gst_pan_number || "N/A"}</p>
-                <p className="text-sm mb-4"><strong>Business Address:</strong> {userData.business_address || userData.address || "N/A"}</p>
+                <p className="text-sm mb-4">
+                  <strong>Business Address:</strong>{" "}
+                  {userData.business_address || userData.address ? (
+                    <span style={{ whiteSpace: "pre-line" }}>
+                      {formatAddressDisplayMultiline(
+                        (userData.business_address || userData.address) as string | string[]
+                      )}
+                    </span>
+                  ) : (
+                    "N/A"
+                  )}
+                </p>
                 <p className="text-sm mb-4"><strong>GSTIN:</strong> {userData.gstin || "N/A"}</p>
                 <p className="text-sm mb-4"><strong>Status:</strong> {userData.gstin_status || "N/A"}</p>
               </div>
@@ -433,7 +461,16 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
                   style={{ height: 32, objectFit: "contain" }}
                 />
               ) : "N/A"}</p>
-              <p className="text-sm"><strong>Address:</strong> {userData.address || "N/A"}</p>
+              <p className="text-sm">
+                <strong>Address:</strong>{" "}
+                {userData.address ? (
+                  <span style={{ whiteSpace: "pre-line" }}>
+                    {formatAddressDisplayMultiline(userData.address)}
+                  </span>
+                ) : (
+                  "N/A"
+                )}
+              </p>
             </div>
           </div>
         </div>
@@ -596,10 +633,12 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
       </div>
 
       {/* Address Display (from KYC) */}
-      {getAddressFromKYC() && (
+      {kycAddressSrc && (
         <div className="alert alert-info mb-24">
           <strong className="d-block mb-8">Address (from KYC verification):</strong>
-          <p className="text-sm mb-0">{getAddressFromKYC()}</p>
+          <p className="text-sm mb-0" style={{ whiteSpace: "pre-line" }}>
+            {formatAddressDisplayMultiline(kycAddressSrc)}
+          </p>
         </div>
       )}
 
@@ -613,7 +652,15 @@ const Step6 = ({ email, onBack, onSubmit }: Step6Props) => {
           onChange={(e) => setAcceptedTerms(e.target.checked)}
         />
         <label className="form-check-label" htmlFor="termsCheckbox">
-          I agree to Terms & Conditions and confirm that all information provided is accurate.
+          I agree to{" "}
+          <Link
+            to={termsPageHref}
+            className="text-primary-600 fw-semibold text-decoration-underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Terms &amp; Conditions
+          </Link>{" "}
+          and confirm that all information provided is accurate.
         </label>
       </div>
 

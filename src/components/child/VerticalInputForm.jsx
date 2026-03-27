@@ -1,3 +1,5 @@
+import PasswordField from "../Form/PasswordField";
+
 const VerticalInputForm = () => {
   return (
     <div className='col-md-6'>
@@ -53,12 +55,7 @@ const VerticalInputForm = () => {
             </div>
             <div className='col-12'>
               <label className='form-label'>Password</label>
-              <input
-                type='password'
-                name='#0'
-                className='form-control'
-                placeholder='*******'
-              />
+              <PasswordField name='#0' placeholder='*******' defaultValue='' />
             </div>
             <div className='col-12'>
               <button type='submit' className='btn btn-primary-600'>

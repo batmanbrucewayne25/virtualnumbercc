@@ -149,6 +149,8 @@ export const getMstResellerById = async (id: string) => {
       profile_image_alt
       signatureImage
       allow_existing_customer
+      support_number
+      support_email
       suspended_reason
       suspended_at
       suspended_by
@@ -464,6 +466,8 @@ export const updateMstReseller = async (id: string, data: {
   profile_image_alt?: string;
   allow_existing_customer?: boolean;
   grace_period_days?: number;
+  support_number?: string | null;
+  support_email?: string | null;
   [key: string]: any;
 }) => {
   // Validate UUID format
@@ -506,6 +510,8 @@ export const updateMstReseller = async (id: string, data: {
     allow_existing_customer: 'Boolean',
     grace_period_days: 'Int',
     price_per_number: 'numeric',
+    support_number: 'String',
+    support_email: 'String',
   };
 
   try {

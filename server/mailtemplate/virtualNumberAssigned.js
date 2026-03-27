@@ -3,8 +3,16 @@
  */
 
 export const getVirtualNumberAssignedTemplate = (recipientName, virtualNumber, resellerName) => {
+  const brandFooter =
+    resellerName != null && String(resellerName).trim()
+      ? String(resellerName).trim()
+      : "Virtual Number";
+  const subject =
+    resellerName != null && String(resellerName).trim()
+      ? `${String(resellerName).trim()} – Virtual Number Assigned`
+      : "Virtual Number Assigned - Your Account is Active";
   return {
-    subject: 'Virtual Number Assigned - Your Account is Active',
+    subject,
     html: `
       <!DOCTYPE html>
       <html>
@@ -37,7 +45,7 @@ export const getVirtualNumberAssignedTemplate = (recipientName, virtualNumber, r
         </div>
         
         <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-          <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} ${brandFooter}. All rights reserved.</p>
         </div>
       </body>
       </html>
@@ -57,7 +65,7 @@ export const getVirtualNumberAssignedTemplate = (recipientName, virtualNumber, r
       
       If you have any questions or need assistance, please contact your team: ${resellerName}
       
-      © ${new Date().getFullYear()} Virtual Number. All rights reserved.
+      © ${new Date().getFullYear()} ${brandFooter}. All rights reserved.
     `,
   };
 };

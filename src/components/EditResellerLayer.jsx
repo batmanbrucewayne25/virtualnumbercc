@@ -74,7 +74,7 @@ const EditResellerLayer = () => {
         if (role === "admin" || role === "super_admin") {
           setIsAdmin(true);
         } else {
-          setError("Access denied. Only Super Admin can edit reseller profiles.");
+          setError("Access denied.You don’t have permission to edit this profile. Contact support for assistance.");
           setFetching(false);
           setTimeout(() => {
             navigate("/reseller-list");
@@ -531,7 +531,7 @@ const EditResellerLayer = () => {
         <div className='card-body p-24'>
           <div className='alert alert-danger' role='alert'>
             <Icon icon='material-symbols:error-outline' className='icon me-2' />
-            {error || "Access denied. Only Super Admin can edit reseller profiles."}
+            {error || "Access denied. You don’t have permission to edit this profile. Contact support for assistance."}
           </div>
         </div>
       </div>

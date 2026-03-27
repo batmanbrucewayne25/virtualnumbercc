@@ -819,18 +819,8 @@ export class CustomerService {
           subscription_plan_id || null,
         );
 
-        // ── Step 3: Debit wallet ONLY after VN is safely in DB ───────────────
-        await this.debitResellerWallet(
-          effectiveResellerId,
-          amountToDebit,
-          "Customer approval - offline payment",
-          payment_reference_number || null,
-          customer_id || null,
-          virtualNumberRecord?.id || null,
-        );
-
-        // ── Step 4: Record the transaction ───────────────────────────────────
-        await this.createTransaction({
+        // ── Step 3: Record the transaction first (wallet.reference must equal mst_transaction.id for list UI)
+        const offlineApprovalTxn = await this.createTransaction({
           customer_id: customer_id,
           reseller_id: effectiveResellerId,
           virtual_number_id: virtualNumberRecord?.id || null,
@@ -842,6 +832,16 @@ export class CustomerService {
           reference_number: payment_reference_number || null,
           payment_date: payment_date || new Date().toISOString().split("T")[0],
         });
+
+        // ── Step 4: Debit wallet (reference = transaction id, same as online/Razorpay flow)
+        await this.debitResellerWallet(
+          effectiveResellerId,
+          amountToDebit,
+          "Customer approval - offline payment",
+          offlineApprovalTxn?.id ? String(offlineApprovalTxn.id) : null,
+          customer_id || null,
+          virtualNumberRecord?.id || null,
+        );
 
         // 5. Update customer status
         await this.updateCustomerStatus(customer_id, "approved", "verified");
@@ -1403,22 +1403,8 @@ export class CustomerService {
         expiry_date: newExpiryStr,
       });
 
-      // ── Step 3: Debit wallet ONLY after expiry is safely extended ────────────
-      await this.debitResellerWallet(
-        effectiveResellerId,
-        pricePerNumber,
-        `Renewal (offline) - ${vn.virtual_number}`,
-        payment_reference_number || null,
-        customer.id || null,
-        vn.id || null,
-      );
-
-      console.log(
-        `[renewVirtualNumberOffline] Extended VN ${vn.virtual_number} expiry: ${vn.expiry_date} -> ${newExpiryStr} (+${durationDays} days)`,
-      );
-
-      // Create transaction record
-      await this.createTransaction({
+      // ── Step 3: Create transaction first (wallet.reference must equal mst_transaction.id for list UI)
+      const offlineRenewalTxn = await this.createTransaction({
         customer_id: customer.id,
         reseller_id: effectiveResellerId,
         virtual_number_id: vn.id,
@@ -1442,6 +1428,20 @@ export class CustomerService {
           new_expiry: newExpiryStr,
         },
       });
+
+      // ── Step 4: Debit wallet (reference = transaction id)
+      await this.debitResellerWallet(
+        effectiveResellerId,
+        pricePerNumber,
+        `Renewal (offline) - ${vn.virtual_number}`,
+        offlineRenewalTxn?.id ? String(offlineRenewalTxn.id) : null,
+        customer.id || null,
+        vn.id || null,
+      );
+
+      console.log(
+        `[renewVirtualNumberOffline] Extended VN ${vn.virtual_number} expiry: ${vn.expiry_date} -> ${newExpiryStr} (+${durationDays} days)`,
+      );
 
       return {
         success: true,
@@ -1744,19 +1744,8 @@ export class CustomerService {
           subscription_plan_id || null,
         );
 
-        // ── Step 3: Debit wallet ONLY after VN is safely in DB ───────────────
-        // At this point the VN exists; debiting is safe.
-        await this.debitResellerWallet(
-          effectiveResellerId,
-          amountToDebit,
-          "Add virtual number - offline payment",
-          payment_reference_number || null,
-          customer_id || null,
-          virtualNumberRecord?.id || null,
-        );
-
-        // ── Step 4: Record the transaction ───────────────────────────────────
-        await this.createTransaction({
+        // ── Step 3: Record the transaction first (wallet.reference must equal mst_transaction.id for list UI)
+        const offlineAddTxn = await this.createTransaction({
           customer_id: customer_id,
           reseller_id: effectiveResellerId,
           virtual_number_id: virtualNumberRecord?.id || null,
@@ -1772,6 +1761,16 @@ export class CustomerService {
             call_forwarding_number: forwardNumber || null,
           },
         });
+
+        // ── Step 4: Debit wallet (reference = transaction id)
+        await this.debitResellerWallet(
+          effectiveResellerId,
+          amountToDebit,
+          "Add virtual number - offline payment",
+          offlineAddTxn?.id ? String(offlineAddTxn.id) : null,
+          customer_id || null,
+          virtualNumberRecord?.id || null,
+        );
 
         // ── Step 5: Send email (best-effort, never blocks success) ───────────
         const resellerSmtpConfig =

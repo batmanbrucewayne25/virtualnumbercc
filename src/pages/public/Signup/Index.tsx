@@ -14,6 +14,9 @@ import Step6 from "./steps/Step6";
 import Step7 from "./steps/Step7";
 import Step8 from "./steps/Step8";
 
+/** Published CMS slug for Terms & Conditions (see CmsLayer RESELLER_CMS_PAGE_TYPES) */
+const TERMS_CMS_SLUG = "terms-and-conditions";
+
 interface SignUpLayerProps {
   skipOtpVerification?: boolean;
 }
@@ -128,6 +131,11 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
       setCmsPageLoading(false);
     }
   };
+
+  const termsPageHref =
+    isClientHubBuild && resellerId
+      ? `/page/${TERMS_CMS_SLUG}?reseller_id=${encodeURIComponent(resellerId)}`
+      : `/page/${TERMS_CMS_SLUG}`;
 
   const fetchUserData = async (userEmail: string, requestedStep: number | null = null) => {
     setLoading(true);
@@ -384,6 +392,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
             <Step7
               email={email}
               onBack={() => handleStepChange(6)}
+              termsPageHref={termsPageHref}
               onSubmit={async () => {
                 const fresh = await refreshUserData(email);
                 handleStepChange(8, fresh);
@@ -397,6 +406,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               email={email}
               onBack={() => handleStepChange(7)}
               onConfirm={() => setShowSuccess(true)}
+              termsPageHref={termsPageHref}
             />
           )}
 

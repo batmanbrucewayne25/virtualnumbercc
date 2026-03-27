@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
+import PasswordField from "./Form/PasswordField";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getMstWhatsappConfigByResellerId, upsertMstWhatsappConfig } from "@/hasura/mutations/whatsappConfig";
 
@@ -170,15 +171,15 @@ const Whatsapplayer = () => {
                   Access Token <span className='text-danger-600'>*</span>
                   <small className='text-secondary ms-2'>(Required only for new configuration)</small>
                 </label>
-                <input
-                  type='password'
-                  className='form-control radius-8'
+                <PasswordField
                   id='api_key'
                   name='api_key'
+                  className='radius-8'
                   value={form.api_key}
                   onChange={handleChange}
                   disabled={loading}
-                  autoComplete="off"
+                  autoComplete='off'
+                  placeholder='Access token'
                 />
                 <small className='text-secondary'>
                   Leave empty if updating an existing configuration. Only required when creating a new configuration.

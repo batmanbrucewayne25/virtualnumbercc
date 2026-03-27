@@ -154,12 +154,45 @@ export const getMstVirtualNumbers = async (filters?: { resellerId?: string }) =>
       }
     }
 
+    // Step 2b: Fallback for legacy offline rows where wallet.reference was payment ref, not txn id.
+    // Latest DEBIT per virtual_number_id (order desc → first seen wins).
+    const walletDebitByVnId = new Map<string, any>();
+    if (vnIds.length > 0) {
+      const walletByVnQuery = `
+        query GetWalletDebitsByVirtualNumberId($vn_ids: [uuid!]!) {
+          mst_wallet_transaction(
+            where: {
+              virtual_number_id: { _in: $vn_ids }
+              transaction_type: { _eq: "DEBIT" }
+            }
+            order_by: { created_at: desc }
+          ) {
+            virtual_number_id
+            reference
+            amount
+          }
+        }
+      `;
+      const walletByVnResult = await graphqlRequest(walletByVnQuery, {
+        vn_ids: vnIds,
+      }).catch(() => null);
+      for (const row of (walletByVnResult?.data?.mst_wallet_transaction ?? [])) {
+        const vid = row.virtual_number_id;
+        if (vid && !walletDebitByVnId.has(vid)) {
+          walletDebitByVnId.set(vid, row);
+        }
+      }
+    }
+
     // Step 3: Attach enrichment data to each VN.
     // mst_wallet_transactions → look up via txn.id → wallet debit for that transaction
     // mst_transactions        → direct from txnMap
     const enriched = vns.map((vn: any) => {
       const txnRow = txnMap.get(vn.id) ?? null;
-      const walletRow = txnRow ? (walletDebitMap.get(txnRow.id) ?? null) : null;
+      let walletRow = txnRow ? (walletDebitMap.get(txnRow.id) ?? null) : null;
+      if (txnRow && !walletRow) {
+        walletRow = walletDebitByVnId.get(vn.id) ?? null;
+      }
       return {
         ...vn,
         mst_wallet_transactions: walletRow ? [walletRow] : [],

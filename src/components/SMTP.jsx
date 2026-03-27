@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
+import PasswordField from "./Form/PasswordField";
 import { getUserData, getAuthToken } from "@/utils/auth";
 import { getMstSmtpConfigByResellerId, upsertMstSmtpConfig } from "@/hasura/mutations/smtpConfig";
 
@@ -231,14 +232,15 @@ const SMTPSettings = () => {
                 <label className='form-label fw-semibold text-primary-light text-sm mb-8'>
                   Password <span className='text-danger-600'>*</span>
                 </label>
-                <input
-                  type='password'
+                <PasswordField
+                  id='reseller-smtp-password'
                   name='password'
-                  className='form-control radius-8'
+                  className='radius-8'
                   value={form.password}
                   onChange={handleChange}
                   disabled={loading}
-                  autoComplete="new-password"
+                  autoComplete='new-password'
+                  placeholder='Password'
                 />
             </div>
           </div>

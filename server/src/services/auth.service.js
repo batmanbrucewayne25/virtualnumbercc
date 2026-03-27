@@ -71,7 +71,7 @@ export class AuthService {
             // Reseller is pending approval
             console.log("⏳ Reseller account pending approval");
             throw new Error(
-              "Your account is pending approval. Please wait for administrator approval."
+              "Your account is pending approval. You’ll be notified once access is granted. Need help? Contact our support team"
             );
           }
 

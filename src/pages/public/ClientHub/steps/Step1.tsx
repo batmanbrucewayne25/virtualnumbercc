@@ -11,8 +11,9 @@ interface Step1Props {
   resellerId: string;
   brandName?: string;
   allowExistingCustomer?: boolean;
-  resellerEmail?: string | null;
-  resellerPhone?: string | null;
+  /** Public support contact (mst_reseller.support_number / support_email) */
+  supportNumber?: string | null;
+  supportEmail?: string | null;
   onSignUp: () => void;
   onLogin: () => void;
 }
@@ -21,8 +22,8 @@ const Step1 = ({
   resellerId,
   brandName,
   allowExistingCustomer,
-  resellerEmail,
-  resellerPhone,
+  supportNumber,
+  supportEmail,
   onSignUp,
   onLogin,
 }: Step1Props) => {
@@ -263,27 +264,31 @@ const Step1 = ({
               </div>
               <div className="modal-body p-24">
                 <p className="mb-20 text-md">
-                  Kindly contact Team <strong>{displayBrandName}</strong>.
+                  Kindly contact the <strong>{displayBrandName}</strong> support team.
                 </p>
-                {(resellerEmail || resellerPhone) && (
+                {(supportNumber?.trim() || supportEmail?.trim()) ? (
                   <div className="d-flex flex-column gap-12 text-sm">
-                    {resellerPhone && (
+                    {supportNumber?.trim() && (
                       <div className="d-flex align-items-center gap-8">
                         <Icon icon="solar:phone-bold" className="text-primary-600" />
-                        <a href={`tel:${resellerPhone}`} className="text-primary-600">
-                          {resellerPhone}
+                        <a href={`tel:${supportNumber.trim()}`} className="text-primary-600">
+                          {supportNumber.trim()}
                         </a>
                       </div>
                     )}
-                    {resellerEmail && (
+                    {supportEmail?.trim() && (
                       <div className="d-flex align-items-center gap-8">
                         <Icon icon="solar:letter-bold" className="text-primary-600" />
-                        <a href={`mailto:${resellerEmail}`} className="text-primary-600">
-                          {resellerEmail}
+                        <a href={`mailto:${supportEmail.trim()}`} className="text-primary-600">
+                          {supportEmail.trim()}
                         </a>
                       </div>
                     )}
                   </div>
+                ) : (
+                  <p className="text-sm text-secondary-light mb-0">
+                    Support contact details are not available yet. Please try again later or reach out through other official channels.
+                  </p>
                 )}
               </div>
               <div className="modal-footer border-top">

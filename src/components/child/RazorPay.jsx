@@ -1,3 +1,5 @@
+import PasswordField from "../Form/PasswordField";
+
 const RazorPay = () => {
   return (
     <div className='col-xxl-6'>
@@ -110,11 +112,12 @@ const RazorPay = () => {
               >
                 Key Secret <span className='text-danger-600'>*</span>
               </label>
-              <input
-                type='password'
-                className='form-control radius-8'
+              <PasswordField
                 id='razorpayKeySecret'
-                placeholder=''
+                name='razorpayKeySecret'
+                className='radius-8'
+                defaultValue=''
+                placeholder='Key secret'
               />
             </div>
 

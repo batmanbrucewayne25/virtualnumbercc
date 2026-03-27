@@ -30,6 +30,18 @@ const SMTP_FROM_NAME = process.env.SMTP_FROM_NAME || "Virtual Number";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
 /**
+ * Display/sender brand: prefer SMTP from_name; else reseller brand (e.g. business_name); else platform default.
+ */
+function resolveSenderDisplayName(smtpConfig, resellerBrandFallback = null) {
+  const from = smtpConfig?.from_name?.trim();
+  if (from) return from;
+  const brand =
+    resellerBrandFallback != null ? String(resellerBrandFallback).trim() : "";
+  if (brand) return brand;
+  return SMTP_FROM_NAME || "Virtual Number";
+}
+
+/**
  * Create email transporter
  * @param {object} smtpConfig - Optional SMTP config from database. If not provided, uses env variables
  */
@@ -405,8 +417,7 @@ export const sendVirtualNumberEmail = async (
 
     // Determine from email/name from config or env
     const fromEmail = smtpConfig?.from_email || SMTP_FROM_EMAIL || SMTP_USER;
-    const fromName =
-      smtpConfig?.from_name || SMTP_FROM_NAME || "Virtual Number";
+    const fromName = resolveSenderDisplayName(smtpConfig, resellerName);
 
     // Use default template (can be extended to check database in future)
     const defaultTemplate = getVirtualNumberAssignedTemplate(
@@ -473,8 +484,7 @@ export const sendRazorpayLinkEmail = async (
 
     // Determine from email/name from config or env
     const fromEmail = smtpConfig?.from_email || SMTP_FROM_EMAIL || SMTP_USER;
-    const fromName =
-      smtpConfig?.from_name || SMTP_FROM_NAME || "Virtual Number";
+    const fromName = resolveSenderDisplayName(smtpConfig, resellerName);
 
     // Use default template (can be extended to check database in future)
     const defaultTemplate = getRazorpayLinkTemplate(
@@ -542,7 +552,7 @@ export const sendCustomerRejectionEmail = async (
       };
     }
     const fromEmail = smtpConfig.from_email || smtpConfig.username;
-    const fromName = smtpConfig.from_name || "Virtual Number";
+    const fromName = resolveSenderDisplayName(smtpConfig, resellerName);
     const template = getCustomerRejectionTemplate(recipientName, rejectionReason, resellerName);
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
@@ -670,7 +680,7 @@ export const sendResellerApprovalEmail = async (
           
           <p style="font-size: 14px; color: #666; margin-top: 20px;">
             Best regards,<br>
-            <strong>Virtual Number Team</strong>
+            <strong>${fromName} Team</strong>
           </p>
         </div>
         
@@ -709,7 +719,7 @@ Login to your dashboard: ${loginUrl}
 If you have any questions or need assistance, please don't hesitate to contact our support team.
 
 Best regards,
-Virtual Number Team
+${fromName} Team
     `;
 
     const mailOptions = {
@@ -779,7 +789,11 @@ export const sendResellerRejectionEmail = async (
       };
     }
 
-    const template = getResellerRejectionTemplate(resellerName, rejectionReason);
+    const template = getResellerRejectionTemplate(
+      resellerName,
+      rejectionReason,
+      fromName
+    );
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: email,

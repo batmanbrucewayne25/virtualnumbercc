@@ -1,3 +1,5 @@
+import PasswordField from "../Form/PasswordField";
+
 const HorizontalInputForm = () => {
   return (
     <div className='col-md-6'>
@@ -64,12 +66,7 @@ const HorizontalInputForm = () => {
           <div className='row mb-24 gy-3 align-items-center'>
             <label className='form-label mb-0 col-sm-2'>Password</label>
             <div className='col-sm-10'>
-              <input
-                type='password'
-                name='#0'
-                className='form-control'
-                placeholder='*******'
-              />
+              <PasswordField name='#0' placeholder='*******' defaultValue='' />
             </div>
           </div>
           <button type='submit' className='btn btn-primary-600'>

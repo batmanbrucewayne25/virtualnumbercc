@@ -6,6 +6,17 @@ import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
 import * as XLSX from "xlsx";
 import AlertModal from "./AlertModal";
 
+/** User-entered / invoice ref; else Razorpay payment id; else order id (online UTR often not stored separately). */
+function getTransactionReferenceDisplay(txn) {
+  const ref = String(txn.reference_number ?? "").trim();
+  if (ref) return ref;
+  const payId = String(txn.razorpay_payment_id ?? "").trim();
+  if (payId) return payId;
+  const orderId = String(txn.razorpay_order_id ?? "").trim();
+  if (orderId) return orderId;
+  return "-";
+}
+
 const TransactionListLayer = () => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +89,7 @@ const TransactionListLayer = () => {
         "Virtual Number": txn.mst_virtual_number?.virtual_number || "-",
         "Payment Mode": txn.payment_mode || "-",
         "Payment Method": txn.payment_method || "-",
-        "Reference Number": txn.reference_number || "-",
+        "Reference Number": getTransactionReferenceDisplay(txn),
         "Amount (₹)": Number(txn.amount).toFixed(2),
         Status: txn.status || "-",
         "Transaction Type": txn.transaction_type || "-",
@@ -203,6 +214,8 @@ const TransactionListLayer = () => {
     const virtualNumber =
       txn.mst_virtual_number?.virtual_number?.toLowerCase() || "";
     const referenceNumber = txn.reference_number?.toLowerCase() || "";
+    const razorpayPayId = txn.razorpay_payment_id?.toLowerCase() || "";
+    const razorpayOrderId = txn.razorpay_order_id?.toLowerCase() || "";
     const transactionNumber = txn.transaction_number?.toLowerCase() || "";
 
     return (
@@ -210,6 +223,8 @@ const TransactionListLayer = () => {
       customerEmail.includes(searchLower) ||
       virtualNumber.includes(searchLower) ||
       referenceNumber.includes(searchLower) ||
+      razorpayPayId.includes(searchLower) ||
+      razorpayOrderId.includes(searchLower) ||
       transactionNumber.includes(searchLower)
     );
   });
@@ -384,8 +399,19 @@ const TransactionListLayer = () => {
                         </span>
                       </td>
                       <td>
-                        <span className="text-sm">
-                          {txn.reference_number || "-"}
+                        <span
+                          className="text-sm font-monospace"
+                          title={
+                            txn.reference_number
+                              ? "Reference / invoice"
+                              : txn.razorpay_payment_id
+                                ? "Razorpay payment id"
+                                : txn.razorpay_order_id
+                                  ? "Razorpay order id"
+                                  : ""
+                          }
+                        >
+                          {getTransactionReferenceDisplay(txn)}
                         </span>
                       </td>
                       <td className="text-end">

@@ -3,8 +3,13 @@
  * Used when Super Admin rejects a reseller application.
  */
 
-export const getResellerRejectionTemplate = (resellerName, rejectionReason) => {
+export const getResellerRejectionTemplate = (
+  resellerName,
+  rejectionReason,
+  platformBrandName = "Virtual Number"
+) => {
   const reason = rejectionReason || "Please contact support for more information.";
+  const brand = platformBrandName?.trim() || "Virtual Number";
   return {
     subject: "Reseller Application Update",
     html: `
@@ -34,12 +39,12 @@ export const getResellerRejectionTemplate = (resellerName, rejectionReason) => {
           
           <p style="color: #6c757d; font-size: 13px; margin-top: 30px;">
             Best regards,<br />
-            Virtual Number Team
+            ${brand} Team
           </p>
         </div>
         
         <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-          <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} ${brand}. All rights reserved.</p>
         </div>
       </body>
       </html>
@@ -56,9 +61,9 @@ Reason: ${reason}
 If you believe this is an error or have questions, please contact support.
 
 Best regards,
-Virtual Number Team
+${brand} Team
 
-© ${new Date().getFullYear()} Virtual Number. All rights reserved.
+© ${new Date().getFullYear()} ${brand}. All rights reserved.
     `,
   };
 };

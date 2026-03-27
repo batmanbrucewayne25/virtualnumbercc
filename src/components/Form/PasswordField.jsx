@@ -3,6 +3,7 @@ import { useState } from "react";
 const PasswordField = ({
   value,
   onChange,
+  defaultValue,
   id,
   placeholder = "Password",
   className = "",
@@ -10,22 +11,38 @@ const PasswordField = ({
   name,
   disableToggle = false,
   disabled = false,
+  autoComplete = "off",
 }) => {
+  const isControlled = value !== undefined;
   const [visible, setVisible] = useState(false);
+  const [uncontrolledValue, setUncontrolledValue] = useState(
+    () => defaultValue ?? ""
+  );
+
+  const displayValue = isControlled ? value ?? "" : uncontrolledValue;
+
+  const handleChange = (e) => {
+    if (!isControlled) {
+      setUncontrolledValue(e.target.value);
+    }
+    if (onChange) {
+      onChange(e);
+    }
+  };
 
   return (
     <div className={disableToggle ? "" : "position-relative"}>
       <input
         type={visible ? "text" : "password"}
-        className={`form-control h-56-px ${className}`}
+        className={["form-control", "h-56-px", className].filter(Boolean).join(" ")}
         id={id}
         name={name}
         placeholder={placeholder}
-        value={value}
-        onChange={onChange}
+        value={displayValue}
+        onChange={handleChange}
         required={required}
         disabled={disabled}
-        autoComplete="off"
+        autoComplete={autoComplete}
       />
 
       {!disableToggle && (

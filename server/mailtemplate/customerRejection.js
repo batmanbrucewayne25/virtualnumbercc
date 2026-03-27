@@ -7,6 +7,10 @@ export const getCustomerRejectionTemplate = (
   rejectionReason,
   resellerName
 ) => {
+  const brandFooter =
+    resellerName != null && String(resellerName).trim()
+      ? String(resellerName).trim()
+      : "Virtual Number";
   return {
     subject: "KYC Verification Update - Action Required",
     html: `
@@ -42,7 +46,7 @@ export const getCustomerRejectionTemplate = (
         </div>
         
         <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 12px;">
-          <p>© ${new Date().getFullYear()} Virtual Number. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} ${brandFooter}. All rights reserved.</p>
         </div>
       </body>
       </html>
@@ -62,7 +66,7 @@ export const getCustomerRejectionTemplate = (
 
       For assistance, please contact your team: ${resellerName}
 
-      © ${new Date().getFullYear()} Virtual Number. All rights reserved.
+      © ${new Date().getFullYear()} ${brandFooter}. All rights reserved.
     `,
   };
 };

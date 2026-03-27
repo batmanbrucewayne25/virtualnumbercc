@@ -466,8 +466,8 @@ const ClientHubLayer = ({
               resellerId={resellerId}
               brandName={resellerData?.brand_name || resellerData?.business_name}
               allowExistingCustomer={resellerData?.allow_existing_customer === true}
-              resellerEmail={resellerData?.email}
-              resellerPhone={resellerData?.phone}
+              supportNumber={resellerData?.support_number}
+              supportEmail={resellerData?.support_email}
               onSignUp={() => handleStepChange(2)}
               onLogin={() => {
                 // Login handled in Step1 component

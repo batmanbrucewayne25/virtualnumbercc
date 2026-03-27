@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PasswordField from "../Form/PasswordField";
 
 const NumberingWizard = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -120,27 +121,23 @@ const NumberingWizard = () => {
                   </div>
                   <div className='col-sm-6'>
                     <label className='form-label'>Password*</label>
-                    <div className='position-relative'>
-                      <input
-                        type='password'
-                        className='form-control wizard-required'
-                        placeholder='Enter Password'
-                        required
-                      />
-                      <div className='wizard-form-error' />
-                    </div>
+                    <PasswordField
+                      className='wizard-required'
+                      placeholder='Enter Password'
+                      required
+                      defaultValue=''
+                    />
+                    <div className='wizard-form-error' />
                   </div>
                   <div className='col-sm-6'>
                     <label className='form-label'>Confirm Password*</label>
-                    <div className='position-relative'>
-                      <input
-                        type='password'
-                        className='form-control wizard-required'
-                        placeholder='Enter Confirm Password'
-                        required
-                      />
-                      <div className='wizard-form-error' />
-                    </div>
+                    <PasswordField
+                      className='wizard-required'
+                      placeholder='Enter Confirm Password'
+                      required
+                      defaultValue=''
+                    />
+                    <div className='wizard-form-error' />
                   </div>
                   <div className='form-group text-end'>
                     <button
@@ -212,15 +209,13 @@ const NumberingWizard = () => {
                   </div>
                   <div className='col-12'>
                     <label className='form-label'>Password*</label>
-                    <div className='position-relative'>
-                      <input
-                        type='password'
-                        className='form-control wizard-required'
-                        placeholder='Enter Password'
-                        required
-                      />
-                      <div className='wizard-form-error' />
-                    </div>
+                    <PasswordField
+                      className='wizard-required'
+                      placeholder='Enter Password'
+                      required
+                      defaultValue=''
+                    />
+                    <div className='wizard-form-error' />
                   </div>
                   <div className='form-group d-flex align-items-center justify-content-end gap-8'>
                     <button
