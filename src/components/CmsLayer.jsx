@@ -27,6 +27,34 @@ const findResellerPageType = (page) => {
   );
 };
 
+/** Only include fields that changed so the API does not overwrite untouched columns */
+const buildCmsPageUpdateDiff = (editingPage, formData, isResellerRole, resellerId) => {
+  const diff = {};
+  const t = (s) => (s ?? "").trim();
+  if (t(formData.page_title) !== t(editingPage.page_title)) {
+    diff.page_title = formData.page_title.trim();
+  }
+  if ((formData.content ?? "") !== (editingPage.content ?? "")) {
+    diff.content = formData.content;
+  }
+  if (t(formData.slug) !== t(editingPage.slug)) {
+    diff.slug = formData.slug.trim();
+  }
+  if (!!formData.is_published !== !!editingPage.is_published) {
+    diff.is_published = formData.is_published;
+  }
+  if (!isResellerRole) {
+    const next =
+      resellerId == null || resellerId === "" ? null : String(resellerId);
+    const prev =
+      editingPage.reseller_id == null ? null : String(editingPage.reseller_id);
+    if (next !== prev) {
+      diff.reseller_id = resellerId ?? null;
+    }
+  }
+  return diff;
+};
+
 const CmsLayer = () => {
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +62,7 @@ const CmsLayer = () => {
   const [success, setSuccess] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPage, setEditingPage] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const quillRef = useRef(null);
 
@@ -252,13 +281,21 @@ const CmsLayer = () => {
       const resellerId = isResellerRole ? currentResellerId : formData.reseller_id ?? null;
       let result;
       if (editingPage) {
-        result = await updateCmsPage(editingPage.id, {
-          page_title: formData.page_title.trim(),
-          content: formData.content,
-          slug: formData.slug.trim(),
-          is_published: formData.is_published,
-          ...(isResellerRole ? {} : { reseller_id: resellerId }),
-        });
+        const updatePayload = buildCmsPageUpdateDiff(
+          editingPage,
+          formData,
+          isResellerRole,
+          resellerId
+        );
+        if (Object.keys(updatePayload).length === 0) {
+          setSuccess("No changes to save");
+          setTimeout(() => {
+            setSuccess("");
+            handleCloseModal();
+          }, 1200);
+          return;
+        }
+        result = await updateCmsPage(editingPage.id, updatePayload);
       } else {
         result = await createCmsPage({
           page_title: formData.page_title.trim(),
@@ -291,19 +328,23 @@ const CmsLayer = () => {
     }
   };
 
-  const handleDelete = async (id, title) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete the page "${title}"? This action cannot be undone.`
-      )
-    ) {
-      return;
-    }
+  const openDeleteConfirm = (id, title) => {
+    setDeleteTarget({ id, title });
+  };
 
+  const closeDeleteConfirm = () => {
+    if (actionLoading) return;
+    setDeleteTarget(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
     setActionLoading(true);
     try {
       const result = await deleteCmsPage(id);
       if (result.success) {
+        setDeleteTarget(null);
         setSuccess("CMS page deleted successfully");
         setTimeout(() => {
           setSuccess("");
@@ -516,7 +557,7 @@ const CmsLayer = () => {
                           <button
                             type="button"
                             className="btn btn-sm btn-danger"
-                            onClick={() => handleDelete(page.id, page.page_title)}
+                            onClick={() => openDeleteConfirm(page.id, page.page_title)}
                             disabled={actionLoading}
                           >
                             <Icon icon="lucide:trash-2" className="icon" />
@@ -531,6 +572,77 @@ const CmsLayer = () => {
           )}
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <div
+          className="modal show d-block"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1060 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cms-delete-modal-title"
+          tabIndex="-1"
+          onClick={closeDeleteConfirm}
+        >
+          <div
+            className="modal-dialog modal-dialog-centered"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-content radius-12">
+              <div className="modal-header border-bottom">
+                <h5
+                  className="modal-title text-md text-primary-light mb-0"
+                  id="cms-delete-modal-title"
+                >
+                  Delete page?
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={closeDeleteConfirm}
+                  disabled={actionLoading}
+                  aria-label="Close"
+                />
+              </div>
+              <div className="modal-body p-24">
+                <p className="text-primary-light mb-0">
+                  Are you sure you want to delete the page &quot;
+                  {deleteTarget.title}&quot;? This action cannot be undone.
+                </p>
+              </div>
+              <div className="modal-footer border-top">
+                <button
+                  type="button"
+                  className="btn btn-secondary radius-8"
+                  onClick={closeDeleteConfirm}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger radius-8"
+                  onClick={confirmDelete}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <>
+                      <span
+                        className="spinner-border spinner-border-sm me-2"
+                        role="status"
+                        aria-hidden="true"
+                      />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {modalOpen && (

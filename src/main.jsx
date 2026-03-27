@@ -31,7 +31,20 @@ if (isClientHubBuild) {
   publicPaths.push("/");
 }
 
-if (!isAuthenticated() && !publicPaths.includes(window.location.pathname) && !window.location.pathname.startsWith("/clienthub") && !window.location.pathname.startsWith("/page/")) {
+const path = window.location.pathname;
+// ClientHub build: logged-in users should not stay on onboarding entry routes
+if (
+  isClientHubBuild &&
+  isAuthenticated() &&
+  (path === "/" || path.startsWith("/clienthub"))
+) {
+  window.location.replace(`${window.location.origin}/reseller-dashboard`);
+} else if (
+  !isAuthenticated() &&
+  !publicPaths.includes(path) &&
+  !path.startsWith("/clienthub") &&
+  !path.startsWith("/page/")
+) {
   // Hard redirect avoids flashing protected content while React mounts
   window.location.replace("/sign-in");
 } else {

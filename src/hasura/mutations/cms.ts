@@ -1,5 +1,15 @@
 import { graphqlRequest } from "@/hasura";
 
+/** GraphQL variable types for cms_pages _set (partial updates). Use nullable `uuid` for reseller_id. */
+const CMS_PAGE_SET_FIELD_TYPES: Record<string, string> = {
+  page_title: "String!",
+  content: "String!",
+  slug: "String!",
+  is_published: "Boolean!",
+  reseller_id: "uuid",
+  updated_date: "timestamptz!",
+};
+
 /** Filter for getCmsPages: undefined/"all" = all, null/"admin" = admin only, "<uuid>" = that reseller */
 export const getCmsPages = async (filter?: { resellerId?: string | null }) => {
   const resellerId = filter?.resellerId;
@@ -401,7 +411,7 @@ export const createCmsPage = async (data: {
 };
 
 /**
- * Update CMS page
+ * Update CMS page (only columns present in `data` are sent — avoids clearing untouched fields).
  */
 export const updateCmsPage = async (
   id: string,
@@ -422,24 +432,41 @@ export const updateCmsPage = async (
     };
   }
 
-  const MUTATION = `mutation UpdateCmsPage(
-    $id: uuid!
-    $page_title: String
-    $content: String
-    $slug: String
-    $is_published: Boolean
-    $reseller_id: uuid
-    $updated_date: timestamptz
-  ) {
+  const updateData: Record<string, unknown> = {};
+  if (data.page_title !== undefined) updateData.page_title = data.page_title;
+  if (data.content !== undefined) updateData.content = data.content;
+  if (data.slug !== undefined) updateData.slug = data.slug;
+  if (data.is_published !== undefined) updateData.is_published = data.is_published;
+  if (data.reseller_id !== undefined) updateData.reseller_id = data.reseller_id;
+
+  if (Object.keys(updateData).length === 0) {
+    return {
+      success: false,
+      message: "No fields to update",
+      data: null,
+    };
+  }
+
+  updateData.updated_date = new Date().toISOString();
+
+  const setKeys = Object.keys(updateData).filter((k) => CMS_PAGE_SET_FIELD_TYPES[k]);
+  const varDecls = ["$id: uuid!"];
+  const setLines: string[] = [];
+  const variables: Record<string, unknown> = { id };
+
+  for (const key of setKeys) {
+    const gqlType = CMS_PAGE_SET_FIELD_TYPES[key];
+    if (!gqlType) continue;
+    varDecls.push(`$${key}: ${gqlType}`);
+    setLines.push(`${key}: $${key}`);
+    variables[key] = updateData[key];
+  }
+
+  const MUTATION = `mutation UpdateCmsPage(${varDecls.join(", ")}) {
     update_cms_pages_by_pk(
       pk_columns: { id: $id }
       _set: {
-        page_title: $page_title
-        content: $content
-        slug: $slug
-        is_published: $is_published
-        reseller_id: $reseller_id
-        updated_date: $updated_date
+        ${setLines.join("\n        ")}
       }
     ) {
       id
@@ -454,18 +481,7 @@ export const updateCmsPage = async (
   }`;
 
   try {
-    const updateData: any = {};
-    if (data.page_title !== undefined) updateData.page_title = data.page_title;
-    if (data.content !== undefined) updateData.content = data.content;
-    if (data.slug !== undefined) updateData.slug = data.slug;
-    if (data.is_published !== undefined) updateData.is_published = data.is_published;
-    if (data.reseller_id !== undefined) updateData.reseller_id = data.reseller_id;
-
-    const result = await graphqlRequest(MUTATION, {
-      id,
-      ...updateData,
-      updated_date: new Date().toISOString(),
-    });
+    const result = await graphqlRequest(MUTATION, variables);
 
     if (result?.errors) {
       return {
@@ -510,7 +526,7 @@ export const deleteCmsPage = async (id: string) => {
   }
 
   const MUTATION = `mutation DeleteCmsPage($id: uuid!) {
-    delete_cms_page_by_pk(id: $id) {
+    delete_cms_pages_by_pk(id: $id) {
       id
     }
   }`;
@@ -523,7 +539,7 @@ export const deleteCmsPage = async (id: string) => {
         message: result.errors[0]?.message || "Failed to delete CMS page",
       };
     }
-    if (result?.data?.delete_cms_page_by_pk) {
+    if (result?.data?.delete_cms_pages_by_pk) {
       return {
         success: true,
         message: "CMS page deleted successfully",

@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { getPublishedCmsPages } from "@/hasura/mutations/cms";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import { isAuthenticated } from "@/utils/auth.js";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
 import Step3 from "./steps/Step3";
@@ -13,6 +14,8 @@ import Step8 from "./steps/Step8";
 import Step9 from "./steps/Step9";
 import Step10 from "./steps/Step10";
 import Step11 from "./steps/Step11";
+
+const isClientHubBuild = import.meta.env.VITE_BUILD_TYPE === "clienthub";
 
 const STORAGE_KEY_PREFIX = "clienthub_progress_";
 const STORAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -89,6 +92,14 @@ const ClientHubLayer = ({
   });
   const [progressRestored, setProgressRestored] = useState(false);
   const [cmsPages, setCmsPages] = useState<any[]>([]);
+
+  // ClientHub deploy: already logged in (e.g. reseller) → dashboard, not onboarding
+  useEffect(() => {
+    if (!isClientHubBuild || isAdminMode || resellerIdProp) return;
+    if (isAuthenticated()) {
+      navigate("/reseller-dashboard", { replace: true });
+    }
+  }, [navigate, isAdminMode, resellerIdProp]);
 
   useEffect(() => {
     setProgressRestored(false);
@@ -181,8 +192,8 @@ const ClientHubLayer = ({
         // Fetch reseller data
         if (finalResellerId) {
           setResellerId(finalResellerId);
-          // If resellerId came from domain (not URL), navigate to /clienthub/:resellerId so refresh works
-          if (!resellerIdFromUrl) {
+          // If resellerId came from domain (not URL), navigate to /clienthub/:resellerId so refresh works (admin build)
+          if (!resellerIdFromUrl && !isClientHubBuild) {
             navigate(`/clienthub/${finalResellerId}`, { replace: true });
           }
           const result = await getMstResellerById(finalResellerId);
@@ -218,7 +229,7 @@ const ClientHubLayer = ({
     const formToUse = stored?.formData;
     if (stepToUse != null && stepToUse >= 1 && stepToUse <= 11) {
       setStep(stepToUse);
-      if (!validUrlStep && urlStep === null) {
+      if (!validUrlStep && urlStep === null && !isClientHubBuild) {
         setSearchParams((p) => {
           const next = new URLSearchParams(p);
           next.set("step", String(stepToUse));
@@ -240,22 +251,26 @@ const ClientHubLayer = ({
   useEffect(() => {
     if (!resellerId || !progressRestored || step === 11) return;
     saveProgress(resellerId, step, formData);
-    setSearchParams((p) => {
-      const next = new URLSearchParams(p);
-      next.set("step", String(step));
-      return next;
-    }, { replace: true });
+    if (!isClientHubBuild) {
+      setSearchParams((p) => {
+        const next = new URLSearchParams(p);
+        next.set("step", String(step));
+        return next;
+      }, { replace: true });
+    }
   }, [resellerId, step, formData, progressRestored, setSearchParams]);
 
   // Clear progress on completion (step 11)
   useEffect(() => {
     if (resellerId && step === 11) {
       clearProgress(resellerId);
-      setSearchParams((p) => {
-        const next = new URLSearchParams(p);
-        next.delete("step");
-        return next;
-      }, { replace: true });
+      if (!isClientHubBuild) {
+        setSearchParams((p) => {
+          const next = new URLSearchParams(p);
+          next.delete("step");
+          return next;
+        }, { replace: true });
+      }
     }
   }, [resellerId, step, setSearchParams]);
 

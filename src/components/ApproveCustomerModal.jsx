@@ -211,7 +211,7 @@ const ApproveCustomerModal = ({ isOpen, onClose, customer, onApprove, loading, t
                         onChange={handleChange}
                         disabled={loading}
                       >
-                        <option value="">Select Subscription Plan (Optional)</option>
+                        <option value="">Select Subscription Plan</option>
                         {subscriptionPlans.map((plan) => (
                           <option key={plan.id} value={plan.id}>
                             {plan.plan_name} - ₹{Number(plan.amount).toFixed(2)} ({plan.duration_days} days)
