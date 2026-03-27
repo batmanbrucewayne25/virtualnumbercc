@@ -87,8 +87,13 @@ const CustomerListLayer = () => {
   };
 
   // Filter customers based on search, status, exclude approved, and require signatureImage
+  // Consider both approval and status - approved/active customers should not show in New Customers
   const filteredCustomers = customers.filter((customer) => {
-    const notApproved = customer.approval !== "approved";
+    const isApproved =
+      customer.approval === "approved" ||
+      customer.status === "approved" ||
+      customer.status === "active";
+    const notApproved = !isApproved;
     const hasSignature = !!customer.signatureImage?.trim();
 
     const matchesSearch =
