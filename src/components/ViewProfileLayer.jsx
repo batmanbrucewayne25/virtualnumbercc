@@ -1,11 +1,17 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect, useRef } from "react";
 import { getMstResellerById, updateMstResellerProfileImage, updateMstResellerLogo, updateMstReseller } from "@/hasura/mutations/reseller";
-import { getUserData, getAuthToken } from "@/utils/auth";
+import { getUserData, getAuthToken, mergeUserData } from "@/utils/auth";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import { getAddressDisplayLines } from "@/utils/addressDisplay.js";
-const IMAGE_UPLOAD_PATH = (import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads').replace(/\/+$/, '');
+const IMAGE_UPLOAD_PATH = (import.meta.env.VITE_IMAGE_BASE_PATH || import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads').replace(/\/+$/, '');
+
+const RESELLER_BRANDING_UPDATED = "reseller-branding-updated";
+
+const notifyResellerBrandingUpdated = () => {
+  window.dispatchEvent(new CustomEvent(RESELLER_BRANDING_UPDATED));
+};
 
 const ViewProfileLayer = () => {
   const [fetching, setFetching] = useState(true);
@@ -343,6 +349,9 @@ const ViewProfileLayer = () => {
         setImagePreview(imageUrl);
         setOriginalImageUrl(imageUrl);
 
+        mergeUserData({ profile_image: result.data.filename });
+        notifyResellerBrandingUpdated();
+
         await fetchResellerData(resellerId);
 
         setTimeout(() => {
@@ -427,6 +436,9 @@ const ViewProfileLayer = () => {
         setLogoPreview(logoUrl);
         setOriginalLogoUrl(logoUrl);
 
+        mergeUserData({ logo: result.data.filename });
+        notifyResellerBrandingUpdated();
+
         await fetchResellerData(resellerId);
 
         setTimeout(() => {
@@ -509,6 +521,20 @@ const ViewProfileLayer = () => {
         if (imageUrl) {
           setPreview(imageUrl);
           setOriginal(imageUrl);
+        }
+        if (filename && !String(filename).startsWith("http")) {
+          const brandingPatch =
+            formKey === "favicon"
+              ? { favicon: filename }
+              : formKey === "minified_logo"
+                ? { minified_logo: filename }
+                : formKey === "profile_image_alt"
+                  ? { profile_image_alt: filename }
+                  : null;
+          if (brandingPatch) {
+            mergeUserData(brandingPatch);
+            notifyResellerBrandingUpdated();
+          }
         }
         await fetchResellerData(resellerId);
         setTimeout(() => {

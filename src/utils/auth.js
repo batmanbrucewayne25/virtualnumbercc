@@ -60,6 +60,17 @@ export const getUserData = () => {
 };
 
 /**
+ * Shallow-merge partial fields into stored userData (e.g. after logo upload) and keep permissions.
+ */
+export const mergeUserData = (partial) => {
+  const token = getAuthToken();
+  const userData = getUserData();
+  if (!token || !userData) return false;
+  saveAuthToken(token, { ...userData, ...partial }, getUserPermissions());
+  return true;
+};
+
+/**
  * Check if user is authenticated
  */
 export const isAuthenticated = () => {

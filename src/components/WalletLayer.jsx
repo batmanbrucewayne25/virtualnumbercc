@@ -1,10 +1,18 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getMstWalletTransactions, getMstWalletByResellerId, creditWallet } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
 import { insertWalletRequest } from "@/hasura/mutations/walletRequest";
 import { getUserData } from "@/utils/auth";
 import { formatDateTimeIST } from "@/utils/dateUtils";
+
+/** Normalize DB values like "CREDIT", "credit", "DEBIT", "debit" for filters and totals */
+const normalizeWalletTxType = (raw) => {
+  const u = String(raw ?? "").trim().toUpperCase();
+  if (u === "CREDIT") return "CREDIT";
+  if (u === "DEBIT") return "DEBIT";
+  return null;
+};
 
 const WalletLayer = () => {
   const [transactions, setTransactions] = useState([]);
@@ -151,6 +159,19 @@ const WalletLayer = () => {
     }
   };
 
+  const txTotalsFromLedger = useMemo(() => {
+    let totalCredit = 0;
+    let totalDebit = 0;
+    for (const t of transactions) {
+      const kind = normalizeWalletTxType(t.transaction_type);
+      const amt = Number(t.amount);
+      if (!Number.isFinite(amt)) continue;
+      if (kind === "CREDIT") totalCredit += amt;
+      else if (kind === "DEBIT") totalDebit += amt;
+    }
+    return { totalCredit, totalDebit };
+  }, [transactions]);
+
   const filteredTransactions = transactions.filter((transaction) => {
     const matchesSearch =
       searchTerm === "" ||
@@ -158,9 +179,10 @@ const WalletLayer = () => {
       transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       transaction.transaction_type?.toLowerCase().includes(searchTerm.toLowerCase());
 
+    const normalizedType = normalizeWalletTxType(transaction.transaction_type);
     const matchesType =
       transactionTypeFilter === "all" ||
-      transaction.transaction_type === transactionTypeFilter;
+      normalizedType === transactionTypeFilter;
 
     return matchesSearch && matchesType;
   });
@@ -358,23 +380,23 @@ const WalletLayer = () => {
                               <td>
                                 <span
                                   className={`${
-                                    transaction.transaction_type === 'CREDIT'
+                                    normalizeWalletTxType(transaction.transaction_type) === "CREDIT"
                                       ? "bg-success-focus text-success-600 border border-success-main"
                                       : "bg-danger-focus text-danger-600 border border-danger-main"
                                   } px-16 py-4 radius-4 fw-medium text-sm`}
                                 >
-                                  {transaction.transaction_type}
+                                  {normalizeWalletTxType(transaction.transaction_type) || transaction.transaction_type}
                                 </span>
                               </td>
                               <td>
                                 <span
                                   className={`text-md fw-medium ${
-                                    transaction.transaction_type === 'CREDIT'
+                                    normalizeWalletTxType(transaction.transaction_type) === "CREDIT"
                                       ? "text-success-600"
                                       : "text-danger-600"
                                   }`}
                                 >
-                                  {transaction.transaction_type === 'CREDIT' ? '+' : '-'}
+                                  {normalizeWalletTxType(transaction.transaction_type) === "CREDIT" ? "+" : "-"}
                                   {formatCurrency(transaction.amount)}
                                 </span>
                               </td>
@@ -432,7 +454,7 @@ const WalletLayer = () => {
                       </span>
                       <span className='text-primary-light fw-medium mt-6 text-sm'>Total Credit</span>
                       <span className='text-success-600 fw-semibold mt-2'>
-                        {formatCurrency(wallet.credit_amount)}
+                        {formatCurrency(txTotalsFromLedger.totalCredit)}
                       </span>
                     </div>
                     <div className='text-center d-flex align-items-center flex-column'>
@@ -441,7 +463,7 @@ const WalletLayer = () => {
                       </span>
                       <span className='text-primary-light fw-medium mt-6 text-sm'>Total Debit</span>
                       <span className='text-danger-600 fw-semibold mt-2'>
-                        {formatCurrency(wallet.debit_amount)}
+                        {formatCurrency(txTotalsFromLedger.totalDebit)}
                       </span>
                     </div>
                   </div>

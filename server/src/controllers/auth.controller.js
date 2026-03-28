@@ -156,3 +156,48 @@ export const changePassword = asyncHandler(async (req, res) => {
     });
   }
 });
+
+/**
+ * @desc    Request password reset (admin or reseller)
+ * @route   POST /api/auth/forgot-password
+ */
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required'
+    });
+  }
+
+  const result = await AuthService.forgotPassword(email.trim());
+  const status = result.success ? 200 : 400;
+  res.status(status).json(result);
+});
+
+/**
+ * @desc    Reset password using token from email
+ * @route   POST /api/auth/reset-password
+ */
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Token and password are required'
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 6 characters long'
+    });
+  }
+
+  const result = await AuthService.resetPassword(token, password);
+  const status = result.success ? 200 : 400;
+  res.status(status).json(result);
+});

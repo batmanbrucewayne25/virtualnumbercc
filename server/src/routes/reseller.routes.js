@@ -1,5 +1,8 @@
 import express from 'express';
-import { getResellerByDomain } from '../controllers/reseller.controller.js';
+import {
+  getResellerByDomain,
+  getMaintenanceModeStatus,
+} from '../controllers/reseller.controller.js';
 import {
   upsertAllowedCustomers,
   checkAllowedCustomer,
@@ -15,6 +18,13 @@ const router = express.Router();
  * @access  Public
  */
 router.get('/by-domain', getResellerByDomain);
+
+/**
+ * @route   GET /api/reseller/maintenance-mode
+ * @desc    Global maintenance flag (mst_admin_setting)
+ * @access  Public
+ */
+router.get('/maintenance-mode', getMaintenanceModeStatus);
 
 /**
  * @route   POST /api/reseller/check-allowed-customer

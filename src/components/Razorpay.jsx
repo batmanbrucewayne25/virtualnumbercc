@@ -136,10 +136,11 @@ const RazorpayConfigLayer = () => {
         if (result.data?.webhook_url) {
           setWebhookUrl(result.data.webhook_url);
         }
-        // Keep secrets in the form so the user can still see / copy what was saved this session
+        // Clear key secret field after save; key_secret_set on result.data indicates one is stored
         setFormData(prev => ({
           ...prev,
           key_id: result.data?.key_id ?? prev.key_id,
+          key_secret: "",
         }));
         setTimeout(() => setSuccess(""), 5000);
       } else {
@@ -220,6 +221,7 @@ const RazorpayConfigLayer = () => {
   }
 
   const isConfigured = razorpayConfig?.key_id && razorpayConfig?.is_active;
+  const keySecretSavedOnServer = !!razorpayConfig?.key_secret_set;
 
   return (
     <div className="row gy-4">
@@ -369,19 +371,35 @@ const RazorpayConfigLayer = () => {
               </div>
 
               <div className="col-md-6 mb-20">
-                <label className="form-label fw-semibold text-primary-light">
-                  Razorpay Key Secret
-                </label>
-                {isConfigured && (
+                <div className="d-flex align-items-center gap-2 flex-wrap mb-8">
+                  <label className="form-label fw-semibold text-primary-light mb-0">
+                    Razorpay Key Secret
+                  </label>
+                  {keySecretSavedOnServer && (
+                    <span className="badge bg-success-focus text-success-600 border border-success-main px-12 py-4 radius-4 text-xs fw-medium">
+                      Saved on server
+                    </span>
+                  )}
+                </div>
+                {keySecretSavedOnServer ? (
                   <small className="d-block text-muted mb-8">
-                    Leave blank to keep your existing secret; enter a new value only to replace it.
+                    A key secret is already stored; it cannot be shown for security. Leave the field blank to keep it, or enter a new secret to replace it. Use the eye icon only to show or hide what you type.
                   </small>
-                )}
+                ) : isConfigured ? (
+                  <small className="d-block text-muted mb-8">
+                    Enter your Key Secret from Razorpay (Settings → API Keys). Leave blank only if you have not saved one yet.
+                  </small>
+                ) : null}
                 <div className="position-relative">
                   <input
                     type={showKeySecret ? "text" : "password"}
                     name="key_secret"
                     className="form-control radius-8 pe-48"
+                    placeholder={
+                      keySecretSavedOnServer
+                        ? "Leave blank to keep existing secret"
+                        : ""
+                    }
                     value={formData.key_secret}
                     onChange={handleInputChange}
                   />

@@ -34,6 +34,28 @@ async function getMaintenanceMode(client) {
   }
 }
 
+/**
+ * @desc    Global maintenance flag from mst_admin_setting (no auth)
+ * @route   GET /api/reseller/maintenance-mode
+ * @access  Public
+ */
+export const getMaintenanceModeStatus = asyncHandler(async (req, res) => {
+  try {
+    const client = getHasuraClient();
+    const maintenanceMode = await getMaintenanceMode(client);
+    return res.json({
+      success: true,
+      data: { maintenanceMode },
+    });
+  } catch (error) {
+    console.error('Error in getMaintenanceModeStatus:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch maintenance mode',
+    });
+  }
+});
+
 export const getResellerByDomain = asyncHandler(async (req, res) => {
   const { domain } = req.query;
   const requestHost = req.get('host') || '';

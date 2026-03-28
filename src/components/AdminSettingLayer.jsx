@@ -218,7 +218,9 @@ const AdminSettingLayer = () => {
                   </label>
                 </div>
                 <small className='text-muted d-block mt-4'>
-                  When enabled, the site will be in maintenance mode and only admins can access it.
+                  When enabled, reseller and other non-admin users are redirected to the maintenance page
+                  and cannot use dashboard routes. Super admins and admins keep full access. ClientHub shows a
+                  maintenance notice and may still be opened (public onboarding).
                 </small>
               </div>
             </div>

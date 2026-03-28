@@ -4,7 +4,9 @@ import {
   register,
   verifyToken,
   refreshToken,
-  changePassword
+  changePassword,
+  forgotPassword,
+  resetPassword,
 } from '../controllers/auth.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
@@ -37,6 +39,20 @@ router.post('/verify', authMiddleware, verifyToken);
  * @access  Public
  */
 router.post('/refresh', refreshToken);
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Request password reset email (admin or reseller)
+ * @access  Public
+ */
+router.post('/forgot-password', forgotPassword);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Set new password using reset token
+ * @access  Public
+ */
+router.post('/reset-password', resetPassword);
 
 /**
  * @route   POST /api/auth/change-password

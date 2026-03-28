@@ -146,6 +146,20 @@ const ClientHubLayer = ({
       setError("");
 
       try {
+        // Global maintenance flag (covers /clienthub/:id URL path where by-domain is not called)
+        try {
+          const API_BASE_URL = getApiBaseUrl();
+          const mRes = await fetch(`${API_BASE_URL}/reseller/maintenance-mode`);
+          if (mRes.ok) {
+            const mJson = await mRes.json();
+            if (mJson.success && mJson.data && typeof mJson.data.maintenanceMode === "boolean") {
+              setMaintenanceMode(mJson.data.maintenanceMode);
+            }
+          }
+        } catch (mErr) {
+          console.warn("Failed to fetch maintenance mode:", mErr);
+        }
+
         let finalResellerId: string | null = null;
 
         // First, check if resellerId is in URL (backward compatibility)
@@ -169,7 +183,6 @@ const ClientHubLayer = ({
               const result = await response.json();
               if (result.success && result.data) {
                 finalResellerId = result.data.resellerId;
-                setMaintenanceMode(result.data.maintenanceMode === true);
               } else {
                 setError(result.message || "Domain not found or not approved");
                 setLoading(false);

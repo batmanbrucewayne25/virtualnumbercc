@@ -11,7 +11,7 @@ import { getMstResellerById } from "@/hasura/mutations/reseller";
 import { computeResellerValidityGate } from "@/utils/resellerValidityGate";
 import { ResellerValidityGateProvider } from "@/contexts/ResellerValidityGateContext";
 
-const IMAGE_BASE_PATH = import.meta.env.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads";
+const IMAGE_BASE_PATH = (import.meta.env.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads").replace(/\/+$/, "");
 const DEFAULT_TITLE = "Virtual Number";
 
 const MasterLayout = ({ children }) => {
@@ -23,6 +23,8 @@ const MasterLayout = ({ children }) => {
   const [walletBalance, setWalletBalance] = useState(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [resellerLogoError, setResellerLogoError] = useState(false);
+  /** Bumps after profile branding updates so sidebar re-reads localStorage and clears stale img state */
+  const [brandingVersion, setBrandingVersion] = useState(0);
   const [showValidityModal, setShowValidityModal] = useState(false);
   const [pricePerNumber, setPricePerNumber] = useState(null);
   const [lowBalanceAlertDismissed, setLowBalanceAlertDismissed] = useState(false);
@@ -151,6 +153,15 @@ const MasterLayout = ({ children }) => {
     return () => window.removeEventListener("wallet-should-refresh", onWalletShouldRefresh);
   }, []);
 
+  useEffect(() => {
+    const onBrandingUpdated = () => {
+      setResellerLogoError(false);
+      setBrandingVersion((v) => v + 1);
+    };
+    window.addEventListener("reseller-branding-updated", onBrandingUpdated);
+    return () => window.removeEventListener("reseller-branding-updated", onBrandingUpdated);
+  }, []);
+
   // Non-reseller: clear validity gate
   useEffect(() => {
     if (userRole !== "reseller") {
@@ -190,6 +201,7 @@ const MasterLayout = ({ children }) => {
             profile_image_alt: latestReseller.profile_image_alt ?? existingUserData.profile_image_alt ?? null,
           };
           localStorage.setItem("userData", JSON.stringify(mergedUserData));
+          window.dispatchEvent(new CustomEvent("reseller-branding-updated"));
 
           if (latestReseller.favicon) {
             const faviconHref = latestReseller.favicon.startsWith("http")
@@ -384,6 +396,7 @@ const MasterLayout = ({ children }) => {
               return logoUrl ? (
                 <>
                   <img
+                    key={`reseller-light-${brandingVersion}-${logo}`}
                     src={logoUrl}
                     alt={logoAlt}
                     className='light-logo'
@@ -391,6 +404,7 @@ const MasterLayout = ({ children }) => {
                     onError={() => setResellerLogoError(true)}
                   />
                   <img
+                    key={`reseller-dark-${brandingVersion}-${logo}`}
                     src={logoUrl}
                     alt={logoAlt}
                     className='dark-logo'
@@ -398,6 +412,7 @@ const MasterLayout = ({ children }) => {
                     onError={() => setResellerLogoError(true)}
                   />
                   <img
+                    key={`reseller-icon-${brandingVersion}-${minifiedLogo || logo}`}
                     src={minifiedLogoUrl || logoUrl}
                     alt={logoAlt}
                     className='logo-icon'
@@ -2599,7 +2614,7 @@ const MasterLayout = ({ children }) => {
             <div className="px-24 py-16">
               <div className="alert alert-warning alert-dismissible fade show d-flex align-items-center justify-content-between flex-wrap gap-2" role="alert">
                 <span>
-                  Your wallet balance is below the price per number. Recharge to approve new customers.
+                  Your wallet balance is below the required amount per number. Please top up to continue. 
                 </span>
                 <div className="d-flex align-items-center gap-2">
                   <Link to="/wallet" className="btn btn-sm btn-primary">

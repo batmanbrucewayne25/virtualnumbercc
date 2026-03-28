@@ -618,4 +618,188 @@ export class AuthService {
       };
     }
   }
+
+  /**
+   * Password reset JWT (short-lived, distinct from login token)
+   */
+  static generatePasswordResetToken(userId, email, userType) {
+    return jwt.sign(
+      {
+        userId,
+        email,
+        type: "password_reset",
+        userType,
+      },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+  }
+
+  static verifyPasswordResetToken(token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded.type !== "password_reset" || !decoded.userId) {
+        return null;
+      }
+      return decoded;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Forgot password — admin first, then reseller (same email cannot exist in both for practical purposes)
+   */
+  static async forgotPassword(email) {
+    try {
+      let user = await this.getAdminByEmail(email);
+      let userType = "admin";
+
+      if (!user) {
+        user = await hasuraClient.getUserByEmail(email);
+        userType = "reseller";
+      }
+
+      if (!user) {
+        return {
+          success: true,
+          message:
+            "If an account with that email exists, a password reset link has been sent.",
+        };
+      }
+
+      if (!user.status) {
+        return {
+          success: false,
+          message: "Account is inactive. Please contact support.",
+        };
+      }
+
+      const resetToken = this.generatePasswordResetToken(
+        user.id,
+        user.email,
+        userType
+      );
+
+      const { sendPasswordResetEmail } = await import(
+        "../../services/emailService.js"
+      );
+      const emailResult = await sendPasswordResetEmail(user.email, resetToken);
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("Password reset token generated for:", email);
+        console.log("Reset URL:", `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`);
+      }
+
+      if (!emailResult?.success) {
+        console.error(
+          "Failed to send password reset email:",
+          emailResult?.message
+        );
+      }
+
+      return {
+        success: true,
+        message:
+          "If an account with that email exists, a password reset link has been sent.",
+        ...(process.env.NODE_ENV === "development"
+          ? { resetToken }
+          : {}),
+      };
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      return {
+        success: false,
+        message: "An error occurred. Please try again later.",
+      };
+    }
+  }
+
+  /**
+   * Reset password using token from email link
+   */
+  static async resetPassword(token, newPassword) {
+    try {
+      const decoded = this.verifyPasswordResetToken(token);
+      if (!decoded) {
+        return {
+          success: false,
+          message: "Invalid or expired reset token.",
+        };
+      }
+
+      const { userId, userType } = decoded;
+      const passwordHash = await this.hashPassword(newPassword);
+      const client = getHasuraClient();
+
+      if (userType === "admin") {
+        const mutation = `
+          mutation UpdateAdminPassword($id: uuid!, $password_hash: String!) {
+            update_mst_super_admin_by_pk(
+              pk_columns: { id: $id }
+              _set: { password_hash: $password_hash }
+            ) {
+              id
+              email
+            }
+          }
+        `;
+        const result = await client.client.request(mutation, {
+          id: userId,
+          password_hash: passwordHash,
+        });
+        if (result.update_mst_super_admin_by_pk) {
+          return {
+            success: true,
+            message:
+              "Password has been reset successfully. You can now login with your new password.",
+          };
+        }
+        return {
+          success: false,
+          message: "Failed to update password. Please try again.",
+        };
+      }
+
+      if (userType === "reseller") {
+        const mutation = `
+          mutation UpdateResellerPassword($id: uuid!, $password_hash: String!) {
+            update_mst_reseller_by_pk(
+              pk_columns: { id: $id }
+              _set: { password_hash: $password_hash }
+            ) {
+              id
+              email
+            }
+          }
+        `;
+        const result = await client.client.request(mutation, {
+          id: userId,
+          password_hash: passwordHash,
+        });
+        if (result.update_mst_reseller_by_pk) {
+          return {
+            success: true,
+            message:
+              "Password has been reset successfully. You can now login with your new password.",
+          };
+        }
+        return {
+          success: false,
+          message: "Failed to update password. Please try again.",
+        };
+      }
+
+      return {
+        success: false,
+        message: "Invalid reset token.",
+      };
+    } catch (error) {
+      console.error("Reset password error:", error);
+      return {
+        success: false,
+        message: error.message || "An error occurred. Please try again later.",
+      };
+    }
+  }
 }

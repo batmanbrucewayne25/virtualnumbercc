@@ -504,12 +504,20 @@ export const saveResellerConfig = asyncHandler(async (req, res) => {
       process.env.API_BASE_URL || `${req.protocol}://${req.get("host")}`;
     const webhookUrl = WebhookService.generateWebhookUrl(reseller_id, baseUrl);
 
+    const freshConfig = await WebhookService.getResellerRazorpayConfig(reseller_id);
+    const key_secret_set = !!(
+      freshConfig?.key_secret != null &&
+      String(freshConfig.key_secret).trim() !== ""
+    );
+
     return res.json({
       success: true,
       message: "Razorpay configuration saved successfully",
       data: {
         ...data,
         webhook_url: webhookUrl,
+        key_secret: null,
+        key_secret_set,
       },
     });
   } catch (error) {
@@ -547,13 +555,19 @@ export const getResellerConfig = asyncHandler(async (req, res) => {
       process.env.API_BASE_URL || `${req.protocol}://${req.get("host")}`;
     const webhookUrl = WebhookService.generateWebhookUrl(resellerId, baseUrl);
 
+    const key_secret_set = !!(
+      config?.key_secret != null &&
+      String(config.key_secret).trim() !== ""
+    );
+    const { key_secret: _ks, ...configWithoutSecret } = config || {};
+
     return res.json({
       success: true,
       data: {
-        ...config,
+        ...configWithoutSecret,
         webhook_url: webhookUrl,
-        // Mask sensitive data
-        key_secret: config?.key_secret ? "********" : null,
+        key_secret: null,
+        key_secret_set,
       },
     });
   } catch (error) {

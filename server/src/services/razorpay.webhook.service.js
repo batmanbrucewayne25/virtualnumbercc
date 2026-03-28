@@ -57,6 +57,7 @@ export async function getResellerRazorpayConfig(resellerId) {
         id
         reseller_id
         key_id
+        key_secret
         webhook_secret
         is_active
       }

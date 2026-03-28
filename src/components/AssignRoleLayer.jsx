@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { getMstSuperAdmins, updateMstSuperAdmin } from "@/hasura/mutations/admin";
 import { getMstRoles } from "@/hasura/mutations/role";
 import AlertModal from "./AlertModal";
@@ -12,7 +12,12 @@ const AssignRoleLayer = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [updatingRoleId, setUpdatingRoleId] = useState(null);
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [menuPos, setMenuPos] = useState(null);
+  const menuButtonRef = useRef(null);
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
+
+  const MENU_MIN_WIDTH = 220;
 
   useEffect(() => {
     fetchData();
@@ -48,6 +53,7 @@ const AssignRoleLayer = () => {
   };
 
   const handleRoleChange = async (adminId, roleId) => {
+    setOpenDropdownId(null);
     setUpdatingRoleId(adminId);
     try {
       // Update admin with role_id
@@ -87,51 +93,76 @@ const AssignRoleLayer = () => {
     }
   };
 
-  // Filter admins based on search and status
-  const filteredAdmins = admins.filter((admin) => {
-    const matchesSearch =
-      searchTerm === "" ||
-      `${admin.first_name} ${admin.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      admin.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (admin.phone && admin.phone.includes(searchTerm));
+  // Filter admins based on search and status (memoized — avoids unstable deps / re-init loops)
+  const filteredAdmins = useMemo(
+    () =>
+      admins.filter((admin) => {
+        const matchesSearch =
+          searchTerm === "" ||
+          `${admin.first_name} ${admin.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          admin.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (admin.phone && admin.phone.includes(searchTerm));
 
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && admin.status) ||
-      (statusFilter === "inactive" && !admin.status);
+        const matchesStatus =
+          statusFilter === "all" ||
+          (statusFilter === "active" && admin.status) ||
+          (statusFilter === "inactive" && !admin.status);
 
-    return matchesSearch && matchesStatus;
-  });
+        return matchesSearch && matchesStatus;
+      }),
+    [admins, searchTerm, statusFilter]
+  );
 
-  // Initialize dropdowns with proper positioning to escape table overflow
+  // Close role dropdown when clicking outside (Bootstrap JS dropdown removed — was re-inited every render)
   useEffect(() => {
-    const initDropdowns = async () => {
-      try {
-        const { Dropdown } = await import("bootstrap");
-        const dropdownElements = document.querySelectorAll('[data-bs-toggle="dropdown"]');
-        
-        dropdownElements.forEach((element) => {
-          const dropdown = Dropdown.getOrCreateInstance(element, {
-            boundary: 'viewport',
-            popperConfig: {
-              strategy: 'fixed',
-            },
-          });
-        });
-      } catch (err) {
-        console.error("Error initializing dropdowns:", err);
-      }
+    const handleDocClick = (e) => {
+      const el = e.target?.closest?.("[data-assign-role-dropdown]");
+      if (!el) setOpenDropdownId(null);
     };
+    document.addEventListener("click", handleDocClick);
+    return () => document.removeEventListener("click", handleDocClick);
+  }, []);
 
-    if (!loading && filteredAdmins.length > 0) {
-      // Small delay to ensure DOM is ready
-      const timer = setTimeout(() => {
-        initDropdowns();
-      }, 100);
+  useEffect(() => {
+    setOpenDropdownId(null);
+  }, [searchTerm, statusFilter]);
 
-      return () => clearTimeout(timer);
+  const toggleAssignMenu = useCallback((e, adminId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpenDropdownId((prev) => (prev === adminId ? null : adminId));
+  }, []);
+
+  // Fixed menu position so it is not clipped by .table-responsive overflow
+  useLayoutEffect(() => {
+    if (!openDropdownId) {
+      setMenuPos(null);
+      return;
     }
-  }, [loading, filteredAdmins]);
+    const update = () => {
+      const el = menuButtonRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = Math.max(MENU_MIN_WIDTH, rect.width);
+      let left = rect.right - width;
+      if (left < 8) left = 8;
+      if (left + width > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - width - 8);
+      }
+      setMenuPos({
+        top: rect.bottom + 4,
+        left,
+        width,
+      });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [openDropdownId]);
 
   const getRoleName = (roleId) => {
     if (!roleId) return "No Role";
@@ -245,16 +276,19 @@ const AssignRoleLayer = () => {
                             {getRoleName(currentRoleId)}
                           </span>
                         </td>
-                        <td className='text-center'>
-                          <div className='dropdown'>
+                        <td className='text-center position-relative'>
+                          <div
+                            className='dropdown d-inline-block'
+                            data-assign-role-dropdown
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <button
+                              ref={openDropdownId === admin.id ? menuButtonRef : null}
                               className='btn btn-outline-primary-600 not-active px-18 py-11 dropdown-toggle toggle-icon'
                               type='button'
-                              data-bs-toggle='dropdown'
-                              data-bs-boundary='viewport'
-                              data-bs-auto-close='true'
-                              aria-expanded='false'
+                              aria-expanded={openDropdownId === admin.id}
                               disabled={isUpdating || roles.length === 0}
+                              onClick={(e) => toggleAssignMenu(e, admin.id)}
                             >
                               {isUpdating ? (
                                 <>
@@ -269,25 +303,48 @@ const AssignRoleLayer = () => {
                                 "Assign Role"
                               )}
                             </button>
-                            <ul className='dropdown-menu dropdown-menu-end'>
+                            <ul
+                              className={`dropdown-menu dropdown-menu-end${openDropdownId === admin.id && menuPos ? " show" : ""}`}
+                              style={
+                                openDropdownId === admin.id && menuPos
+                                  ? {
+                                      position: "fixed",
+                                      top: menuPos.top,
+                                      left: menuPos.left,
+                                      width: menuPos.width,
+                                      zIndex: 1055,
+                                      maxHeight: "min(320px, calc(100vh - 24px))",
+                                      overflowY: "auto",
+                                    }
+                                  : undefined
+                              }
+                            >
                               <li>
                                 <button
+                                  type='button'
                                   className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900 w-100 text-start border-0'
-                                  onClick={() => handleRoleChange(admin.id, null)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRoleChange(admin.id, null);
+                                  }}
                                   disabled={isUpdating}
                                 >
                                   No Role
                                 </button>
                               </li>
                               {roles
-                                .filter((role) => role.is_active)
+                                .filter((role) => role.is_active !== false)
                                 .map((role) => (
                                   <li key={role.id}>
                                     <button
+                                      type='button'
                                       className={`dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900 w-100 text-start border-0 ${
                                         currentRoleId === role.id ? "bg-primary-50" : ""
                                       }`}
-                                      onClick={() => handleRoleChange(admin.id, role.id)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRoleChange(admin.id, role.id);
+                                      }}
                                       disabled={isUpdating}
                                     >
                                       {role.role_name}
