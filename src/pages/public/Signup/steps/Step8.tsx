@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMstResellerByEmail } from "@/hasura/mutations";
+import { getAddressDisplayLines } from "@/utils/addressDisplay.js";
 
 interface Step8Props {
   email: string;
@@ -119,12 +120,15 @@ const Step8 = ({
     }
   };
 
+  /** Same segment order as Step7 `formatAddressDisplayMultiline` (see addressDisplay.js). */
   const getAddress = () => {
     if (!userData) return "N/A";
-    if (Array.isArray(userData.address)) {
-      return userData.address.filter(Boolean).join(", ") || "N/A";
+    if (userData.address != null && userData.address !== "") {
+      const lines = getAddressDisplayLines(userData.address);
+      const oneLine = lines.join(", ").trim();
+      if (oneLine) return oneLine;
     }
-    return userData.address || userData.business_address || "N/A";
+    return userData.business_address || "N/A";
   };
 
   if (loading) {

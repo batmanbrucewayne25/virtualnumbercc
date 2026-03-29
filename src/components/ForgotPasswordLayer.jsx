@@ -48,12 +48,12 @@ const ForgotPasswordLayer = () => {
 
   return (
     <>
-      <section className='auth forgot-password-page bg-base d-flex flex-wrap'>
+      <section className='auth bg-base d-flex flex-wrap'>
         <div className='auth-left d-lg-block d-none'>
           <div className='d-flex align-items-center flex-column h-100 justify-content-center'>
             <img
-              src='assets/images/auth/forgot-pass-img.png'
-              alt='WowDash React Vite'
+              src='/assets/images/own/login.svg'
+              alt=''
             />
           </div>
         </div>
@@ -113,52 +113,49 @@ const ForgotPasswordLayer = () => {
       </section>
       {/* Success Modal */}
       {showModal && (
-        <div
-          className='modal fade show'
-          style={{ display: 'block' }}
-          tabIndex={-1}
-          aria-hidden='true'
-        >
-          <div className='modal-backdrop fade show'></div>
-          <div className='modal-dialog modal-dialog-centered'>
-            <div className='modal-content radius-16 bg-base'>
-              <div className='modal-body p-40 text-center'>
-                <div className='mb-32'>
-                  <img
-                    src='assets/images/auth/envelop-icon.png'
-                    alt='WowDash React Vite'
-                  />
-                </div>
-                <h6 className='mb-12'>Verify your Email</h6>
-                <p className='text-secondary-light text-sm mb-0'>
-                  Thank you, check your email for instructions to reset your
-                  password. If you don't see the email, please check your spam folder.
-                </p>
-                <Link
-                  to='/sign-in'
-                  className='btn btn-primary text-sm btn-sm px-12 py-16 w-100 radius-12 mt-32'
-                >
-                  Back to Sign In
-                </Link>
-                <div className='mt-32 text-sm'>
-                  <p className='mb-0'>
-                    Don't receive an email?{" "}
-                    <button
-                      type='button'
-                      className='btn btn-link text-primary-600 fw-semibold p-0 border-0'
-                      onClick={() => {
-                        setShowModal(false);
-                        setEmail("");
-                      }}
-                    >
-                      Try Again
-                    </button>
+        <>
+          <div
+            className='modal fade show'
+            style={{ display: 'block' }}
+            tabIndex={-1}
+            aria-hidden='true'
+          >
+            <div className='modal-dialog modal-dialog-centered'>
+              <div className='modal-content radius-16 bg-base'>
+                <div className='modal-body p-40 text-center'>
+                   
+                  <h6 className='mb-12'>Verify your Email</h6>
+                  <p className='text-secondary-light text-sm mb-0'>
+                    Thank you, check your email for instructions to reset your
+                    password. If you don't see the email, please check your spam folder.
                   </p>
+                  <Link
+                    to='/sign-in'
+                    className='btn btn-primary text-sm btn-sm px-12 py-16 w-100 radius-12 mt-32'
+                  >
+                    Back to Sign In
+                  </Link>
+                  <div className='mt-32 text-sm'>
+                    <p className='mb-0'>
+                      Don't receive an email?{" "}
+                      <button
+                        type='button'
+                        className='btn btn-link text-primary-600 fw-semibold p-0 border-0'
+                        onClick={() => {
+                          setShowModal(false);
+                          setEmail("");
+                        }}
+                      >
+                        Try Again
+                      </button>
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+          <div className='modal-backdrop fade show' aria-hidden='true' />
+        </>
       )}
     </>
   );

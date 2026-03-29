@@ -100,7 +100,7 @@ export class AuthService {
           const isStatusActive = user.status === true || user.status === 1 || user.status === "true";
           if (!isStatusActive && isSignUpCompleted) {
             console.log("🚫 [NEW AuthService] BLOCKING LOGIN - Reseller account is inactive. Status value:", user.status, "Type:", typeof user.status);
-            const errorMsg = "Your account is inactive. Please contact admin to activate your account.";
+            const errorMsg = "Your account is pending approval. You’ll be notified once access is granted. Need help? Contact our support team.";
             console.log("🚫 [NEW AuthService] Throwing error:", errorMsg);
             throw new Error(errorMsg);
           }
@@ -134,7 +134,7 @@ export class AuthService {
               if (user.status === "suspended" || user.status === "inactive") {
                 console.log("🚫 Customer account suspended or inactive");
                 throw new Error(
-                  "Your account is inactive. Please contact support."
+                  "Your account is pending approval. You’ll be notified once access is granted. Need help? Contact our support team."
                 );
               }
 
@@ -686,10 +686,7 @@ export class AuthService {
       );
       const emailResult = await sendPasswordResetEmail(user.email, resetToken);
 
-      if (process.env.NODE_ENV === "development") {
-        console.log("Password reset token generated for:", email);
-        console.log("Reset URL:", `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`);
-      }
+      
 
       if (!emailResult?.success) {
         console.error(

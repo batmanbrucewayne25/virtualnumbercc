@@ -67,7 +67,7 @@ export const login = async (email, password) => {
   const isStatusActive = user.status === true || user.status === 1 || user.status === "true";
   if (!isStatusActive) {
     console.log("🚫 [OLD AuthService] Reseller account is inactive. Status value:", user.status, "Type:", typeof user.status);
-    throw new Error('Your account is inactive. Please contact admin to activate your account.');
+    throw new Error('Your account is pending approval. You’ll be notified once access is granted. Need help? Contact our support team.');
   }
 
   // For existing users with plain text passwords, handle migration
@@ -208,13 +208,7 @@ export const forgotPassword = async (email) => {
     // Send email with reset link
     const { sendPasswordResetEmail } = await import('./emailService.js');
     const emailResult = await sendPasswordResetEmail(user.email, resetToken);
-
-    // Log for development/testing
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Password reset token generated for:', email);
-      console.log('Reset token (for testing):', resetToken);
-      console.log('Reset URL:', `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`);
-    }
+ 
 
     // If email sending failed, log but don't fail the request (for security, don't reveal if email exists)
     if (!emailResult.success) {

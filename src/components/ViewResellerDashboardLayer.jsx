@@ -1092,7 +1092,7 @@ const ViewResellerDashboardLayer = () => {
       </div>
 
       {/* Reseller Transactions Section */}
-      <div className="card h-100 mt-24 p-0 radius-12">
+      {/* <div className="card h-100 mt-24 p-0 radius-12">
         <div className="card-header border-bottom bg-base py-16 px-24">
           <h5 className="text-md text-primary-light mb-0">Reseller Transactions</h5>
         </div>
@@ -1182,7 +1182,7 @@ const ViewResellerDashboardLayer = () => {
             </div>
           )}
         </div>
-      </div>
+      </div> */}
 
       {/* Customer Detail Modal */}
       {showCustomerModal && selectedCustomer && (

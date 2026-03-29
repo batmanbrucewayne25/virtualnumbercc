@@ -32,7 +32,7 @@ const DashBoardLayerOne = () => {
       {/* Reseller Payments - Super Admin Only */}
       {isSuperAdmin && (
         <div className="mt-24">
-          <ResellerPaymentsLayer />
+          {/* <ResellerPaymentsLayer /> */}
         </div>
       )}
 
