@@ -23,7 +23,7 @@ export class AuthService {
    * @param {string} password
    * @returns {Promise<{token: string, user: object}>}
    */
-  static async login(email, password) {
+  static async login(email, password, meta = {}) {
     try {
       console.log("🔐 Login attempt for email:", email);
       let user = null;
@@ -207,6 +207,35 @@ export class AuthService {
       const { password_hash, ...userWithoutPassword } = user;
 
       console.log("✅ Login successful for:", email, "User type:", userType);
+
+      if (process.env.LOGIN_ALERT_EMAIL === "true") {
+        try {
+          const { sendNewLoginAlertEmail } = await import(
+            "./transactionalEmail.service.js"
+          );
+          const displayName =
+            userWithoutPassword.first_name ||
+            userWithoutPassword.profile_name ||
+            email;
+          let resellerIdForAlert = null;
+          if (userType === "reseller") {
+            resellerIdForAlert = userWithoutPassword.id;
+          } else if (userType === "customer") {
+            resellerIdForAlert = userWithoutPassword.reseller_id || null;
+          }
+          sendNewLoginAlertEmail({
+            toEmail: email,
+            userName: displayName,
+            userType,
+            ipAddress: meta.clientIp || "",
+            location: meta.userAgent || "Unknown",
+            resellerId: resellerIdForAlert,
+          }).catch(() => {});
+        } catch (e) {
+          console.warn("[AuthService] login alert email skipped:", e.message);
+        }
+      }
+
       return {
         token,
         user: userWithoutPassword,

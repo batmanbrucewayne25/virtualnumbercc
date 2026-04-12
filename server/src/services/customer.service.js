@@ -13,6 +13,31 @@ import { VnApiClient } from "../utils/vnApiClient.js";
  * SMTP for reseller-scoped mail so that "any mail sending from reseller" uses reseller config only.
  */
 export class CustomerService {
+  static async _notifyPaymentLinkWhatsApp(
+    customer,
+    razorpayLink,
+    resellerDisplayName,
+    effectiveResellerId,
+    isResend = false,
+  ) {
+    try {
+      const { notifyCustomerPaymentLinkWhatsApp } = await import(
+        "./transactionalWhatsApp.service.js",
+      );
+      if (customer?.phone && razorpayLink) {
+        await notifyCustomerPaymentLinkWhatsApp({
+          phone: customer.phone,
+          paymentLink: razorpayLink,
+          brandName: resellerDisplayName,
+          resellerId: effectiveResellerId,
+          isResend,
+        });
+      }
+    } catch (e) {
+      console.warn("[CustomerService] payment link WhatsApp skipped:", e.message);
+    }
+  }
+
   /**
    * Generate a virtual number
    * @returns {Promise<string>} Virtual number
@@ -190,6 +215,7 @@ export class CustomerService {
     reference,
     customerId = null,
     virtualNumberId = null,
+    debitNotify = null,
   ) {
     const wallet = await this.getResellerWallet(resellerId);
     if (!wallet) {
@@ -274,6 +300,51 @@ export class CustomerService {
       debit_amount: existingDebitAmount + amountNum,
       last_transaction_at: new Date().toISOString(),
     });
+
+    if (
+      debitNotify?.kind === "activation" ||
+      debitNotify?.kind === "renewal"
+    ) {
+      try {
+        const {
+          sendWalletDebitNotificationEmail,
+          maybeNotifyResellerLowWallet,
+        } = await import("./transactionalEmail.service.js");
+        const rq = await client.client.request(
+          `query R($id: uuid!) {
+            mst_reseller_by_pk(id: $id) {
+              email phone brand_name business_name first_name last_name
+            }
+          }`,
+          { id: resellerId },
+        );
+        const r = rq?.mst_reseller_by_pk;
+        if (r?.email) {
+          const display =
+            r.brand_name ||
+            r.business_name ||
+            `${r.first_name || ""} ${r.last_name || ""}`.trim() ||
+            r.email;
+          await sendWalletDebitNotificationEmail({
+            resellerEmail: r.email,
+            resellerDisplay: display,
+            amount: amountNum,
+            balanceAfter,
+            resellerId,
+            kind: debitNotify.kind,
+          });
+          await maybeNotifyResellerLowWallet({
+            resellerId,
+            balanceAfter,
+            resellerEmail: r.email,
+            resellerDisplay: display,
+            resellerPhone: r.phone,
+          });
+        }
+      } catch (e) {
+        console.warn("[debitResellerWallet] notify skipped:", e.message);
+      }
+    }
 
     return true;
   }
@@ -677,6 +748,11 @@ export class CustomerService {
         rejectionReason,
         resellerName,
         resellerSmtpConfig,
+        {
+          resellerId: customer.reseller_id,
+          supportNumber: reseller?.support_number || "",
+          supportEmail: reseller?.support_email || "",
+        },
       );
       if (emailResult?.success) {
         emailSent = true;
@@ -841,6 +917,7 @@ export class CustomerService {
           offlineApprovalTxn?.id ? String(offlineApprovalTxn.id) : null,
           customer_id || null,
           virtualNumberRecord?.id || null,
+          { kind: "activation" },
         );
 
         // 5. Update customer status
@@ -856,22 +933,92 @@ export class CustomerService {
           reseller.business_name ||
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
           "Team";
+        const purchaseDateStr = new Date().toISOString().split("T")[0];
+        const vnOpts = {
+          resellerId: effectiveResellerId,
+          forwardNumber: customer.phone || "",
+          startDate: purchaseDateStr,
+          endDate: virtualNumberRecord?.expiry_date || "",
+        };
         await sendVirtualNumberEmail(
           customer.email,
           customer.profile_name || customer.email,
           virtualNumber,
           resellerDisplayName,
-          resellerSmtpConfig, // Pass reseller SMTP config
+          resellerSmtpConfig,
+          vnOpts,
         );
 
-        // Send to admin (reseller email)
-        await sendVirtualNumberEmail(
-          reseller.email,
-          resellerDisplayName,
-          virtualNumber,
-          customer.profile_name || customer.email,
-          resellerSmtpConfig, // Pass reseller SMTP config
-        );
+        try {
+          const {
+            sendOfflinePaymentApprovedCustomerEmail,
+            sendOfflinePaymentApprovedAdminEmail,
+            sendNumberActivatedAdminEmail,
+          } = await import("./transactionalEmail.service.js");
+          const { notifyCustomerNumberActivatedWhatsApp } = await import(
+            "./transactionalWhatsApp.service.js",
+          );
+          await sendOfflinePaymentApprovedCustomerEmail({
+            customerEmail: customer.email,
+            customerName: customer.profile_name || customer.email,
+            virtualNumber,
+            resellerId: effectiveResellerId,
+          });
+          await sendOfflinePaymentApprovedAdminEmail({
+            resellerEmail: reseller.email,
+            resellerDisplay: resellerDisplayName,
+            customerName: customer.profile_name || customer.email,
+            virtualNumber,
+            amount: parseFloat(payment_amount) || 0,
+            resellerId: effectiveResellerId,
+          });
+          if (customer.phone) {
+            await notifyCustomerNumberActivatedWhatsApp({
+              phone: customer.phone,
+              virtualNumber,
+              forwardNumber: customer.phone || "",
+              startDate: purchaseDateStr,
+              endDate: virtualNumberRecord?.expiry_date || "",
+              brandName: resellerDisplayName,
+              resellerId: effectiveResellerId,
+            });
+          }
+          if (reseller.email) {
+            await sendNumberActivatedAdminEmail({
+              resellerEmail: reseller.email,
+              resellerDisplay: resellerDisplayName,
+              customerName: customer.profile_name || customer.email,
+              virtualNumber,
+              forwardNumber: customer.phone || "",
+              startDate: purchaseDateStr,
+              endDate: virtualNumberRecord?.expiry_date || "",
+              resellerId: effectiveResellerId,
+            });
+          }
+        } catch (offNotifyErr) {
+          console.warn(
+            "[approveCustomer] offline/WA notify skipped:",
+            offNotifyErr.message,
+          );
+        }
+
+        try {
+          const { sendCustomerKycApprovedEmail } = await import(
+            "./transactionalEmail.service.js"
+          );
+          await sendCustomerKycApprovedEmail({
+            customerEmail: customer.email,
+            customerName: customer.profile_name || customer.email,
+            reseller,
+            resellerId: effectiveResellerId,
+            smtpConfig: resellerSmtpConfig,
+          });
+        } catch (kycMailErr) {
+          console.warn(
+            "[approveCustomer] KYC approved email skipped:",
+            kycMailErr.message,
+          );
+        }
 
         return {
           success: true,
@@ -1038,7 +1185,19 @@ export class CustomerService {
           subscriptionPlan.plan_name,
           subscriptionPlan.amount,
           resellerDisplayName,
-          resellerSmtpConfig, // Pass reseller SMTP config
+          resellerSmtpConfig,
+          {
+            resellerId: effectiveResellerId,
+            supportNumber: reseller.support_number || "",
+            supportEmail: reseller.support_email || "",
+          },
+        );
+        await CustomerService._notifyPaymentLinkWhatsApp(
+          customer,
+          razorpayLink,
+          resellerDisplayName,
+          effectiveResellerId,
+          false,
         );
 
         return {
@@ -1258,6 +1417,18 @@ export class CustomerService {
         planAmount,
         resellerDisplayName,
         resellerSmtpConfig,
+        {
+          resellerId: effectiveResellerId,
+          supportNumber: reseller.support_number || "",
+          supportEmail: reseller.support_email || "",
+        },
+      );
+      await CustomerService._notifyPaymentLinkWhatsApp(
+        customer,
+        razorpayLink,
+        resellerDisplayName,
+        effectiveResellerId,
+        false,
       );
 
       return {
@@ -1437,6 +1608,7 @@ export class CustomerService {
         offlineRenewalTxn?.id ? String(offlineRenewalTxn.id) : null,
         customer.id || null,
         vn.id || null,
+        { kind: "renewal" },
       );
 
       console.log(
@@ -1770,6 +1942,7 @@ export class CustomerService {
           offlineAddTxn?.id ? String(offlineAddTxn.id) : null,
           customer_id || null,
           virtualNumberRecord?.id || null,
+          { kind: "activation" },
         );
 
         // ── Step 5: Send email (best-effort, never blocks success) ───────────
@@ -1782,12 +1955,19 @@ export class CustomerService {
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
           "Team";
         try {
+          const purchaseDateStr = new Date().toISOString().split("T")[0];
           await sendVirtualNumberEmail(
             customer.email,
             customer.profile_name || customer.email,
             virtualNumber,
             resellerDisplayName,
             resellerSmtpConfig,
+            {
+              resellerId: effectiveResellerId,
+              forwardNumber: forwardNumber || "",
+              startDate: purchaseDateStr,
+              endDate: virtualNumberRecord?.expiry_date || "",
+            },
           );
         } catch (emailErr) {
           console.warn(`[addVirtualNumber] Email send failed (non-fatal):`, emailErr.message);
@@ -1924,6 +2104,18 @@ export class CustomerService {
           subscriptionPlan.amount,
           resellerDisplayName,
           resellerSmtpConfig,
+          {
+            resellerId: effectiveResellerId,
+            supportNumber: reseller.support_number || "",
+            supportEmail: reseller.support_email || "",
+          },
+        );
+        await CustomerService._notifyPaymentLinkWhatsApp(
+          customer,
+          razorpayLink,
+          resellerDisplayName,
+          effectiveResellerId,
+          false,
         );
 
         return {

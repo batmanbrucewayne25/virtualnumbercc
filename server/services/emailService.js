@@ -6,6 +6,8 @@ import {
   getSmtpTemplateByType,
   replaceTemplateVariables,
 } from "../src/services/smtpTemplate.service.js";
+import { resolveTransactionalEmail } from "../src/services/emailTemplateResolver.js";
+import { TEMPLATE_TYPE } from "../mailtemplate/emailTemplateRegistry.js";
 import { getAdminSmtpConfig } from "../src/services/smtpConfig.service.js";
 import { getAdminOnboardingTemplate } from "../mailtemplate/adminOnboarding.js";
 import { getPasswordResetTemplate } from "../mailtemplate/passwordReset.js";
@@ -401,7 +403,8 @@ export const sendVirtualNumberEmail = async (
   recipientName,
   virtualNumber,
   resellerName,
-  smtpConfig = null
+  smtpConfig = null,
+  options = null,
 ) => {
   try {
     // Use reseller SMTP config if provided, otherwise use env variables
@@ -419,19 +422,47 @@ export const sendVirtualNumberEmail = async (
     const fromEmail = smtpConfig?.from_email || SMTP_FROM_EMAIL || SMTP_USER;
     const fromName = resolveSenderDisplayName(smtpConfig, resellerName);
 
-    // Use default template (can be extended to check database in future)
-    const defaultTemplate = getVirtualNumberAssignedTemplate(
-      recipientName,
-      virtualNumber,
-      resellerName
+    const resellerId = options?.resellerId || null;
+    const forwardNumber = options?.forwardNumber ?? "";
+    const startDate = options?.startDate ?? "";
+    const endDate = options?.endDate ?? "";
+
+    let subject;
+    let html;
+    let text;
+    const resolved = await resolveTransactionalEmail(
+      TEMPLATE_TYPE.NUMBER_ACTIVATED_CUSTOMER,
+      {
+        user: recipientName,
+        virtual_number: virtualNumber,
+        forward_number: forwardNumber,
+        start_date: startDate,
+        end_date: endDate,
+        brand_name: resellerName,
+      },
+      { resellerId },
     );
+    if (resolved?.subject && resolved?.html) {
+      subject = resolved.subject;
+      html = resolved.html;
+      text = resolved.text;
+    } else {
+      const defaultTemplate = getVirtualNumberAssignedTemplate(
+        recipientName,
+        virtualNumber,
+        resellerName,
+      );
+      subject = defaultTemplate.subject;
+      html = defaultTemplate.html;
+      text = defaultTemplate.text;
+    }
 
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: email,
-      subject: defaultTemplate.subject,
-      html: defaultTemplate.html,
-      text: defaultTemplate.text,
+      subject,
+      html,
+      text,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -468,7 +499,8 @@ export const sendRazorpayLinkEmail = async (
   planName,
   planAmount,
   resellerName,
-  smtpConfig = null
+  smtpConfig = null,
+  options = null,
 ) => {
   try {
     // Use reseller SMTP config if provided, otherwise use env variables
@@ -486,21 +518,47 @@ export const sendRazorpayLinkEmail = async (
     const fromEmail = smtpConfig?.from_email || SMTP_FROM_EMAIL || SMTP_USER;
     const fromName = resolveSenderDisplayName(smtpConfig, resellerName);
 
-    // Use default template (can be extended to check database in future)
-    const defaultTemplate = getRazorpayLinkTemplate(
-      recipientName,
-      razorpayLink,
-      planName,
-      planAmount,
-      resellerName
+    const resellerId = options?.resellerId || null;
+    const supportNumber = options?.supportNumber ?? "";
+    const supportEmail = options?.supportEmail ?? "";
+
+    let subject;
+    let html;
+    let text;
+    const resolved = await resolveTransactionalEmail(
+      TEMPLATE_TYPE.PAYMENT_LINK_GENERATED,
+      {
+        user: recipientName,
+        payment_link: razorpayLink,
+        support_number: supportNumber,
+        support_email: supportEmail,
+        brand_name: resellerName,
+      },
+      { resellerId },
     );
+    if (resolved?.subject && resolved?.html) {
+      subject = resolved.subject;
+      html = resolved.html;
+      text = resolved.text;
+    } else {
+      const defaultTemplate = getRazorpayLinkTemplate(
+        recipientName,
+        razorpayLink,
+        planName,
+        planAmount,
+        resellerName,
+      );
+      subject = defaultTemplate.subject;
+      html = defaultTemplate.html;
+      text = defaultTemplate.text;
+    }
 
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: email,
-      subject: defaultTemplate.subject,
-      html: defaultTemplate.html,
-      text: defaultTemplate.text,
+      subject,
+      html,
+      text,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -527,13 +585,15 @@ export const sendRazorpayLinkEmail = async (
  * @param {string} rejectionReason - Reason for rejection
  * @param {string} resellerName - Reseller/brand name
  * @param {object} smtpConfig - Reseller SMTP config from getResellerSmtpConfig (required)
+ * @param {{ resellerId?: string|null, supportNumber?: string, supportEmail?: string }} [opts]
  */
 export const sendCustomerRejectionEmail = async (
   toEmail,
   recipientName,
   rejectionReason,
   resellerName,
-  smtpConfig
+  smtpConfig,
+  opts = {},
 ) => {
   try {
     if (!smtpConfig) {
@@ -553,13 +613,43 @@ export const sendCustomerRejectionEmail = async (
     }
     const fromEmail = smtpConfig.from_email || smtpConfig.username;
     const fromName = resolveSenderDisplayName(smtpConfig, resellerName);
-    const template = getCustomerRejectionTemplate(recipientName, rejectionReason, resellerName);
+    const supportNumber = opts.supportNumber ?? "";
+    const supportEmail = opts.supportEmail || fromEmail;
+    const resellerId = opts.resellerId ?? null;
+    let subject;
+    let html;
+    let text;
+    const resolved = await resolveTransactionalEmail(
+      TEMPLATE_TYPE.CUSTOMER_KYC_REJECTED,
+      {
+        user: recipientName,
+        rejection_reason: rejectionReason || "",
+        support_number: supportNumber,
+        support_email: supportEmail,
+        brand_name: resellerName,
+      },
+      { resellerId },
+    );
+    if (resolved?.subject && resolved?.html) {
+      subject = resolved.subject;
+      html = resolved.html;
+      text = resolved.text;
+    } else {
+      const template = getCustomerRejectionTemplate(
+        recipientName,
+        rejectionReason,
+        resellerName,
+      );
+      subject = template.subject;
+      html = template.html;
+      text = template.text;
+    }
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: toEmail,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
     };
     const info = await transporter.sendMail(mailOptions);
     console.log("Customer rejection email sent:", info.messageId);

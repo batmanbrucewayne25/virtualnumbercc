@@ -4,6 +4,7 @@ import {
   verifyEmailOTP,
   sendPhoneOTP,
   verifyPhoneOTP,
+  sendDualChannelOTP,
 } from '../controllers/otp.controller.js';
 
 const router = express.Router();
@@ -28,6 +29,13 @@ router.post('/verify-email', verifyEmailOTP);
  * @access  Public
  */
 router.post('/send-phone', sendPhoneOTP);
+
+/**
+ * @route   POST /api/otp/send-dual
+ * @desc    Same OTP to email + WhatsApp
+ * @access  Public
+ */
+router.post('/send-dual', sendDualChannelOTP);
 
 /**
  * @route   POST /api/otp/verify-phone

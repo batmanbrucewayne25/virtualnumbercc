@@ -8,6 +8,8 @@ type OtpVerifyProps = {
   phone?: string;
   /** "customer" for clienthub onboarding, omit for reseller signup */
   userType?: "customer" | "reseller";
+  /** ClientHub: pass so OTP uses reseller SMTP / WhatsApp */
+  resellerId?: string;
   onBack: () => void;
   onVerify: () => Promise<void>;
 };
@@ -18,6 +20,7 @@ const OtpVerify = ({
   email,
   phone,
   userType,
+  resellerId,
   onBack,
   onVerify,
 }: OtpVerifyProps) => {
@@ -58,8 +61,16 @@ const OtpVerify = ({
 
       const payload =
         label.toLowerCase() === "email"
-          ? { email, ...(userType && { user_type: userType }) }
-          : { phone, ...(userType && { user_type: userType }) };
+          ? {
+              email,
+              ...(userType && { user_type: userType }),
+              ...(resellerId && { reseller_id: resellerId }),
+            }
+          : {
+              phone,
+              ...(userType && { user_type: userType }),
+              ...(resellerId && { reseller_id: resellerId }),
+            };
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -83,7 +94,7 @@ const OtpVerify = ({
     } finally {
       setSending(false);
     }
-  }, [email, phone, label, userType]);
+  }, [email, phone, label, userType, resellerId]);
 
   // Auto-send OTP exactly once when the required contact value is available.
   // We wait until the prop is non-empty (parent may set it asynchronously from
@@ -130,8 +141,18 @@ const OtpVerify = ({
 
       const payload =
         label.toLowerCase() === "email"
-          ? { email, otp, ...(userType && { user_type: userType }) }
-          : { phone, otp, ...(userType && { user_type: userType }) };
+          ? {
+              email,
+              otp,
+              ...(userType && { user_type: userType }),
+              ...(resellerId && { reseller_id: resellerId }),
+            }
+          : {
+              phone,
+              otp,
+              ...(userType && { user_type: userType }),
+              ...(resellerId && { reseller_id: resellerId }),
+            };
 
       const response = await fetch(endpoint, {
         method: "POST",

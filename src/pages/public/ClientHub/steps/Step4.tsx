@@ -3,12 +3,19 @@ import OtpVerify from "../../Signup/steps/Components/OtpVerify";
 
 interface Step4Props {
   phone: string;
+  resellerId?: string | null;
   skipOtpVerification?: boolean;
   onBack: () => void;
   onVerify: () => void;
 }
 
-const Step4 = ({ phone, skipOtpVerification = false, onBack, onVerify }: Step4Props) => {
+const Step4 = ({
+  phone,
+  resellerId,
+  skipOtpVerification = false,
+  onBack,
+  onVerify,
+}: Step4Props) => {
   // Auto-verify if skipOtpVerification is true
   useEffect(() => {
     if (skipOtpVerification && phone) {
@@ -35,6 +42,7 @@ const Step4 = ({ phone, skipOtpVerification = false, onBack, onVerify }: Step4Pr
       label="Phone"
       phone={phone}
       userType="customer"
+      resellerId={resellerId || undefined}
       onBack={onBack}
       onVerify={async () => {
         onVerify();

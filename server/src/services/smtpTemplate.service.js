@@ -75,6 +75,60 @@ export const getSmtpTemplateByType = async (templateType, adminId = null) => {
   }
 };
 
+const SMTP_TEMPLATE_FIELDS = `
+            id
+            template_name
+            subject
+            body
+            template_type
+            variables
+            is_active
+`;
+
+/**
+ * Fetch template by type scoped to reseller, admin, or global (first active match).
+ * @param {string} templateType
+ * @param {{ adminId?: string|null, resellerId?: string|null }} context
+ */
+export const getSmtpTemplateByTypeForContext = async (templateType, context = {}) => {
+  const { adminId = null, resellerId = null } = context;
+  try {
+    const client = getHasuraClient();
+
+    if (resellerId) {
+      const query = `
+        query GetResellerSmtpTemplate($template_type: String!, $reseller_id: uuid!) {
+          mst_smtp_template(
+            where: {
+              template_type: { _eq: $template_type }
+              reseller_id: { _eq: $reseller_id }
+              is_active: { _eq: true }
+            }
+            limit: 1
+            order_by: { created_at: desc }
+          ) {
+            ${SMTP_TEMPLATE_FIELDS}
+          }
+        }
+      `;
+      const data = await client.client.request(query, {
+        template_type: templateType,
+        reseller_id: resellerId,
+      });
+      if (data.mst_smtp_template?.length) return data.mst_smtp_template[0];
+    }
+
+    if (adminId) {
+      return await getSmtpTemplateByType(templateType, adminId);
+    }
+
+    return await getSmtpTemplateByType(templateType, null);
+  } catch (error) {
+    console.error('Error fetching SMTP template for context:', error);
+    return null;
+  }
+};
+
 /**
  * Replace template variables in a string
  * Supports both {{variable_name}} and ${variableName} syntax

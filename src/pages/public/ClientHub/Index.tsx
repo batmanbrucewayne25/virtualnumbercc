@@ -504,6 +504,7 @@ const ClientHubLayer = ({
           {step === 3 && (
             <Step3
               email={formData.email}
+              resellerId={resellerId}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(2)}
               onVerify={handleStep3Verify}
@@ -514,6 +515,7 @@ const ClientHubLayer = ({
           {step === 4 && (
             <Step4
               phone={formData.phone}
+              resellerId={resellerId}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(3)}
               onVerify={handleStep4Verify}

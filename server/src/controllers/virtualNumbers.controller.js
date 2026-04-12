@@ -252,6 +252,14 @@ export const updateCallForwarding = asyncHandler(async (req, res) => {
   );
 
   if (result.success) {
+    try {
+      const { notifyCallForwardUpdated } = await import(
+        '../services/transactionalEmail.service.js'
+      );
+      await notifyCallForwardUpdated(number, forward_value, resellerId);
+    } catch (e) {
+      console.warn('[updateCallForwarding] notify email skipped:', e.message);
+    }
     res.status(200).json({
       status: 200,
       message: 'Call forwarding updated successfully',
@@ -316,7 +324,7 @@ export const getNumberDetails = asyncHandler(async (req, res) => {
  * @access  Private (API Key)
  */
 export const suspendNumber = asyncHandler(async (req, res) => {
-  const { number } = req.body;
+  const { number, telecom_suspension: telecomSuspension } = req.body;
   const resellerId = req.resellerId;
 
   if (!number) {
@@ -340,6 +348,21 @@ export const suspendNumber = asyncHandler(async (req, res) => {
   const result = await VirtualNumbersService.suspendNumber(number, resellerId);
 
   if (result.success) {
+    try {
+      const {
+        notifyNumberSuspended,
+        notifyTelecomSuspensionSuper,
+      } = await import('../services/transactionalEmail.service.js');
+      await notifyNumberSuspended(number, resellerId);
+      if (telecomSuspension === true || telecomSuspension === 'true') {
+        await notifyTelecomSuspensionSuper({
+          virtualNumber: number,
+          resellerId,
+        });
+      }
+    } catch (e) {
+      console.warn('[suspendNumber] notify email skipped:', e.message);
+    }
     res.status(200).json({
       status: 200,
       message: 'Number suspended successfully',

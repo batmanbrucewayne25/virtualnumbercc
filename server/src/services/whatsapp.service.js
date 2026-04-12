@@ -1,54 +1,5 @@
 import axios from 'axios';
-import { getHasuraClient } from '../config/hasura.client.js';
-
-/**
- * Get first active admin's WhatsApp config or return defaults
- */
-const getWhatsAppConfig = async () => {
-  try {
-    const client = getHasuraClient();
-    
-    // Try to get first active admin's WhatsApp config
-    const query = `
-      query GetAdminWhatsAppConfig {
-        mst_whatsapp_config(
-          where: { 
-            admin_id: { _is_null: false },
-            is_active: { _eq: true }
-          }
-          limit: 1
-          order_by: { created_at: desc }
-        ) {
-          api_key
-          api_url
-          phone_number_id
-          business_account_id
-        }
-      }
-    `;
-    
-    const result = await client.client.request(query);
-    
-    if (result.mst_whatsapp_config && result.mst_whatsapp_config.length > 0) {
-      const config = result.mst_whatsapp_config[0];
-      return config;
-    }
-  } catch (error) {
-    console.warn('Error fetching WhatsApp config from database:', error);
-    if (error.response) {
-      console.warn('GraphQL error details:', JSON.stringify(error.response, null, 2));
-    } else if (error.errors) {
-      console.warn('GraphQL errors:', JSON.stringify(error.errors, null, 2));
-    }
-  }
-  
-  // Return defaults
-  return {
-    api_key: 'EAF2SJcngo8cBOz4JOCCgR2kd5TLX0D1w8ippQ5YNAnmpo2KciESJpoNbYQf5An0HfoKZABmw67keWe3sCk5E5Oeva0Er6WTMKzFCpOeDd29byGMFZCHjVQ8PmAFa7lbRuDAKoaZBuxNDBhCtzOV2SjUdqTjSyzl8bUZALZAZCVnpEXJhRhZBrtzyKKopZCWl4ZCE7oxaqy5ez2kZCicltr',
-    api_url: 'https://graph.facebook.com/v18.0',
-    phone_number_id: '917662874757468',
-  };
-};
+import { getWhatsAppConfigResolved } from './whatsappConfig.service.js';
 
 /**
  * Format phone number for WhatsApp (remove + and ensure country code)
@@ -74,8 +25,13 @@ export const sendWhatsAppTemplateMessage = async (phone, templateName, languageC
       };
     }
 
-    // Get WhatsApp config from admin settings or use defaults
-    const whatsappConfig = await getWhatsAppConfig();
+    const whatsappConfig = await getWhatsAppConfigResolved();
+    if (!whatsappConfig?.api_key || !whatsappConfig?.phone_number_id) {
+      return {
+        success: false,
+        message: 'WhatsApp is not configured. Set admin WhatsApp in the panel or WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in the environment.',
+      };
+    }
 
     // Format phone number
     const formattedPhone = formatPhoneNumber(phone);
@@ -176,7 +132,13 @@ export const sendWhatsAppTextMessage = async (phone, messageText) => {
       return { success: false, message: 'Phone and message text are required' };
     }
 
-    const whatsappConfig = await getWhatsAppConfig();
+    const whatsappConfig = await getWhatsAppConfigResolved();
+    if (!whatsappConfig?.api_key || !whatsappConfig?.phone_number_id) {
+      return {
+        success: false,
+        message: 'WhatsApp is not configured. Set admin WhatsApp in the panel or WHATSAPP_* env vars.',
+      };
+    }
     const formattedPhone = formatPhoneNumber(phone);
     if (!formattedPhone) {
       return { success: false, message: 'Invalid phone number format' };

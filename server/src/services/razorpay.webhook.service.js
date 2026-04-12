@@ -1121,6 +1121,75 @@ async function _extendVirtualNumberExpiry(client, virtualNumberId, daysToAdd) {
  * webhook retries or re-entrant calls from idempotency guards).
  * Non-fatal — logs CRITICAL on failure but never throws.
  */
+/** Best-effort renewal success emails after online payment + wallet debit. */
+async function _notifyRenewalPaymentSuccessAfterOnlinePayment(
+  client,
+  customer,
+  resellerId,
+  transactionId,
+  virtualNumberId,
+) {
+  try {
+    const {
+      sendRenewalPaymentSuccessCustomerEmail,
+      sendRenewalPaymentSuccessAdminEmail,
+    } = await import("./transactionalEmail.service.js");
+    let vnStr = "";
+    if (virtualNumberId) {
+      const vq = await client.client.request(
+        `query V($id: uuid!) { mst_virtual_number_by_pk(id: $id) { virtual_number } }`,
+        { id: virtualNumberId },
+      );
+      vnStr = vq?.mst_virtual_number_by_pk?.virtual_number || "";
+    }
+    let amountRupees = 0;
+    let txnRef = transactionId || "";
+    if (transactionId) {
+      const tq = await client.client.request(
+        `query T($id: uuid!) { mst_transaction_by_pk(id: $id) { amount reference_number } }`,
+        { id: transactionId },
+      );
+      const tr = tq?.mst_transaction_by_pk;
+      if (tr?.amount != null) amountRupees = Number(tr.amount);
+      if (tr?.reference_number) txnRef = String(tr.reference_number);
+    }
+    const reseller = customer?.mst_reseller;
+    const rid = resellerId || reseller?.id;
+    if (!rid || !customer?.email) return;
+    const resellerName =
+      reseller?.brand_name ||
+      reseller?.business_name ||
+      (reseller?.first_name
+        ? `${reseller.first_name} ${reseller.last_name || ""}`.trim()
+        : null) ||
+      reseller?.email ||
+      "Team";
+    await sendRenewalPaymentSuccessCustomerEmail({
+      customerEmail: customer.email,
+      customerName: customer.profile_name || customer.email,
+      amountRupees,
+      transactionRef: txnRef,
+      virtualNumber: vnStr,
+      resellerId: rid,
+    });
+    if (reseller?.email) {
+      await sendRenewalPaymentSuccessAdminEmail({
+        resellerEmail: reseller.email,
+        resellerDisplay: resellerName,
+        customerName: customer.profile_name || customer.email,
+        amountRupees,
+        virtualNumber: vnStr,
+        resellerId: rid,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      "[postPayment][renewal] success notify skipped:",
+      e.message,
+    );
+  }
+}
+
 async function _debitResellerWalletForOnlinePayment(
   client,
   customer,
@@ -1375,6 +1444,53 @@ async function _debitResellerWalletForOnlinePayment(
       JSON.stringify(updateWalletResult),
     );
 
+    try {
+      const notesRes = transactionId
+        ? await client.client.request(
+            `query T($id: uuid!) { mst_transaction_by_pk(id: $id) { notes } }`,
+            { id: transactionId },
+          )
+        : null;
+      const isRenewal =
+        notesRes?.mst_transaction_by_pk?.notes?.transaction_type === "renewal";
+      const rq = await client.client.request(
+        `query R($id: uuid!) { mst_reseller_by_pk(id: $id) { email phone brand_name business_name first_name last_name } }`,
+        { id: effectiveResellerId },
+      );
+      const r = rq?.mst_reseller_by_pk;
+      if (r?.email) {
+        const display =
+          r.brand_name ||
+          r.business_name ||
+          `${r.first_name || ""} ${r.last_name || ""}`.trim() ||
+          r.email;
+        const {
+          sendWalletDebitNotificationEmail,
+          maybeNotifyResellerLowWallet,
+        } = await import("./transactionalEmail.service.js");
+        await sendWalletDebitNotificationEmail({
+          resellerEmail: r.email,
+          resellerDisplay: display,
+          amount: pricePerNumber,
+          balanceAfter,
+          resellerId: effectiveResellerId,
+          kind: isRenewal ? "renewal" : "activation",
+        });
+        await maybeNotifyResellerLowWallet({
+          resellerId: effectiveResellerId,
+          balanceAfter,
+          resellerEmail: r.email,
+          resellerDisplay: display,
+          resellerPhone: r.phone,
+        });
+      }
+    } catch (nErr) {
+      console.warn(
+        `[postPayment][walletDebit] debit/low-wallet notify skipped:`,
+        nErr.message,
+      );
+    }
+
     console.log(
       `[postPayment][walletDebit] SUCCESS: Debited ₹${pricePerNumber.toFixed(2)} from reseller ${effectiveResellerId}. ` +
         `mst_wallet.balance: ₹${balanceBefore.toFixed(2)} → ₹${balanceAfter.toFixed(2)}`,
@@ -1483,6 +1599,13 @@ async function updateCustomerStatusAfterPayment(
         if (renewalVnId) {
           await _extendVirtualNumberExpiry(client, renewalVnId, 360);
         }
+        await _notifyRenewalPaymentSuccessAfterOnlinePayment(
+          client,
+          customer,
+          resellerId,
+          transactionId,
+          renewalVnId,
+        );
       }
       return true;
     }
@@ -1531,10 +1654,20 @@ async function updateCustomerStatusAfterPayment(
       );
       // Renewal flow: extend expiry only if wallet debit was new (not a retry)
       if (isRenewal && transactionId && debitResultB !== "already_debited") {
-        const renewalVnId = txnRecord?.notes?.virtual_number_id;
+        const renewalVnId =
+          txnRecord?.notes?.virtual_number_id ||
+          txnRecord?.virtual_number_id ||
+          null;
         if (renewalVnId) {
           await _extendVirtualNumberExpiry(client, renewalVnId, 360);
         }
+        await _notifyRenewalPaymentSuccessAfterOnlinePayment(
+          client,
+          customer,
+          resellerId,
+          transactionId,
+          renewalVnId,
+        );
       }
       return true;
     }
@@ -1776,11 +1909,100 @@ async function updateCustomerStatusAfterPayment(
         virtualNumber,
         resellerName,
         smtpConfig,
+        {
+          resellerId,
+          forwardNumber: callForwardForVN || "",
+          startDate: purchaseDate,
+          endDate: expiryDate,
+        },
       );
 
       console.log(
         `[postPayment] Virtual number email sent to ${customer.email}`,
       );
+
+      try {
+        const { sendNumberActivatedAdminEmail } = await import(
+          "./transactionalEmail.service.js",
+        );
+        const { notifyCustomerNumberActivatedWhatsApp } = await import(
+          "./transactionalWhatsApp.service.js",
+        );
+        if (customer.phone) {
+          await notifyCustomerNumberActivatedWhatsApp({
+            phone: customer.phone,
+            virtualNumber,
+            forwardNumber: callForwardForVN || "",
+            startDate: purchaseDate,
+            endDate: expiryDate,
+            brandName: resellerName,
+            resellerId,
+          });
+        }
+        if (reseller?.email) {
+          await sendNumberActivatedAdminEmail({
+            resellerEmail: reseller.email,
+            resellerDisplay: resellerName,
+            customerName: customer.profile_name || customer.email,
+            virtualNumber,
+            forwardNumber: callForwardForVN || "",
+            startDate: purchaseDate,
+            endDate: expiryDate,
+            resellerId,
+          });
+        }
+      } catch (vnWaErr) {
+        console.warn(
+          `[postPayment] VN WhatsApp/admin notify skipped: ${vnWaErr.message}`,
+        );
+      }
+
+      try {
+        const {
+          sendPaymentSuccessCustomerEmail,
+          sendPaymentSuccessAdminEmail,
+        } = await import("./transactionalEmail.service.js");
+        let amountRupees = 0;
+        let txnRef = transactionId || "";
+        if (transactionId) {
+          const tq = await client.client.request(
+            `query TxnAmt($id: uuid!) {
+              mst_transaction_by_pk(id: $id) {
+                amount
+                reference_number
+              }
+            }`,
+            { id: transactionId },
+          );
+          const tr = tq?.mst_transaction_by_pk;
+          if (tr?.amount != null) {
+            amountRupees = Number(tr.amount);
+          }
+          if (tr?.reference_number) {
+            txnRef = String(tr.reference_number);
+          }
+        }
+        await sendPaymentSuccessCustomerEmail({
+          customerEmail: customer.email,
+          customerName: customer.profile_name || customer.email,
+          amountRupees,
+          transactionRef: txnRef,
+          resellerId,
+        });
+        if (reseller?.email) {
+          await sendPaymentSuccessAdminEmail({
+            resellerEmail: reseller.email,
+            resellerDisplay: resellerName,
+            customerName: customer.profile_name || customer.email,
+            amountRupees,
+            resellerId,
+          });
+        }
+      } catch (payMailErr) {
+        console.warn(
+          `[postPayment] Payment success emails skipped: ${payMailErr.message}`,
+        );
+      }
     } catch (emailErr) {
       // Non-fatal: payment succeeded; log and move on
       console.error(
@@ -2620,11 +2842,107 @@ export async function processPaymentFailed(resellerId, payload) {
 
   // Create new transaction only if no pending transaction found
   console.log(`[CREATE] Creating new transaction for ${paymentData.id}`);
-  return await createTransactionFromWebhook(effectiveResellerId, {
+  const created = await createTransactionFromWebhook(effectiveResellerId, {
     ...paymentData,
     status: "failed",
     error_description: failureReason,
   });
+
+  const isRenewal = paymentData.notes?.transaction_type === "renewal";
+  let vnForRenewalFail = "";
+  if (isRenewal && customerId) {
+    try {
+      const hc = getHasuraClient();
+      const vnq = await hc.client.request(
+        `query V($cid: uuid!) {
+          mst_virtual_number(where: { customer_id: { _eq: $cid } }, limit: 1, order_by: { created_at: desc }) {
+            virtual_number
+          }
+        }`,
+        { cid: customerId },
+      );
+      vnForRenewalFail =
+        vnq?.mst_virtual_number?.[0]?.virtual_number || "";
+    } catch (_) {}
+  }
+
+  if (customerEmail && effectiveResellerId) {
+    try {
+      const {
+        sendPaymentFailedCustomerEmail,
+        sendRenewalPaymentFailedCustomerEmail,
+        sendPaymentFailedAdminEmail,
+        sendRenewalPaymentFailedAdminEmail,
+      } = await import("./transactionalEmail.service.js");
+      let custName = customerEmail;
+      let resellerRow = null;
+      if (customerId) {
+        const hc = getHasuraClient();
+        const cq = await hc.client.request(
+          `query C($id: uuid!) {
+            mst_customer_by_pk(id: $id) { profile_name email mst_reseller { id email brand_name business_name first_name last_name } }
+          }`,
+          { id: customerId },
+        );
+        const c = cq?.mst_customer_by_pk;
+        if (c?.profile_name) custName = c.profile_name;
+        resellerRow = c?.mst_reseller;
+      } else {
+        const hc = getHasuraClient();
+        const rq = await hc.client.request(
+          `query R($id: uuid!) {
+            mst_reseller_by_pk(id: $id) { id email brand_name business_name first_name last_name }
+          }`,
+          { id: effectiveResellerId },
+        );
+        resellerRow = rq?.mst_reseller_by_pk;
+      }
+      if (isRenewal) {
+        await sendRenewalPaymentFailedCustomerEmail({
+          customerEmail,
+          customerName: custName,
+          virtualNumber: vnForRenewalFail,
+          resellerId: effectiveResellerId,
+        });
+      } else {
+        await sendPaymentFailedCustomerEmail({
+          customerEmail,
+          customerName: custName,
+          resellerId: effectiveResellerId,
+        });
+      }
+      if (resellerRow?.email) {
+        const rname =
+          resellerRow.brand_name ||
+          resellerRow.business_name ||
+          `${resellerRow.first_name || ""} ${resellerRow.last_name || ""}`.trim() ||
+          resellerRow.email;
+        if (isRenewal) {
+          await sendRenewalPaymentFailedAdminEmail({
+            resellerEmail: resellerRow.email,
+            resellerDisplay: rname,
+            customerName: custName,
+            amountRupees: amountInRupees,
+            failureReason: failureReason,
+            resellerId: effectiveResellerId,
+          });
+        } else {
+          await sendPaymentFailedAdminEmail({
+            resellerEmail: resellerRow.email,
+            resellerDisplay: rname,
+            customerName: custName,
+            amountRupees: amountInRupees,
+            failureReason: failureReason,
+            resellerId: effectiveResellerId,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn(`[processPaymentFailed] Failure email skipped: ${e.message}`);
+    }
+  }
+
+  return created;
 }
 
 /**

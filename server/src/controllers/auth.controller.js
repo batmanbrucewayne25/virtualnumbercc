@@ -20,7 +20,17 @@ export const login = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await AuthService.login(email, password);
+  const clientIp =
+    req.ip ||
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.socket?.remoteAddress ||
+    "";
+  const userAgent = req.headers["user-agent"] || "";
+
+  const result = await AuthService.login(email, password, {
+    clientIp,
+    userAgent,
+  });
 
   // Check if signup completion is required
   if (result.requiresSignupCompletion) {

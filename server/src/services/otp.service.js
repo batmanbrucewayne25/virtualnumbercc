@@ -1,10 +1,20 @@
 import { getHasuraClient } from "../config/hasura.client.js";
 import {
-  getAdminSmtpConfig,
   getFirstAdminSmtpConfig,
+  getResellerSmtpConfig,
 } from "./smtpConfig.service.js";
+import { resolveWhatsAppConfigForOtp } from "./whatsappConfig.service.js";
+import { resolveTransactionalEmail } from "./emailTemplateResolver.js";
+import { TEMPLATE_TYPE } from "../../mailtemplate/emailTemplateRegistry.js";
+import {
+  fetchResellerBrandingForOtp,
+  PLATFORM_NAME,
+  PLATFORM_SUPPORT_EMAIL,
+  PLATFORM_SUPPORT_NUMBER,
+} from "./transactionalEmail.service.js";
 import nodemailer from "nodemailer";
 import axios from "axios";
+import { assertOtpRateLimit } from "../utils/otpRateLimit.js";
 
 // SMTP configuration from environment variables
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
@@ -153,65 +163,6 @@ const verifyTransporter = async (transporter) => {
       code: error.code,
     };
   }
-};
-
-/**
- * Get first active admin's WhatsApp config or return defaults
- */
-const getWhatsAppConfig = async () => {
-  try {
-    const client = getHasuraClient();
-
-    // Try to get first active admin's WhatsApp config
-    const query = `
-      query GetAdminWhatsAppConfig {
-        mst_whatsapp_config(
-          where: { 
-            admin_id: { _is_null: false },
-            is_active: { _eq: true }
-          }
-          limit: 1
-          order_by: { created_at: desc }
-        ) {
-          api_key
-          api_url
-          phone_number_id
-          business_account_id
-        }
-      }
-    `;
-
-    const result = await client.client.request(query);
-
-    if (result.mst_whatsapp_config && result.mst_whatsapp_config.length > 0) {
-      const config = result.mst_whatsapp_config[0];
-      // Add template_name if not present (use default)
-      if (!config.template_name) {
-        config.template_name = "botbeeotp";
-      }
-      return config;
-    }
-  } catch (error) {
-    console.warn("Error fetching WhatsApp config from database:", error);
-    // Log the error details for debugging
-    if (error.response) {
-      console.warn(
-        "GraphQL error details:",
-        JSON.stringify(error.response, null, 2)
-      );
-    } else if (error.errors) {
-      console.warn("GraphQL errors:", JSON.stringify(error.errors, null, 2));
-    }
-  }
-
-  // Return defaults
-  return {
-    api_key:
-      "EAF2SJcngo8cBOz4JOCCgR2kd5TLX0D1w8ippQ5YNAnmpo2KciESJpoNbYQf5An0HfoKZABmw67keWe3sCk5E5Oeva0Er6WTMKzFCpOeDd29byGMFZCHjVQ8PmAFa7lbRuDAKoaZBuxNDBhCtzOV2SjUdqTjSyzl8bUZALZAZCVnpEXJhRhZBrtzyKKopZCWl4ZCE7oxaqy5ez2kZCicltr",
-    api_url: "https://graph.facebook.com/v18.0",
-    phone_number_id: "917662874757468",
-    template_name: "botbeeotp",
-  };
 };
 
 /**
@@ -616,53 +567,35 @@ export class OTPService {
   }
 
   /**
-   * Send email OTP with comprehensive error handling
-   * @param {string} email - Email address
-   * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
+   * Deliver email OTP (SMTP send only; OTP must already be stored).
    */
-  static async sendEmailOTP(email, userType = "reseller") {
+  static async _deliverEmailOtp(email, otp, userType = "reseller", resellerId = null) {
     try {
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!email || !emailRegex.test(email)) {
-        return {
-          success: false,
-          message: "Invalid email address format",
-        };
-      }
-
-      const otp = this.generateOTP();
-      console.log(`[OTP] Generating OTP for email: ${email} (user_type: ${userType})`);
-
-      // Store OTP
-      const storeResult = await this.storeOTP(email, null, otp, "email", userType);
-      if (!storeResult.success) {
-        console.error("[OTP] Failed to store OTP:", storeResult.message);
-        return storeResult;
-      }
-
-      console.log("[OTP] OTP stored successfully");
-
-      // Get SMTP config (from database or env)
-      // Try to get first active admin's SMTP config, otherwise will use env variables
       let smtpConfig = null;
       try {
-        smtpConfig = await getFirstAdminSmtpConfig();
-        if (smtpConfig) {
-          console.log("[SMTP] Using database SMTP configuration");
-        } else {
-          console.log(
-            "[SMTP] No database SMTP config found, using environment variables"
-          );
+        if (userType === "customer" && resellerId) {
+          smtpConfig = await getResellerSmtpConfig(resellerId);
+          if (smtpConfig) {
+            console.log("[SMTP] Using reseller SMTP for customer OTP");
+          }
+        }
+        if (!smtpConfig) {
+          smtpConfig = await getFirstAdminSmtpConfig();
+          if (smtpConfig) {
+            console.log("[SMTP] Using admin database SMTP configuration");
+          } else {
+            console.log(
+              "[SMTP] No database SMTP config found, using environment variables"
+            );
+          }
         }
       } catch (error) {
         console.warn(
-          "[SMTP] Error fetching database SMTP config, using environment variables:",
+          "[SMTP] Error fetching SMTP config, using environment variables:",
           error.message
         );
       }
 
-      // Create transporter
       const transporterResult = createTransporter(smtpConfig);
 
       if (!transporterResult.transporter) {
@@ -670,7 +603,6 @@ export class OTPService {
           transporterResult.error || "Email service not configured";
         console.error("[SMTP]", errorMsg);
 
-        // Provide helpful guidance
         let userMessage = "Email service not configured. ";
         if (errorMsg.includes("username") || errorMsg.includes("password")) {
           userMessage +=
@@ -686,7 +618,6 @@ export class OTPService {
         };
       }
 
-      // Verify connection (optional but recommended)
       const verification = await verifyTransporter(
         transporterResult.transporter
       );
@@ -702,7 +633,6 @@ export class OTPService {
         };
       }
 
-      // Prepare email content
       const fromName =
         smtpConfig?.from_name || SMTP_FROM_NAME || "Virtual Number";
       const fromEmail =
@@ -719,22 +649,53 @@ export class OTPService {
         };
       }
 
+      const OTP_EXPIRY_MINUTES = 5;
+      const templateType =
+        userType === "customer"
+          ? TEMPLATE_TYPE.CUSTOMER_EMAIL_VERIFICATION_OTP
+          : TEMPLATE_TYPE.ADMIN_EMAIL_VERIFICATION_OTP;
+      const templateContext =
+        userType === "customer" && resellerId
+          ? { resellerId }
+          : {};
+
+      let templateVars = {
+        otp,
+        expiry_time: String(OTP_EXPIRY_MINUTES),
+        user: email.split("@")[0] || email,
+      };
+
+      if (userType === "customer" && resellerId) {
+        const branding = await fetchResellerBrandingForOtp(resellerId);
+        templateVars.brand_name = branding?.brand_name || "Team";
+        templateVars.support_number = branding?.support_number || "";
+        templateVars.support_email = branding?.support_email || "";
+      } else {
+        templateVars.platform_name = PLATFORM_NAME;
+        templateVars.support_number = PLATFORM_SUPPORT_NUMBER;
+        templateVars.support_email = PLATFORM_SUPPORT_EMAIL;
+      }
+
+      let resolvedContent = await resolveTransactionalEmail(
+        templateType,
+        templateVars,
+        templateContext,
+      );
+
+      if (!resolvedContent?.subject || !resolvedContent?.html) {
+        resolvedContent = {
+          subject: "Email Verification OTP",
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;"><h2>Email Verification</h2><p>Your OTP is:</p><p style="font-size:28px;font-weight:bold;">${otp}</p><p>This OTP expires in ${OTP_EXPIRY_MINUTES} minutes.</p></div>`,
+          text: `Your OTP is ${otp}. Expires in ${OTP_EXPIRY_MINUTES} minutes.`,
+        };
+      }
+
       const mailOptions = {
         from: `"${fromName}" <${fromEmail}>`,
         to: email,
-        subject: "Email Verification OTP",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #333; margin-bottom: 20px;">Email Verification</h2>
-            <p style="color: #666; font-size: 16px;">Your OTP for email verification is:</p>
-            <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; border-radius: 8px;">
-              ${otp}
-            </div>
-            <p style="color: #666; font-size: 14px;">This OTP will expire in 5 minutes.</p>
-            <p style="color: #999; font-size: 12px; margin-top: 30px;">If you didn't request this OTP, please ignore this email.</p>
-          </div>
-        `,
-        text: `Your OTP for email verification is: ${otp}. This OTP will expire in 5 minutes.`,
+        subject: resolvedContent.subject,
+        html: resolvedContent.html,
+        text: resolvedContent.text,
       };
 
       console.log(`[SMTP] Sending email to ${email} from ${fromEmail}`);
@@ -763,7 +724,6 @@ export class OTPService {
         stack: error.stack,
       });
 
-      // Provide user-friendly error messages
       let userMessage = "Failed to send email OTP";
 
       if (error.code === "EAUTH") {
@@ -792,38 +752,31 @@ export class OTPService {
   }
 
   /**
-   * Send WhatsApp OTP
-   * @param {string} phone - Phone number
-   * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
+   * Deliver WhatsApp OTP template (OTP must already be stored).
    */
-  static async sendWhatsAppOTP(phone, userType = "reseller") {
+  static async _deliverWhatsAppOtp(phone, otp, userType = "reseller", resellerId = null) {
     try {
-      const otp = this.generateOTP();
-
-      // Store OTP
-      const storeResult = await this.storeOTP(null, phone, otp, "phone", userType);
-      if (!storeResult.success) {
-        return storeResult;
+      const whatsappConfig = await resolveWhatsAppConfigForOtp(
+        userType,
+        resellerId
+      );
+      if (!whatsappConfig?.api_key || !whatsappConfig?.phone_number_id) {
+        return {
+          success: false,
+          message:
+            "WhatsApp is not configured for this flow. Configure reseller or admin WhatsApp, or set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.",
+        };
       }
 
-      // Get WhatsApp config from admin settings or use defaults
-      const whatsappConfig = await getWhatsAppConfig();
-
-      // Format phone number (remove + and ensure country code)
       const formattedPhone = phone.startsWith("+")
         ? phone.substring(1)
         : phone.startsWith("91")
         ? phone
         : `91${phone}`;
 
-      // Use WhatsApp Cloud API
       const apiUrl = `${whatsappConfig.api_url}/${whatsappConfig.phone_number_id}/messages`;
       const accessToken = whatsappConfig.api_key;
 
-      // Build template payload.
-      // The 'botbeeotp' template has:
-      //   - A body with one variable: the OTP code
-      //   - A URL button at index 0 that requires one dynamic parameter (the OTP, appended to the button URL)
       const components = [
         {
           type: "body",
@@ -841,7 +794,7 @@ export class OTPService {
           parameters: [
             {
               type: "text",
-              text: otp, // OTP appended to the button URL as the dynamic suffix
+              text: otp,
             },
           ],
         },
@@ -890,5 +843,124 @@ export class OTPService {
         errorDetails: errorData?.error_data?.details,
       };
     }
+  }
+
+  /**
+   * Send email OTP with comprehensive error handling
+   * @param {string} email - Email address
+   * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
+   * @param {string|null} [resellerId] - When userType is customer, use this reseller's SMTP first; then admin/env (lenient fallback)
+   */
+  static async sendEmailOTP(email, userType = "reseller", resellerId = null) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      return {
+        success: false,
+        message: "Invalid email address format",
+      };
+    }
+
+    const rl = assertOtpRateLimit(`email:${email}:${userType}`);
+    if (!rl.ok) {
+      return { success: false, message: rl.message };
+    }
+
+    const otp = this.generateOTP();
+    console.log(`[OTP] Generating OTP for email: ${email} (user_type: ${userType})`);
+
+    const storeResult = await this.storeOTP(email, null, otp, "email", userType);
+    if (!storeResult.success) {
+      console.error("[OTP] Failed to store OTP:", storeResult.message);
+      return storeResult;
+    }
+
+    console.log("[OTP] OTP stored successfully");
+    return await this._deliverEmailOtp(email, otp, userType, resellerId);
+  }
+
+  /**
+   * Same OTP on email and WhatsApp (verify via /verify-email or /verify-phone with the same code).
+   * Rate-limited separately from single-channel sends.
+   */
+  static async sendDualChannelOtp(
+    email,
+    phone,
+    userType = "reseller",
+    resellerId = null,
+  ) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      return { success: false, message: "Invalid email address format" };
+    }
+    const phoneStr = phone != null ? String(phone).trim() : "";
+    if (!phoneStr || phoneStr.replace(/\D/g, "").length < 10) {
+      return { success: false, message: "Invalid phone number" };
+    }
+
+    const rl = assertOtpRateLimit(`dual:${email}:${phoneStr}:${userType}`);
+    if (!rl.ok) {
+      return { success: false, message: rl.message };
+    }
+
+    const otp = this.generateOTP();
+    const s1 = await this.storeOTP(email, null, otp, "email", userType);
+    if (!s1.success) {
+      return s1;
+    }
+    const s2 = await this.storeOTP(null, phoneStr, otp, "phone", userType);
+    if (!s2.success) {
+      return s2;
+    }
+
+    const emailRes = await this._deliverEmailOtp(email, otp, userType, resellerId);
+    const waRes = await this._deliverWhatsAppOtp(phoneStr, otp, userType, resellerId);
+
+    const ok = emailRes.success && waRes.success;
+    let message = "OTP sent to your email and WhatsApp";
+    if (!ok) {
+      if (!emailRes.success && !waRes.success) {
+        message = "Failed to send OTP on both channels";
+      } else if (!emailRes.success) {
+        message =
+          "OTP sent to WhatsApp; email delivery failed. You can verify using WhatsApp, or request a new OTP.";
+      } else {
+        message =
+          "OTP sent to email; WhatsApp delivery failed. You can verify using email, or request a new OTP.";
+      }
+    }
+
+    return {
+      success: ok,
+      message,
+      email: emailRes,
+      whatsapp: waRes,
+    };
+  }
+
+  /**
+   * Send WhatsApp OTP
+   * @param {string} phone - Phone number
+   * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
+   * @param {string|null} [resellerId] - When userType is customer, use reseller WhatsApp config first (see whatsappConfig.service)
+   */
+  static async sendWhatsAppOTP(phone, userType = "reseller", resellerId = null) {
+    const phoneStr = phone != null ? String(phone).trim() : "";
+    if (!phoneStr || phoneStr.replace(/\D/g, "").length < 10) {
+      return { success: false, message: "Invalid phone number" };
+    }
+
+    const rl = assertOtpRateLimit(`phone:${phoneStr}:${userType}`);
+    if (!rl.ok) {
+      return { success: false, message: rl.message };
+    }
+
+    const otp = this.generateOTP();
+
+    const storeResult = await this.storeOTP(null, phoneStr, otp, "phone", userType);
+    if (!storeResult.success) {
+      return storeResult;
+    }
+
+    return await this._deliverWhatsAppOtp(phoneStr, otp, userType, resellerId);
   }
 }
