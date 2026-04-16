@@ -6,6 +6,10 @@ import {
   updateAdmin,
   deleteAdmin
 } from '../controllers/admin.controller.js';
+import {
+  notifyResellersMaintenanceDisabled,
+  notifyResellersMaintenanceEnabled,
+} from '../controllers/maintenance.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -16,6 +20,28 @@ const router = express.Router();
  * @access  Private (requires authentication)
  */
 router.get('/list', authMiddleware, getAdminList);
+
+/**
+ * @route   POST /api/admin/maintenance/notify-resellers-enabled
+ * @desc    Broadcast maintenance-on email to all eligible resellers
+ * @access  Private (admin / super_admin)
+ */
+router.post(
+  '/maintenance/notify-resellers-enabled',
+  authMiddleware,
+  notifyResellersMaintenanceEnabled,
+);
+
+/**
+ * @route   POST /api/admin/maintenance/notify-resellers-disabled
+ * @desc    Broadcast maintenance-off email to all eligible resellers
+ * @access  Private (admin / super_admin)
+ */
+router.post(
+  '/maintenance/notify-resellers-disabled',
+  authMiddleware,
+  notifyResellersMaintenanceDisabled,
+);
 
 /**
  * @route   GET /api/admin/:id

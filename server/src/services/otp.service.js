@@ -8,9 +8,8 @@ import { resolveTransactionalEmail } from "./emailTemplateResolver.js";
 import { TEMPLATE_TYPE } from "../../mailtemplate/emailTemplateRegistry.js";
 import {
   fetchResellerBrandingForOtp,
+  fetchPlatformSupportFromAdminSettings,
   PLATFORM_NAME,
-  PLATFORM_SUPPORT_EMAIL,
-  PLATFORM_SUPPORT_NUMBER,
 } from "./transactionalEmail.service.js";
 import nodemailer from "nodemailer";
 import axios from "axios";
@@ -654,10 +653,14 @@ export class OTPService {
         userType === "customer"
           ? TEMPLATE_TYPE.CUSTOMER_EMAIL_VERIFICATION_OTP
           : TEMPLATE_TYPE.ADMIN_EMAIL_VERIFICATION_OTP;
-      const templateContext =
-        userType === "customer" && resellerId
-          ? { resellerId }
-          : {};
+      let templateContext = {};
+      if (userType === "customer" && resellerId) {
+        templateContext = { resellerId };
+        const uid = await OTPService.getUserId(email, null, "customer");
+        if (uid?.id && uid.user_type === "customer") {
+          templateContext.customerId = uid.id;
+        }
+      }
 
       let templateVars = {
         otp,
@@ -672,8 +675,9 @@ export class OTPService {
         templateVars.support_email = branding?.support_email || "";
       } else {
         templateVars.platform_name = PLATFORM_NAME;
-        templateVars.support_number = PLATFORM_SUPPORT_NUMBER;
-        templateVars.support_email = PLATFORM_SUPPORT_EMAIL;
+        const platSupport = await fetchPlatformSupportFromAdminSettings();
+        templateVars.support_number = platSupport.support_number;
+        templateVars.support_email = platSupport.support_email;
       }
 
       let resolvedContent = await resolveTransactionalEmail(

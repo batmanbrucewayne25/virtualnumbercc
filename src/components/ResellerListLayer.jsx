@@ -328,23 +328,74 @@ const ResellerListLayer = () => {
 
     try {
       const result = await updateMstResellerStatus(reseller.id, newStatus);
-      
-      if (result.success) {
-        setSuccess(`Reseller ${action}d successfully!`);
-        setTimeout(() => {
-          setSuccess("");
-          setToggleStatusModalOpen(false);
-          setSelectedReseller(null);
-          setPendingToggleAction(null);
-          fetchResellers();
-        }, 2000);
-      } else {
+
+      if (!result.success) {
         setError(result.message || `Failed to ${action} reseller`);
-        setActionLoading(false);
+        return;
       }
+
+      if (newStatus === false && reseller.email) {
+        const resellerName =
+          reseller.business_name ||
+          `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
+          reseller.email;
+        try {
+          const API_BASE_URL = getApiBaseUrl();
+          const response = await fetch(
+            `${API_BASE_URL}/notifications/reseller-account-deactivated`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${typeof window !== "undefined" ? (localStorage.getItem("authToken") || "") : ""}`,
+              },
+              body: JSON.stringify({
+                email: reseller.email,
+                resellerName,
+              }),
+            },
+          );
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(
+              "[Reseller Deactivate] Notification API error:",
+              response.status,
+              errorText,
+            );
+          } else {
+            const notificationResult = await response.json();
+            if (!notificationResult.success) {
+              console.warn(
+                "[Reseller Deactivate] Failed to send email:",
+                notificationResult.message,
+              );
+            }
+          }
+        } catch (apiError) {
+          console.warn(
+            "[Reseller Deactivate] Error calling notification API:",
+            apiError,
+          );
+        }
+      }
+
+      setResellers((prev) =>
+        prev.map((r) =>
+          r.id === reseller.id ? { ...r, status: newStatus } : r,
+        ),
+      );
+      setSuccess(`Reseller ${action}d successfully!`);
+      setTimeout(() => {
+        setSuccess("");
+        setToggleStatusModalOpen(false);
+        setSelectedReseller(null);
+        setPendingToggleAction(null);
+        fetchResellers();
+      }, 2000);
     } catch (err) {
       console.error(`Error ${action}ing reseller:`, err);
       setError(err.message || `An error occurred while ${action}ing reseller`);
+    } finally {
       setActionLoading(false);
     }
   };

@@ -750,6 +750,7 @@ export class CustomerService {
         resellerSmtpConfig,
         {
           resellerId: customer.reseller_id,
+          customerId,
           supportNumber: reseller?.support_number || "",
           supportEmail: reseller?.support_email || "",
         },
@@ -936,6 +937,7 @@ export class CustomerService {
         const purchaseDateStr = new Date().toISOString().split("T")[0];
         const vnOpts = {
           resellerId: effectiveResellerId,
+          customerId: customer_id,
           forwardNumber: customer.phone || "",
           startDate: purchaseDateStr,
           endDate: virtualNumberRecord?.expiry_date || "",
@@ -963,6 +965,7 @@ export class CustomerService {
             customerName: customer.profile_name || customer.email,
             virtualNumber,
             resellerId: effectiveResellerId,
+            customerId: customer_id,
           });
           await sendOfflinePaymentApprovedAdminEmail({
             resellerEmail: reseller.email,
@@ -971,6 +974,7 @@ export class CustomerService {
             virtualNumber,
             amount: parseFloat(payment_amount) || 0,
             resellerId: effectiveResellerId,
+            customerId: customer_id,
           });
           if (customer.phone) {
             await notifyCustomerNumberActivatedWhatsApp({
@@ -993,6 +997,7 @@ export class CustomerService {
               startDate: purchaseDateStr,
               endDate: virtualNumberRecord?.expiry_date || "",
               resellerId: effectiveResellerId,
+              customerId: customer_id,
             });
           }
         } catch (offNotifyErr) {
@@ -1012,6 +1017,7 @@ export class CustomerService {
             reseller,
             resellerId: effectiveResellerId,
             smtpConfig: resellerSmtpConfig,
+            customerId: customer_id,
           });
         } catch (kycMailErr) {
           console.warn(
@@ -1188,6 +1194,7 @@ export class CustomerService {
           resellerSmtpConfig,
           {
             resellerId: effectiveResellerId,
+            customerId: customer_id,
             supportNumber: reseller.support_number || "",
             supportEmail: reseller.support_email || "",
           },
@@ -1419,6 +1426,7 @@ export class CustomerService {
         resellerSmtpConfig,
         {
           resellerId: effectiveResellerId,
+          customerId: customer.id,
           supportNumber: reseller.support_number || "",
           supportEmail: reseller.support_email || "",
         },
@@ -1964,6 +1972,7 @@ export class CustomerService {
             resellerSmtpConfig,
             {
               resellerId: effectiveResellerId,
+              customerId: customer_id,
               forwardNumber: forwardNumber || "",
               startDate: purchaseDateStr,
               endDate: virtualNumberRecord?.expiry_date || "",
@@ -2106,6 +2115,7 @@ export class CustomerService {
           resellerSmtpConfig,
           {
             resellerId: effectiveResellerId,
+            customerId: customer_id,
             supportNumber: reseller.support_number || "",
             supportEmail: reseller.support_email || "",
           },

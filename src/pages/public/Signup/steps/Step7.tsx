@@ -1,11 +1,12 @@
 import { getMstResellerByEmail, completeSignupStep } from "@/hasura/mutations";
 import { Step6Props } from "@/types/auth/signup";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import SignaturePad from "@/components/SignaturePad";
 import { getAuthToken } from "@/utils/auth";
 import { formatAddressDisplayMultiline } from "@/utils/addressDisplay.js";
 import { useStepValidation } from "@/hooks/useStepValidation";
+import { getApiBaseUrl } from "@/utils/apiUrl";
+import { buildLogoPublicUrl, buildUploadedAssetUrl } from "@/utils/resellerAssetUrl.js";
 
 interface UserData {
   address?: string | string[];
@@ -42,11 +43,12 @@ interface UserData {
   id?: string;
 }
 
-const Step6 = ({
+const Step7 = ({
   email,
   onBack,
   onSubmit,
-  termsPageHref = "/page/terms-and-conditions",
+  onOpenTermsModal,
+  onOpenPrivacyModal,
 }: Step6Props) => {
   // Validate step access
   const { isValid, loading: validatingStep } = useStepValidation({ email, currentStep: 7 });
@@ -84,9 +86,7 @@ const Step6 = ({
             const logoValue = result.mst_reseller[0].logo;
             const logoFilename = logoValue.includes('/') ? logoValue.split('/').pop() || logoValue : logoValue;
             setLogo(logoFilename);
-            // Build preview URL from VITE_IMAGE_UPLOAD_PATH (DB-stored filenames use this base)
-            const uploadBase = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads";
-            setLogoPreviewUrl(`${uploadBase}/logos/${logoFilename}`);
+            setLogoPreviewUrl(buildLogoPublicUrl(logoValue) || "");
           }
           if (result.mst_reseller[0].signatureImage) {
             setSignatureUploaded(true);
@@ -147,9 +147,7 @@ const Step6 = ({
 
     try {
       const token = getAuthToken();
-      const { getApiBaseUrl } = await import("@/utils/apiUrl");
       const API_BASE_URL = getApiBaseUrl();
-      const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads";
 
       const uploadFormData = new FormData();
       uploadFormData.append("logo", logoFile);
@@ -212,9 +210,7 @@ const Step6 = ({
 
     try {
       const token = getAuthToken();
-      const { getApiBaseUrl } = await import("@/utils/apiUrl");
       const API_BASE_URL = getApiBaseUrl();
-      const IMAGE_UPLOAD_PATH = (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads';
 
       // Create FormData
       const signatureFormData = new FormData();
@@ -240,7 +236,7 @@ const Step6 = ({
         if (result.success && result.data?.filename) {
           // Store only the filename (not the full URL) to send to GraphQL
           const filename = result.data.filename;
-          const signatureUrl = `${IMAGE_UPLOAD_PATH}/signatures/${filename}`;
+          const signatureUrl = buildUploadedAssetUrl(filename, "signatures");
           console.log("✅ Signature uploaded successfully");
           console.log("Filename from server:", filename);
           console.log("Full signature URL (for preview):", signatureUrl);
@@ -456,7 +452,7 @@ const Step6 = ({
               <p className="text-sm mb-4"><strong>Phone:</strong> {userData.phone}</p>
               <p className="text-sm mb-4"><strong>Logo:</strong> {userData.logo ? (
                 <img
-                  src={userData.logo.startsWith("data:") || userData.logo.startsWith("http") ? userData.logo : `${(import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads"}/logos/${userData.logo}`}
+                  src={buildLogoPublicUrl(userData.logo) || ""}
                   alt="Logo"
                   style={{ height: 32, objectFit: "contain" }}
                 />
@@ -561,15 +557,15 @@ const Step6 = ({
                 alt="Logo preview"
                 style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
                 onError={(e) => {
-                  // If the primary URL fails (e.g. env mismatch), try the API server origin
-                  const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:3001/api/";
-                  const apiOrigin = apiBase.replace(/\/api\/?$/, "");
-                  const fallback = `${apiOrigin}/uploads/logos/${logo}`;
-                  if (e.currentTarget.src !== fallback) {
-                    e.currentTarget.src = fallback;
-                  } else {
-                    e.currentTarget.src = "assets/images/logo-icon.png";
-                  }
+                  const el = e.currentTarget;
+                  const fromHelper = buildLogoPublicUrl(logo);
+                  const bare =
+                    logo && !/^(https?:\/\/|data:|\/)/i.test(logo)
+                      ? `${new URL(getApiBaseUrl()).origin}/uploads/logos/${String(logo).replace(/^(logos\/)+/i, "")}`
+                      : null;
+                  if (fromHelper && el.src !== fromHelper) el.src = fromHelper;
+                  else if (bare && el.src !== bare) el.src = bare;
+                  else el.src = "assets/images/logo-icon.png";
                 }}
               />
             </div>
@@ -652,14 +648,33 @@ const Step6 = ({
           onChange={(e) => setAcceptedTerms(e.target.checked)}
         />
         <label className="form-check-label" htmlFor="termsCheckbox">
-          I agree to{" "}
-          <Link
-            to={termsPageHref}
-            className="text-primary-600 fw-semibold text-decoration-underline"
-            onClick={(e) => e.stopPropagation()}
+          I agree to the{" "}
+          <button
+            type="button"
+            className="text-primary-600 fw-semibold text-decoration-underline border-0 bg-transparent p-0 align-baseline"
+            style={{ cursor: "pointer" }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenTermsModal?.();
+            }}
           >
             Terms &amp; Conditions
-          </Link>{" "}
+          </button>
+          {" "}and{" "}
+          <button
+            type="button"
+            className="text-primary-600 fw-semibold text-decoration-underline border-0 bg-transparent p-0 align-baseline"
+            style={{ cursor: "pointer" }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenPrivacyModal?.();
+            }}
+          >
+            Privacy Policy
+          </button>
+          {" "}
           and confirm that all information provided is accurate.
         </label>
       </div>
@@ -693,4 +708,4 @@ const Step6 = ({
   );
 };
 
-export default Step6;
+export default Step7;

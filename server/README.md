@@ -64,6 +64,12 @@ server/
    CORS_ORIGIN=http://localhost:5173
    ```
 
+   **Transactional email (admin / platform):** set `PLATFORM_LOGO_URL` to a full `https://…` image URL so admin emails (e.g. email OTP) show your logo in the HTML header. Example (production):
+
+   `PLATFORM_LOGO_URL=https://app.virtualnumberindia.in/assets/images/own/dlogo.png`
+
+   Reseller-scoped emails use reseller logos from the database and `PUBLIC_API_BASE_URL` instead; see `server/src/utils/emailBranding.js`.
+
 ## Running the Server
 
 **Development mode (with auto-reload):**

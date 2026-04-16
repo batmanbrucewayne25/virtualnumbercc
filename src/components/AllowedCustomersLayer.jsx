@@ -65,15 +65,18 @@ const AllowedCustomersLayer = () => {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addModalError, setAddModalError] = useState("");
   const [addEmail, setAddEmail] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editModalError, setEditModalError] = useState("");
   const [editRow, setEditRow] = useState(null);
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteModalError, setDeleteModalError] = useState("");
   const [deleteRow, setDeleteRow] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
@@ -200,11 +203,11 @@ const AllowedCustomersLayer = () => {
     const eTrim = (addEmail || "").trim();
     const pTrim = (addPhone || "").replace(/\D/g, "");
     if (!eTrim && pTrim.length < 10) {
-      setError("Enter at least one valid email or phone (10+ digits).");
+      setAddModalError("Enter at least one valid email or phone (10+ digits).");
       return;
     }
     setAddSubmitting(true);
-    setError("");
+    setAddModalError("");
     try {
       const result = await insertResellerAllowedCustomerOne(resellerId, {
         email: eTrim || null,
@@ -214,14 +217,15 @@ const AllowedCustomersLayer = () => {
         setAddModalOpen(false);
         setAddEmail("");
         setAddPhone("");
+        setAddModalError("");
         setSuccess("Contact added.");
         setTimeout(() => setSuccess(""), 3000);
         await fetchList();
       } else {
-        setError(result.message || "Failed to add contact.");
+        setAddModalError(result.message || "Failed to add contact.");
       }
     } catch (err) {
-      setError(err?.message || "Failed to add contact.");
+      setAddModalError(err?.message || "Failed to add contact.");
     } finally {
       setAddSubmitting(false);
     }
@@ -231,6 +235,7 @@ const AllowedCustomersLayer = () => {
     setEditRow(row);
     setEditEmail(row.email || "");
     setEditPhone(row.phone || "");
+    setEditModalError("");
     setEditModalOpen(true);
     setError("");
   };
@@ -241,11 +246,11 @@ const AllowedCustomersLayer = () => {
     const eTrim = (editEmail || "").trim();
     const pTrim = (editPhone || "").replace(/\D/g, "");
     if (!eTrim && pTrim.length < 10) {
-      setError("Enter at least one valid email or phone (10+ digits).");
+      setEditModalError("Enter at least one valid email or phone (10+ digits).");
       return;
     }
     setEditSubmitting(true);
-    setError("");
+    setEditModalError("");
     try {
       const result = await updateResellerAllowedCustomerByPk(editRow.id, {
         email: eTrim || null,
@@ -254,14 +259,15 @@ const AllowedCustomersLayer = () => {
       if (result.success) {
         setEditModalOpen(false);
         setEditRow(null);
+        setEditModalError("");
         setSuccess("Contact updated.");
         setTimeout(() => setSuccess(""), 3000);
         await fetchList();
       } else {
-        setError(result.message || "Failed to update.");
+        setEditModalError(result.message || "Failed to update.");
       }
     } catch (err) {
-      setError(err?.message || "Failed to update.");
+      setEditModalError(err?.message || "Failed to update.");
     } finally {
       setEditSubmitting(false);
     }
@@ -269,26 +275,28 @@ const AllowedCustomersLayer = () => {
 
   const openDeleteModal = (row) => {
     setDeleteRow(row);
+    setDeleteModalError("");
     setDeleteModalOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
     if (!deleteRow) return;
     setDeleteSubmitting(true);
-    setError("");
+    setDeleteModalError("");
     try {
       const result = await deleteResellerAllowedCustomerByPk(deleteRow.id);
       if (result.success) {
         setDeleteModalOpen(false);
         setDeleteRow(null);
+        setDeleteModalError("");
         setSuccess("Contact removed.");
         setTimeout(() => setSuccess(""), 3000);
         await fetchList();
       } else {
-        setError(result.message || "Failed to delete.");
+        setDeleteModalError(result.message || "Failed to delete.");
       }
     } catch (err) {
-      setError(err?.message || "Failed to delete.");
+      setDeleteModalError(err?.message || "Failed to delete.");
     } finally {
       setDeleteSubmitting(false);
     }
@@ -402,7 +410,17 @@ const AllowedCustomersLayer = () => {
             >
               {uploading ? "Uploading..." : "Upload list"}
             </button>
-            <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => { setAddEmail(""); setAddPhone(""); setError(""); setAddModalOpen(true); }}>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary"
+              onClick={() => {
+                setAddEmail("");
+                setAddPhone("");
+                setAddModalError("");
+                setError("");
+                setAddModalOpen(true);
+              }}
+            >
               Add contact
             </button>
             <a
@@ -479,17 +497,34 @@ const AllowedCustomersLayer = () => {
             <div className="modal-content radius-12">
               <div className="modal-header border-bottom">
                 <h5 className="modal-title text-md text-primary-light">Add contact</h5>
-                <button type="button" className="btn-close" onClick={() => setAddModalOpen(false)} aria-label="Close" />
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setAddModalOpen(false);
+                    setAddModalError("");
+                  }}
+                  aria-label="Close"
+                />
               </div>
               <form onSubmit={handleAddSubmit}>
                 <div className="modal-body p-24">
+                  {addModalError && (
+                    <div className="alert alert-danger radius-8 py-2 px-3 mb-3" role="alert">
+                      <Icon icon="material-symbols:error-outline" className="icon me-2 align-middle" />
+                      {addModalError}
+                    </div>
+                  )}
                   <div className="mb-3">
                     <label className="form-label">Email (optional)</label>
                     <input
                       type="email"
                       className="form-control"
                       value={addEmail}
-                      onChange={(e) => setAddEmail(e.target.value)}
+                      onChange={(e) => {
+                        setAddEmail(e.target.value);
+                        if (addModalError) setAddModalError("");
+                      }}
                       placeholder="email@example.com"
                     />
                   </div>
@@ -499,14 +534,24 @@ const AllowedCustomersLayer = () => {
                       type="text"
                       className="form-control"
                       value={addPhone}
-                      onChange={(e) => setAddPhone(e.target.value)}
+                      onChange={(e) => {
+                        setAddPhone(e.target.value);
+                        if (addModalError) setAddModalError("");
+                      }}
                       placeholder="10+ digits"
                     />
                   </div>
                   <p className="text-muted small mt-2 mb-0">At least one of email or phone is required.</p>
                 </div>
                 <div className="modal-footer border-top">
-                  <button type="button" className="btn btn-secondary" onClick={() => setAddModalOpen(false)}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setAddModalOpen(false);
+                      setAddModalError("");
+                    }}
+                  >
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary" disabled={addSubmitting}>
@@ -526,17 +571,34 @@ const AllowedCustomersLayer = () => {
             <div className="modal-content radius-12">
               <div className="modal-header border-bottom">
                 <h5 className="modal-title text-md text-primary-light">Edit contact</h5>
-                <button type="button" className="btn-close" onClick={() => setEditModalOpen(false)} aria-label="Close" />
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setEditModalOpen(false);
+                    setEditModalError("");
+                  }}
+                  aria-label="Close"
+                />
               </div>
               <form onSubmit={handleEditSubmit}>
                 <div className="modal-body p-24">
+                  {editModalError && (
+                    <div className="alert alert-danger radius-8 py-2 px-3 mb-3" role="alert">
+                      <Icon icon="material-symbols:error-outline" className="icon me-2 align-middle" />
+                      {editModalError}
+                    </div>
+                  )}
                   <div className="mb-3">
                     <label className="form-label">Email (optional)</label>
                     <input
                       type="email"
                       className="form-control"
                       value={editEmail}
-                      onChange={(e) => setEditEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEditEmail(e.target.value);
+                        if (editModalError) setEditModalError("");
+                      }}
                       placeholder="email@example.com"
                     />
                   </div>
@@ -546,14 +608,24 @@ const AllowedCustomersLayer = () => {
                       type="text"
                       className="form-control"
                       value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
+                      onChange={(e) => {
+                        setEditPhone(e.target.value);
+                        if (editModalError) setEditModalError("");
+                      }}
                       placeholder="10+ digits"
                     />
                   </div>
                   <p className="text-muted small mt-2 mb-0">At least one of email or phone is required.</p>
                 </div>
                 <div className="modal-footer border-top">
-                  <button type="button" className="btn btn-secondary" onClick={() => setEditModalOpen(false)}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setEditModalOpen(false);
+                      setEditModalError("");
+                    }}
+                  >
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary" disabled={editSubmitting}>
@@ -573,15 +645,36 @@ const AllowedCustomersLayer = () => {
             <div className="modal-content radius-12">
               <div className="modal-header border-bottom">
                 <h5 className="modal-title text-md text-primary-light">Remove contact</h5>
-                <button type="button" className="btn-close" onClick={() => setDeleteModalOpen(false)} aria-label="Close" />
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setDeleteModalOpen(false);
+                    setDeleteModalError("");
+                  }}
+                  aria-label="Close"
+                />
               </div>
               <div className="modal-body p-24">
+                {deleteModalError && (
+                  <div className="alert alert-danger radius-8 py-2 px-3 mb-3" role="alert">
+                    <Icon icon="material-symbols:error-outline" className="icon me-2 align-middle" />
+                    {deleteModalError}
+                  </div>
+                )}
                 <p className="mb-0">
                   Remove <strong>{deleteRow.email || deleteRow.phone || "this contact"}</strong> from the allowed list?
                 </p>
               </div>
               <div className="modal-footer border-top">
-                <button type="button" className="btn btn-secondary" onClick={() => setDeleteModalOpen(false)}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setDeleteModalOpen(false);
+                    setDeleteModalError("");
+                  }}
+                >
                   Cancel
                 </button>
                 <button type="button" className="btn btn-danger" onClick={handleDeleteConfirm} disabled={deleteSubmitting}>

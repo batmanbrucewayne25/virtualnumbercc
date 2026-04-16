@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
-import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState, useCallback, type MouseEvent } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getMstResellerById } from "@/hasura/mutations/reseller";
-import { getPublishedCmsPages } from "@/hasura/mutations/cms";
+import { getPublishedCmsPages, getCmsPageBySlug } from "@/hasura/mutations/cms";
+import CmsPageModal from "@/components/CmsPageModal";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
+import { buildLogoPublicUrl } from "@/utils/resellerAssetUrl.js";
 import { isAuthenticated } from "@/utils/auth.js";
 import Step1 from "./steps/Step1";
 import Step2 from "./steps/Step2";
@@ -92,6 +94,9 @@ const ClientHubLayer = ({
   });
   const [progressRestored, setProgressRestored] = useState(false);
   const [cmsPages, setCmsPages] = useState<any[]>([]);
+  const [cmsModalOpen, setCmsModalOpen] = useState(false);
+  const [selectedCmsPage, setSelectedCmsPage] = useState<any>(null);
+  const [cmsPageLoading, setCmsPageLoading] = useState(false);
 
   // ClientHub deploy: already logged in (e.g. reseller) → dashboard, not onboarding
   useEffect(() => {
@@ -118,6 +123,24 @@ const ClientHubLayer = ({
     };
     fetchCms();
   }, [resellerId]);
+
+  const handleCmsFooterClick = async (e: MouseEvent, page: any) => {
+    e.preventDefault();
+    if (!resellerId) return;
+    setCmsPageLoading(true);
+    setCmsModalOpen(true);
+    setSelectedCmsPage(null);
+    try {
+      const result = await getCmsPageBySlug(page.slug, resellerId);
+      if (result.success && result.data) {
+        setSelectedCmsPage(result.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch CMS page:", err);
+    } finally {
+      setCmsPageLoading(false);
+    }
+  };
 
   useEffect(() => {
     // If resellerId is provided as prop (admin mode), use it directly
@@ -401,12 +424,7 @@ const ClientHubLayer = ({
     );
   }
 
-  const imageBasePath = (import.meta as any).env?.VITE_IMAGE_BASE_PATH || "http://localhost:3001/uploads";
-  const resellerLogoUrl = resellerData?.logo
-    ? (resellerData.logo.startsWith("data:") || resellerData.logo.startsWith("http")
-        ? resellerData.logo
-        : `${imageBasePath}/logos/${resellerData.logo}`)
-    : null;
+  const resellerLogoUrl = buildLogoPublicUrl(resellerData?.logo);
   const resellerLogoAlt = resellerData?.brand_name || resellerData?.business_name || "Logo";
 
   return (
@@ -435,7 +453,7 @@ const ClientHubLayer = ({
         <div className="max-w-464-px mx-auto w-100">
           {/* LOGO & BRAND */}
           <div className="mb-40">
-            <Link to="/index" className="max-w-290-px d-block">
+            <div className="max-w-290-px d-block">
               {resellerLogoUrl ? (
                 <img
                   src={resellerLogoUrl}
@@ -448,7 +466,7 @@ const ClientHubLayer = ({
               ) : (
                 <img src="assets/images/own/dlogo.png" alt="Logo" />
               )}
-            </Link>
+            </div>
             {resellerData?.brand_name && (
               <h5 className="mt-12 text-primary-light fw-bold">
                 {resellerData.brand_name}
@@ -603,13 +621,15 @@ const ClientHubLayer = ({
             <div className="mt-24 text-center">
               <div className="d-flex flex-wrap justify-content-center gap-3">
                 {cmsPages.map((page: any) => (
-                  <Link
+                  <button
                     key={page.id}
-                    to={`/page/${page.slug}?reseller_id=${resellerId}`}
-                    className="text-sm text-secondary-light text-decoration-none"
+                    type="button"
+                    onClick={(e) => handleCmsFooterClick(e, page)}
+                    className="text-sm text-secondary-light text-decoration-underline border-0 bg-transparent p-0"
+                    style={{ cursor: "pointer" }}
                   >
                     {page.page_title}
-                  </Link>
+                  </button>
                 ))}
               </div>
             </div>
@@ -620,6 +640,16 @@ const ClientHubLayer = ({
           </p>
         </div>
       </div>
+
+      <CmsPageModal
+        isOpen={cmsModalOpen}
+        onClose={() => {
+          setCmsModalOpen(false);
+          setSelectedCmsPage(null);
+        }}
+        page={selectedCmsPage}
+        loading={cmsPageLoading}
+      />
     </section>
   );
 };

@@ -1,5 +1,7 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { getHasuraClient } from '../config/hasura.client.js';
+import { formatCustomerDisplayName } from '../utils/emailBranding.js';
+import { sendCustomerKycSubmittedAdminEmail } from '../services/transactionalEmail.service.js';
 
 /**
  * @desc    Get reseller by custom domain (only approved domains)
@@ -218,6 +220,101 @@ export const getResellerByDomain = asyncHandler(async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch reseller by domain',
+    });
+  }
+});
+
+const uuidRe =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * @desc    Email reseller when a customer completes ClientHub KYC (final review step)
+ * @route   POST /api/reseller/notify-customer-kyc-submitted
+ * @access  Public (resellerId + customerId; server verifies customer belongs to reseller)
+ */
+export const notifyCustomerKycSubmitted = asyncHandler(async (req, res) => {
+  const { resellerId, customerId } = req.body || {};
+
+  if (!resellerId || !customerId) {
+    return res.status(400).json({
+      success: false,
+      message: 'resellerId and customerId are required',
+    });
+  }
+  if (!uuidRe.test(String(resellerId)) || !uuidRe.test(String(customerId))) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid resellerId or customerId',
+    });
+  }
+
+  try {
+    const client = getHasuraClient();
+    const data = await client.client.request(
+      `query KycSubmittedNotify($cid: uuid!) {
+        mst_customer_by_pk(id: $cid) {
+          id
+          email
+          first_name
+          last_name
+          profile_name
+          reseller_id
+          mst_reseller {
+            id
+            email
+            brand_name
+            business_name
+            first_name
+            last_name
+          }
+        }
+      }`,
+      { cid: customerId },
+    );
+    const cust = data?.mst_customer_by_pk;
+    if (!cust || String(cust.reseller_id) !== String(resellerId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Customer not found for this reseller',
+      });
+    }
+
+    const r = cust.mst_reseller;
+    if (!r?.email) {
+      return res.status(422).json({
+        success: false,
+        message: 'Reseller has no email configured; cannot send notification',
+      });
+    }
+
+    const resellerName =
+      r.brand_name ||
+      r.business_name ||
+      `${r.first_name || ''} ${r.last_name || ''}`.trim() ||
+      r.email;
+    const customerName = formatCustomerDisplayName(cust) || cust.email;
+
+    const emailResult = await sendCustomerKycSubmittedAdminEmail({
+      resellerEmail: r.email,
+      resellerName,
+      customerName,
+      customerEmail: cust.email,
+      resellerId: String(resellerId),
+      customerId: String(customerId),
+    });
+
+    const ok = emailResult?.success === true;
+    return res.status(ok ? 200 : 502).json({
+      success: ok,
+      message: ok
+        ? 'Reseller notified of new customer KYC submission'
+        : emailResult?.message || 'Failed to send email',
+    });
+  } catch (err) {
+    console.error('[notifyCustomerKycSubmitted]', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Failed to process notification',
     });
   }
 });

@@ -14,8 +14,9 @@ import Step6 from "./steps/Step6";
 import Step7 from "./steps/Step7";
 import Step8 from "./steps/Step8";
 
-/** Published CMS slug for Terms & Conditions (see CmsLayer RESELLER_CMS_PAGE_TYPES) */
+/** Published CMS slugs (see CmsLayer RESELLER_CMS_PAGE_TYPES) */
 const TERMS_CMS_SLUG = "terms-and-conditions";
+const PRIVACY_CMS_SLUG = "privacy-policy";
 
 interface SignUpLayerProps {
   skipOtpVerification?: boolean;
@@ -132,10 +133,30 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
     }
   };
 
-  const termsPageHref =
-    isClientHubBuild && resellerId
-      ? `/page/${TERMS_CMS_SLUG}?reseller_id=${encodeURIComponent(resellerId)}`
-      : `/page/${TERMS_CMS_SLUG}`;
+  const openLegalCmsModal = async (slug: string) => {
+    setCmsPageLoading(true);
+    setCmsModalOpen(true);
+    setSelectedCmsPage(null);
+    const cmsResellerId = isClientHubBuild ? resellerId : null;
+    try {
+      const result = await getCmsPageBySlug(slug, cmsResellerId ?? undefined);
+      if (result.success && result.data) {
+        setSelectedCmsPage(result.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch CMS page:", slug, err);
+    } finally {
+      setCmsPageLoading(false);
+    }
+  };
+
+  const openTermsModal = () => {
+    void openLegalCmsModal(TERMS_CMS_SLUG);
+  };
+
+  const openPrivacyModal = () => {
+    void openLegalCmsModal(PRIVACY_CMS_SLUG);
+  };
 
   const fetchUserData = async (userEmail: string, requestedStep: number | null = null) => {
     setLoading(true);
@@ -309,10 +330,10 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
         style={{ height: "100vh", overflowY: "auto", justifyContent: "flex-start" }}
       >
         <div className="max-w-464-px mx-auto w-100">
-          {/* LOGO */}
-          <Link to="/index" className="mb-40 max-w-290-px d-block">
+          {/* LOGO (non-clickable — /index is not a valid app route) */}
+          <div className="mb-40 max-w-290-px d-block">
             <img src="assets/images/own/dlogo.png" alt="Logo" />
-          </Link>
+          </div>
 
           {/* STEP INDICATOR */}
           <p className="text-sm text-secondary-light mb-16">
@@ -392,7 +413,8 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
             <Step7
               email={email}
               onBack={() => handleStepChange(6)}
-              termsPageHref={termsPageHref}
+              onOpenTermsModal={openTermsModal}
+              onOpenPrivacyModal={openPrivacyModal}
               onSubmit={async () => {
                 const fresh = await refreshUserData(email);
                 handleStepChange(8, fresh);
@@ -406,7 +428,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               email={email}
               onBack={() => handleStepChange(7)}
               onConfirm={() => setShowSuccess(true)}
-              termsPageHref={termsPageHref}
+              onOpenTermsModal={openTermsModal}
             />
           )}
 

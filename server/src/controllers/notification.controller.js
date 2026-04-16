@@ -1,9 +1,10 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
-import {
-  sendResellerApprovalEmail,
-  sendResellerRejectionEmail,
-} from '../../services/emailService.js';
+import { sendResellerApprovalEmail } from '../../services/emailService.js';
 import { sendResellerApprovalWhatsApp } from '../services/whatsapp.service.js';
+import {
+  sendAdminAccountDeactivatedEmail,
+  sendAdminKycRejectedEmail,
+} from '../services/transactionalEmail.service.js';
 
 /**
  * @desc    Send reseller approval notifications (email and WhatsApp)
@@ -85,9 +86,9 @@ export const sendResellerApprovalNotifications = asyncHandler(async (req, res) =
 });
 
 /**
- * @desc    Send reseller rejection notification (email with reason)
+ * @desc    Send reseller KYC rejection email (ADMIN_KYC_REJECTED template; admin SMTP)
  * @route   POST /api/notifications/reseller-rejection
- * @access  Private (Admin only)
+ * @access  Private (Admin / Super Admin)
  */
 export const sendResellerRejectionNotifications = asyncHandler(async (req, res) => {
   const { email, resellerName, rejectionReason } = req.body;
@@ -99,7 +100,11 @@ export const sendResellerRejectionNotifications = asyncHandler(async (req, res) 
     });
   }
 
-  if (!rejectionReason || typeof rejectionReason !== 'string') {
+  if (
+    !rejectionReason ||
+    typeof rejectionReason !== 'string' ||
+    rejectionReason.trim() === ''
+  ) {
     return res.status(400).json({
       success: false,
       message: 'Rejection reason is required',
@@ -109,10 +114,10 @@ export const sendResellerRejectionNotifications = asyncHandler(async (req, res) 
   const results = { email: null };
 
   try {
-    const emailResult = await sendResellerRejectionEmail(
+    const emailResult = await sendAdminKycRejectedEmail(
       email,
       resellerName || email,
-      rejectionReason
+      rejectionReason.trim(),
     );
     results.email = emailResult;
   } catch (error) {
@@ -130,4 +135,52 @@ export const sendResellerRejectionNotifications = asyncHandler(async (req, res) 
     results,
   });
 });
+
+/**
+ * @desc    Send account deactivated email when admin deactivates a reseller (status toggle)
+ * @route   POST /api/notifications/reseller-account-deactivated
+ * @access  Private (Admin only)
+ */
+export const sendResellerAccountDeactivatedNotification = asyncHandler(
+  async (req, res) => {
+    const { email, resellerName } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required',
+      });
+    }
+
+    const displayName =
+      typeof resellerName === 'string' && resellerName.trim()
+        ? resellerName.trim()
+        : email;
+
+    const results = { email: null };
+
+    try {
+      const emailResult = await sendAdminAccountDeactivatedEmail(
+        email,
+        displayName,
+      );
+      results.email = emailResult;
+    } catch (error) {
+      console.error('Error sending reseller account deactivated email:', error);
+      results.email = {
+        success: false,
+        message: error.message || 'Failed to send email',
+      };
+    }
+
+    const success = results.email?.success === true;
+    res.status(success ? 200 : 207).json({
+      success,
+      message: success
+        ? 'Account deactivated notification sent'
+        : 'Failed to send account deactivated notification',
+      results,
+    });
+  },
+);
 

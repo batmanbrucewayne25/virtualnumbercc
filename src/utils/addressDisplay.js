@@ -23,3 +23,20 @@ export function getAddressDisplayLines(addr) {
 export function formatAddressDisplayMultiline(addr) {
   return getAddressDisplayLines(addr).join("\n");
 }
+
+/**
+ * Convert admin/reseller textarea input (display order: specific → broad) back to
+ * storage order (broad → specific) for mst_reseller.address.
+ *
+ * @param {string|null|undefined} input
+ * @returns {string[]|null}
+ */
+export function parseAddressInputToStorageArray(input) {
+  if (input == null || String(input).trim() === "") return null;
+  const lines = String(input)
+    .split(/\n|,/)
+    .map((a) => a.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  return [...lines].reverse();
+}

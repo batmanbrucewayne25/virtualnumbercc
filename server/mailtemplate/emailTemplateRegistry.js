@@ -51,6 +51,15 @@ export const TEMPLATE_TYPE = {
 /**
  * Expected placeholder names in subject/body ({{snake_case}}).
  * Single braces in spec like {User} are normalized to {{user}} in default templates.
+ *
+ * Additionally, resolveTransactionalEmail may inject (not always present):
+ * - brand_logo_url — when context.resellerId is set and the reseller has logo/minified_logo
+ *   (requires PUBLIC_API_BASE_URL for filename storage; or absolute http(s) URL as stored)
+ * - platform_logo_url — when there is no resellerId and env PLATFORM_LOGO_URL is set
+ *   (e.g. admin email OTP header). Example value:
+ *   https://app.virtualnumberindia.in/assets/images/own/dlogo.png
+ * - customer_display_name — when context.customerId is set (first+last, else profile_name, else email)
+ * Custom mst_smtp_template.body HTML may use e.g. <img src="{{brand_logo_url}}" alt="{{brand_name}}" />.
  */
 export const TEMPLATE_VARIABLES = {
   [TEMPLATE_TYPE.ADMIN_EMAIL_VERIFICATION_OTP]: [
@@ -94,6 +103,8 @@ export const TEMPLATE_VARIABLES = {
     "user",
     "admin_phone",
     "admin_email",
+    "reseller_number",
+    "reseller_email",
     "support_number",
     "support_email",
     "brand_name",

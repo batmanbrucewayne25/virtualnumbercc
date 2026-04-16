@@ -266,9 +266,9 @@ const SignInLayer = () => {
       <div className='auth-right py-32 px-24 d-flex flex-column justify-content-center'>
         <div className='max-w-464-px mx-auto w-100'>
           <div>
-            <Link to='/index' className='mb-40 max-w-290-px'>
-              <img src='assets/images//own/dlogo.png' alt='WowDash React Vite' />
-            </Link>
+            <div className='mb-40 max-w-290-px d-block'>
+              <img src='assets/images/own/dlogo.png' alt='Logo' />
+            </div>
             <h4 className='mb-12'>Sign In to your Account</h4>
             <p className='mb-32 text-secondary-light text-lg'>
               Welcome back! please enter your details

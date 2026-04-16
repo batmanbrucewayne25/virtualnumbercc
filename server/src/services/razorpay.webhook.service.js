@@ -1171,6 +1171,7 @@ async function _notifyRenewalPaymentSuccessAfterOnlinePayment(
       transactionRef: txnRef,
       virtualNumber: vnStr,
       resellerId: rid,
+      customerId: customer?.id || null,
     });
     if (reseller?.email) {
       await sendRenewalPaymentSuccessAdminEmail({
@@ -1180,6 +1181,7 @@ async function _notifyRenewalPaymentSuccessAfterOnlinePayment(
         amountRupees,
         virtualNumber: vnStr,
         resellerId: rid,
+        customerId: customer?.id || null,
       });
     }
   } catch (e) {
@@ -1911,6 +1913,7 @@ async function updateCustomerStatusAfterPayment(
         smtpConfig,
         {
           resellerId,
+          customerId,
           forwardNumber: callForwardForVN || "",
           startDate: purchaseDate,
           endDate: expiryDate,
@@ -1949,6 +1952,7 @@ async function updateCustomerStatusAfterPayment(
             startDate: purchaseDate,
             endDate: expiryDate,
             resellerId,
+            customerId,
           });
         }
       } catch (vnWaErr) {
@@ -1988,6 +1992,7 @@ async function updateCustomerStatusAfterPayment(
           amountRupees,
           transactionRef: txnRef,
           resellerId,
+          customerId,
         });
         if (reseller?.email) {
           await sendPaymentSuccessAdminEmail({
@@ -1996,6 +2001,7 @@ async function updateCustomerStatusAfterPayment(
             customerName: customer.profile_name || customer.email,
             amountRupees,
             resellerId,
+            customerId,
           });
         }
       } catch (payMailErr) {
@@ -2903,12 +2909,14 @@ export async function processPaymentFailed(resellerId, payload) {
           customerName: custName,
           virtualNumber: vnForRenewalFail,
           resellerId: effectiveResellerId,
+          customerId: customerId || null,
         });
       } else {
         await sendPaymentFailedCustomerEmail({
           customerEmail,
           customerName: custName,
           resellerId: effectiveResellerId,
+          customerId: customerId || null,
         });
       }
       if (resellerRow?.email) {
@@ -2925,6 +2933,7 @@ export async function processPaymentFailed(resellerId, payload) {
             amountRupees: amountInRupees,
             failureReason: failureReason,
             resellerId: effectiveResellerId,
+            customerId: customerId || null,
           });
         } else {
           await sendPaymentFailedAdminEmail({
@@ -2934,6 +2943,7 @@ export async function processPaymentFailed(resellerId, payload) {
             amountRupees: amountInRupees,
             failureReason: failureReason,
             resellerId: effectiveResellerId,
+            customerId: customerId || null,
           });
         }
       }

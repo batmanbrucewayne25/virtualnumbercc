@@ -26,6 +26,40 @@ export const PLATFORM_SUPPORT_NUMBER =
 export const PLATFORM_SUPPORT_EMAIL =
   process.env.PLATFORM_SUPPORT_EMAIL || "";
 
+/**
+ * Support phone/email for platform/admin emails: mst_admin_setting.site_phone / site_email,
+ * falling back to PLATFORM_SUPPORT_NUMBER / PLATFORM_SUPPORT_EMAIL env.
+ * @returns {Promise<{ support_number: string, support_email: string }>}
+ */
+export async function fetchPlatformSupportFromAdminSettings() {
+  let support_number = PLATFORM_SUPPORT_NUMBER;
+  let support_email = PLATFORM_SUPPORT_EMAIL;
+  try {
+    const client = getHasuraClient();
+    const result = await client.client.request(`
+      query GetAdminSettingSupport {
+        mst_admin_setting(limit: 1, order_by: { created_at: desc }) {
+          site_phone
+          site_email
+        }
+      }
+    `);
+    const row = result?.mst_admin_setting?.[0];
+    if (row?.site_phone != null && String(row.site_phone).trim() !== "") {
+      support_number = String(row.site_phone).trim();
+    }
+    if (row?.site_email != null && String(row.site_email).trim() !== "") {
+      support_email = String(row.site_email).trim();
+    }
+  } catch (e) {
+    console.warn(
+      "[fetchPlatformSupportFromAdminSettings] skipped:",
+      e?.message || e,
+    );
+  }
+  return { support_number, support_email };
+}
+
 function resellerDisplayName(r) {
   if (!r) return "Team";
   return (
@@ -154,8 +188,11 @@ export async function fetchVirtualNumberEmailContext(virtualNumber, resellerId) 
         purchase_date
         expiry_date
         mst_customer {
+          id
           email
           profile_name
+          first_name
+          last_name
         }
         mst_reseller {
           brand_name
@@ -203,7 +240,7 @@ export async function notifyCallForwardUpdated(
       forward_number: forwardValue,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, customerId: cust.id || null },
     brandFallback: brand,
   });
   if (res?.email) {
@@ -219,7 +256,7 @@ export async function notifyCallForwardUpdated(
           forward_number: forwardValue,
           brand_name: brand,
         },
-        context: { resellerId },
+        context: { resellerId, customerId: cust.id || null },
         brandFallback: brand,
       });
     } catch (e) {
@@ -246,7 +283,7 @@ export async function notifyNumberSuspended(virtualNumber, resellerId) {
       support_number: res?.support_number || PLATFORM_SUPPORT_NUMBER,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, customerId: cust.id || null },
     brandFallback: brand,
   });
   if (res?.email) {
@@ -261,7 +298,7 @@ export async function notifyNumberSuspended(virtualNumber, resellerId) {
           virtual_number: virtualNumber,
           brand_name: brand,
         },
-        context: { resellerId },
+        context: { resellerId, customerId: cust.id || null },
         brandFallback: brand,
       });
     } catch (e) {
@@ -277,6 +314,7 @@ export async function sendPaymentSuccessCustomerEmail({
   amountRupees,
   transactionRef,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   const client = getHasuraClient();
@@ -308,7 +346,7 @@ export async function sendPaymentSuccessCustomerEmail({
       transaction_id: String(transactionRef || ""),
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -319,6 +357,7 @@ export async function sendPaymentSuccessAdminEmail({
   customerName,
   amountRupees,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   const brand = resellerDisplay || "Team";
@@ -332,7 +371,7 @@ export async function sendPaymentSuccessAdminEmail({
       amount: String(amountRupees),
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -341,6 +380,7 @@ export async function sendPaymentFailedCustomerEmail({
   customerEmail,
   customerName,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   const client = getHasuraClient();
@@ -372,7 +412,7 @@ export async function sendPaymentFailedCustomerEmail({
       support_email,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -383,10 +423,13 @@ export async function sendCustomerKycApprovedEmail({
   reseller,
   resellerId,
   smtpConfig,
+  customerId = null,
 }) {
   const brand = resellerDisplayName(reseller);
   const admin_phone = reseller?.phone || reseller?.support_number || "";
   const admin_email = reseller?.email || "";
+  const reseller_number = admin_phone;
+  const reseller_email = admin_email;
   return sendTemplatedEmail({
     to: customerEmail,
     smtpConfig,
@@ -395,11 +438,13 @@ export async function sendCustomerKycApprovedEmail({
       user: customerName || customerEmail,
       admin_phone,
       admin_email,
+      reseller_number,
+      reseller_email,
       support_number: reseller?.support_number || PLATFORM_SUPPORT_NUMBER,
       support_email: reseller?.support_email || PLATFORM_SUPPORT_EMAIL,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -448,6 +493,7 @@ export async function sendExpiryReminderEmail({
   resellerId,
   days,
   customerPhone = null,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   const client = getHasuraClient();
@@ -476,7 +522,7 @@ export async function sendExpiryReminderEmail({
       virtual_number: virtualNumber,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
   const sendWa = [30, 7].includes(Math.round(dNum));
@@ -505,6 +551,7 @@ export async function sendLowWalletBalanceEmail(
   userName,
   balance = "",
   threshold = "",
+  resellerId = null,
 ) {
   const smtp = await getFirstAdminSmtpConfig();
   return sendTemplatedEmail({
@@ -514,11 +561,12 @@ export async function sendLowWalletBalanceEmail(
     variables: {
       user: userName || toEmail,
       platform_name: PLATFORM_NAME,
+      brand_name: userName || toEmail,
       balance: balance !== "" && balance != null ? String(balance) : "",
       threshold:
         threshold !== "" && threshold != null ? String(threshold) : "",
     },
-    context: {},
+    context: resellerId ? { resellerId } : {},
     brandFallback: PLATFORM_NAME,
   });
 }
@@ -633,6 +681,7 @@ export async function sendPaymentFailedAdminEmail({
   amountRupees,
   failureReason,
   resellerId,
+  customerId = null,
 }) {
   if (!resellerEmail) return { success: false, message: "No reseller email" };
   const smtp = await getResellerSmtpConfig(resellerId);
@@ -648,7 +697,7 @@ export async function sendPaymentFailedAdminEmail({
       failure_reason: failureReason || "Unknown",
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -662,6 +711,7 @@ export async function sendNumberActivatedAdminEmail({
   startDate,
   endDate,
   resellerId,
+  customerId = null,
 }) {
   if (!resellerEmail) return { success: false, message: "No reseller email" };
   const smtp = await getResellerSmtpConfig(resellerId);
@@ -679,7 +729,7 @@ export async function sendNumberActivatedAdminEmail({
       end_date: endDate || "",
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -721,6 +771,7 @@ export async function sendRenewalPaymentSuccessCustomerEmail({
   transactionRef,
   virtualNumber,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   let brand = "Team";
@@ -744,7 +795,7 @@ export async function sendRenewalPaymentSuccessCustomerEmail({
       virtual_number: virtualNumber || "",
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -756,6 +807,7 @@ export async function sendRenewalPaymentSuccessAdminEmail({
   amountRupees,
   virtualNumber,
   resellerId,
+  customerId = null,
 }) {
   if (!resellerEmail) return { success: false, message: "No reseller email" };
   const smtp = await getResellerSmtpConfig(resellerId);
@@ -771,7 +823,7 @@ export async function sendRenewalPaymentSuccessAdminEmail({
       virtual_number: virtualNumber || "",
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -781,6 +833,7 @@ export async function sendRenewalPaymentFailedCustomerEmail({
   customerName,
   virtualNumber,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   let brand = "Team";
@@ -810,7 +863,7 @@ export async function sendRenewalPaymentFailedCustomerEmail({
       support_email,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -822,6 +875,7 @@ export async function sendRenewalPaymentFailedAdminEmail({
   amountRupees,
   failureReason,
   resellerId,
+  customerId = null,
 }) {
   if (!resellerEmail) return { success: false, message: "No reseller email" };
   const smtp = await getResellerSmtpConfig(resellerId);
@@ -837,7 +891,7 @@ export async function sendRenewalPaymentFailedAdminEmail({
       failure_reason: failureReason || "Unknown",
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -847,6 +901,7 @@ export async function sendOfflinePaymentApprovedCustomerEmail({
   customerName,
   virtualNumber,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   let brand = "Team";
@@ -868,7 +923,7 @@ export async function sendOfflinePaymentApprovedCustomerEmail({
       virtual_number: virtualNumber || "",
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -880,6 +935,7 @@ export async function sendOfflinePaymentApprovedAdminEmail({
   virtualNumber,
   amount,
   resellerId,
+  customerId = null,
 }) {
   if (!resellerEmail) return { success: false, message: "No reseller email" };
   const smtp = await getResellerSmtpConfig(resellerId);
@@ -895,7 +951,7 @@ export async function sendOfflinePaymentApprovedAdminEmail({
       amount: String(amount ?? ""),
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }
@@ -981,6 +1037,7 @@ export async function maybeNotifyResellerLowWallet({
         name,
         String(balanceAfter),
         String(threshold),
+        resellerId,
       );
     }
   } catch (e) {
@@ -1034,6 +1091,8 @@ export async function sendAdminKycApprovedEmail(toEmail, userName) {
 
 export async function sendAdminKycRejectedEmail(toEmail, userName, reason) {
   const smtp = await getFirstAdminSmtpConfig();
+  const { support_number, support_email } =
+    await fetchPlatformSupportFromAdminSettings();
   return sendTemplatedEmail({
     to: toEmail,
     smtpConfig: smtp,
@@ -1041,8 +1100,8 @@ export async function sendAdminKycRejectedEmail(toEmail, userName, reason) {
     variables: {
       user: userName,
       rejection_reason: reason || "",
-      support_number: PLATFORM_SUPPORT_NUMBER,
-      support_email: PLATFORM_SUPPORT_EMAIL,
+      support_number,
+      support_email,
       platform_name: PLATFORM_NAME,
     },
     context: {},
@@ -1052,14 +1111,16 @@ export async function sendAdminKycRejectedEmail(toEmail, userName, reason) {
 
 export async function sendAdminAccountDeactivatedEmail(toEmail, userName) {
   const smtp = await getFirstAdminSmtpConfig();
+  const { support_number, support_email } =
+    await fetchPlatformSupportFromAdminSettings();
   return sendTemplatedEmail({
     to: toEmail,
     smtpConfig: smtp,
     templateType: TEMPLATE_TYPE.ADMIN_ACCOUNT_DEACTIVATED,
     variables: {
       user: userName,
-      support_number: PLATFORM_SUPPORT_NUMBER,
-      support_email: PLATFORM_SUPPORT_EMAIL,
+      support_number,
+      support_email,
       platform_name: PLATFORM_NAME,
     },
     context: {},
@@ -1073,6 +1134,7 @@ export async function sendCustomerKycSubmittedAdminEmail({
   customerName,
   customerEmail,
   resellerId,
+  customerId = null,
 }) {
   const smtp = await getResellerSmtpConfig(resellerId);
   const brand = resellerName || "Team";
@@ -1086,7 +1148,7 @@ export async function sendCustomerKycSubmittedAdminEmail({
       customer_email: customerEmail,
       brand_name: brand,
     },
-    context: { resellerId },
+    context: { resellerId, ...(customerId ? { customerId } : {}) },
     brandFallback: brand,
   });
 }

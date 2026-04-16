@@ -2,6 +2,10 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { getMstResellerById, updateMstReseller } from "@/hasura/mutations/reseller";
+import {
+  formatAddressDisplayMultiline,
+  parseAddressInputToStorageArray,
+} from "@/utils/addressDisplay.js";
 import { getResellerValidity } from "@/hasura/mutations/resellerValidity";
 import { getMstResellerDomainByResellerId, upsertMstResellerDomain } from "@/hasura/mutations/resellerDomain";
 import { getNumberLimitsByResellerId, upsertNumberLimits } from "@/hasura/mutations/numberLimits";
@@ -126,10 +130,11 @@ const EditResellerLayer = () => {
         const result = await getMstResellerById(resellerId);
         console.log("GraphQL result:", result);
         if (result.success && result.data) {
-          // Handle address as array - convert to string for form input
-          const addressValue = Array.isArray(result.data.address) 
-            ? result.data.address.join('\n')
-            : (result.data.address || "");
+          // Match KYC / profile display order (specific → broad), not raw DB array order
+          const addressValue =
+            result.data.address == null || result.data.address === ""
+              ? ""
+              : formatAddressDisplayMultiline(result.data.address);
 
           // Fetch validity data
           let validityDate = "";
@@ -297,7 +302,7 @@ const EditResellerLayer = () => {
         business_email: formData.business_email,
         gstin: formData.gstin || null,
         status: formData.status,
-        address: formData.address || null,
+        address: parseAddressInputToStorageArray(formData.address),
         dob: formData.dob || null,
         gender: formData.gender || null,
         pan_number: formData.pan_number || null,

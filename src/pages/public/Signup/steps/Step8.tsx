@@ -1,18 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { getMstResellerByEmail } from "@/hasura/mutations";
 import { getAddressDisplayLines } from "@/utils/addressDisplay.js";
+import { buildLogoPublicUrl, buildUploadedAssetUrl } from "@/utils/resellerAssetUrl.js";
 
 interface Step8Props {
   email: string;
   onBack: () => void;
   onConfirm: () => void;
-  /** Published CMS Terms page route */
-  termsPageHref?: string;
+  onOpenTermsModal?: () => void;
 }
-
-const IMAGE_UPLOAD_PATH =
-  (import.meta as any).env?.VITE_IMAGE_UPLOAD_PATH || "http://localhost:3001/uploads";
 
 /** Mask PAN: first 4 + **** + last 2 */
 const maskPan = (pan: string) => {
@@ -80,7 +76,7 @@ const Step8 = ({
   email,
   onBack,
   onConfirm,
-  termsPageHref = "/page/terms-and-conditions",
+  onOpenTermsModal,
 }: Step8Props) => {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -151,14 +147,10 @@ const Step8 = ({
     );
   }
 
-  const logoUrl = userData.logo
-    ? userData.logo.startsWith("data:") || userData.logo.startsWith("http")
-      ? userData.logo
-      : `${IMAGE_UPLOAD_PATH}/logos/${userData.logo}`
-    : null;
+  const logoUrl = buildLogoPublicUrl(userData.logo);
 
   const signatureUrl = userData.signatureImage
-    ? `${IMAGE_UPLOAD_PATH}/signatures/${userData.signatureImage}`
+    ? buildUploadedAssetUrl(userData.signatureImage, "signatures")
     : null;
 
   const profilePhotoUrl = userData.aadhar_photo
@@ -301,12 +293,14 @@ const Step8 = ({
 
       <div className="alert alert-info mb-20 text-sm">
         By confirming, you agree that all the information provided is accurate and you accept the{" "}
-        <Link
-          to={termsPageHref}
-          className="fw-semibold text-primary-600 text-decoration-underline"
+        <button
+          type="button"
+          className="fw-semibold text-primary-600 text-decoration-underline border-0 bg-transparent p-0 align-baseline"
+          style={{ cursor: "pointer" }}
+          onClick={() => onOpenTermsModal?.()}
         >
           Terms &amp; Conditions
-        </Link>
+        </button>
         .
       </div>
 

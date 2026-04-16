@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
 interface Step10Props {
   formData: {
+    firstName?: string;
+    lastName?: string;
     email: string;
     phone: string;
     password: string;
@@ -78,11 +81,33 @@ const Step10 = ({ formData, resellerId, onBack, onSubmit }: Step10Props) => {
         const { updateCustomerProfileName } = await import("@/hasura/mutations/customer");
         const derivedProfileName = formData.aadhaarData?.full_name || formData.panData?.full_name || null;
         const derivedBusinessName = formData.gstData?.business_name || null;
-        await updateCustomerProfileName({
+        const profileResult = await updateCustomerProfileName({
           email: formData.email,
           profile_name: derivedProfileName,
           business_name: derivedBusinessName,
         });
+        if (profileResult.success && profileResult.data?.id && resellerId) {
+          try {
+            const API_BASE_URL = getApiBaseUrl();
+            const notifyRes = await fetch(
+              `${API_BASE_URL}/reseller/notify-customer-kyc-submitted`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  resellerId,
+                  customerId: profileResult.data.id,
+                }),
+              },
+            );
+            if (!notifyRes.ok) {
+              const text = await notifyRes.text();
+              console.warn("[ClientHub Step10] KYC submitted notify:", notifyRes.status, text);
+            }
+          } catch (notifyErr) {
+            console.warn("[ClientHub Step10] KYC submitted notify failed:", notifyErr);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to save profile name:", err);

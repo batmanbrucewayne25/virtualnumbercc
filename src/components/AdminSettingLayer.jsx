@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { getMstAdminSetting, createMstAdminSetting, updateMstAdminSetting } from "@/hasura/mutations/adminSetting";
+import { getApiBaseUrl } from "@/utils/apiUrl.js";
 
 const AdminSettingLayer = () => {
   const [formData, setFormData] = useState({
@@ -10,6 +11,8 @@ const AdminSettingLayer = () => {
     maintenance_mode: false,
   });
   const [settingId, setSettingId] = useState(null);
+  /** Last persisted maintenance_mode (DB); used to detect off→on / on→off for reseller mail */
+  const [lastSavedMaintenanceMode, setLastSavedMaintenanceMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadLoading, setLoadLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,11 +27,13 @@ const AdminSettingLayer = () => {
         if (result.success && result.data) {
           const row = result.data;
           setSettingId(row.id);
+          const maintenance = row.maintenance_mode ?? false;
+          setLastSavedMaintenanceMode(maintenance);
           setFormData({
             site_name: row.site_name ?? "",
             site_email: row.site_email ?? "",
             site_phone: row.site_phone ?? "",
-            maintenance_mode: row.maintenance_mode ?? false,
+            maintenance_mode: maintenance,
           });
         }
       } catch (err) {
@@ -49,11 +54,56 @@ const AdminSettingLayer = () => {
     setError("");
   };
 
+  const appendMaintenanceBroadcastMessage = async (
+    baseMessage,
+    turningMaintenanceOn,
+    turningMaintenanceOff,
+  ) => {
+    if (!turningMaintenanceOn && !turningMaintenanceOff) return baseMessage;
+    let msg = baseMessage;
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const path = turningMaintenanceOn
+        ? "/admin/maintenance/notify-resellers-enabled"
+        : "/admin/maintenance/notify-resellers-disabled";
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${typeof window !== "undefined" ? (localStorage.getItem("authToken") || "") : ""}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        console.warn("[Maintenance broadcast] API error:", response.status, text);
+        msg += " Reseller notification emails could not be sent (see console).";
+        return msg;
+      }
+      const data = await response.json();
+      if (data.results?.failed > 0) {
+        msg += ` Reseller emails: ${data.results.sent} sent, ${data.results.failed} failed.`;
+      } else {
+        msg += ` Reseller emails: ${data.results?.sent ?? 0} sent.`;
+      }
+    } catch (apiErr) {
+      console.warn("[Maintenance broadcast] Request failed:", apiErr);
+      msg += " Reseller notification emails could not be sent (network error).";
+    }
+    return msg;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     setSuccess("");
+
+    const prevMaintenance = lastSavedMaintenanceMode;
+    const turningMaintenanceOn =
+      formData.maintenance_mode === true && prevMaintenance === false;
+    const turningMaintenanceOff =
+      formData.maintenance_mode === false && prevMaintenance === true;
 
     try {
       const payload = {
@@ -65,8 +115,15 @@ const AdminSettingLayer = () => {
       if (settingId) {
         const result = await updateMstAdminSetting(settingId, payload);
         if (result.success) {
-          setSuccess(result.message || "Admin settings saved successfully!");
-          setTimeout(() => setSuccess(""), 3000);
+          let msg = result.message || "Admin settings saved successfully!";
+          msg = await appendMaintenanceBroadcastMessage(
+            msg,
+            turningMaintenanceOn,
+            turningMaintenanceOff,
+          );
+          setLastSavedMaintenanceMode(formData.maintenance_mode);
+          setSuccess(msg);
+          setTimeout(() => setSuccess(""), 5000);
         } else {
           setError(result.message || "Failed to save admin settings");
         }
@@ -74,8 +131,15 @@ const AdminSettingLayer = () => {
         const result = await createMstAdminSetting(payload);
         if (result.success && result.data) {
           setSettingId(result.data.id);
-          setSuccess(result.message || "Admin settings saved successfully!");
-          setTimeout(() => setSuccess(""), 3000);
+          let msg = result.message || "Admin settings saved successfully!";
+          msg = await appendMaintenanceBroadcastMessage(
+            msg,
+            turningMaintenanceOn,
+            turningMaintenanceOff,
+          );
+          setLastSavedMaintenanceMode(formData.maintenance_mode);
+          setSuccess(msg);
+          setTimeout(() => setSuccess(""), 5000);
         } else {
           setError(result.message || "Failed to save admin settings");
         }

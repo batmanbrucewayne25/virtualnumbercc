@@ -5,7 +5,7 @@ import { getUserData, getAuthToken, mergeUserData } from "@/utils/auth";
 import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDomain";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import { getAddressDisplayLines } from "@/utils/addressDisplay.js";
-const IMAGE_UPLOAD_PATH = (import.meta.env.VITE_IMAGE_BASE_PATH || import.meta.env.VITE_IMAGE_UPLOAD_PATH || 'http://localhost:3001/uploads').replace(/\/+$/, '');
+import { buildLogoPublicUrl, buildUploadedAssetUrl } from "@/utils/resellerAssetUrl.js";
 
 const RESELLER_BRANDING_UPDATED = "reseller-branding-updated";
 
@@ -146,9 +146,7 @@ const ViewProfileLayer = () => {
 
         // Set profile image if available
         if (result.data.profile_image) {
-          const imageUrl = result.data.profile_image.startsWith('http')
-            ? result.data.profile_image
-            : `${IMAGE_UPLOAD_PATH}/profile-images/${result.data.profile_image}`;
+          const imageUrl = buildUploadedAssetUrl(result.data.profile_image, "profile-images");
           setImagePreview(imageUrl);
           setOriginalImageUrl(imageUrl);
         } else {
@@ -157,9 +155,7 @@ const ViewProfileLayer = () => {
 
         // Set logo if available
         if (result.data.logo) {
-          const logoUrl = result.data.logo.startsWith('http')
-            ? result.data.logo
-            : `${IMAGE_UPLOAD_PATH}/logos/${result.data.logo}`;
+          const logoUrl = buildLogoPublicUrl(result.data.logo);
           setLogoPreview(logoUrl);
           setOriginalLogoUrl(logoUrl);
         } else {
@@ -168,9 +164,7 @@ const ViewProfileLayer = () => {
         }
 
         if (result.data.favicon) {
-          const faviconUrl = result.data.favicon.startsWith('http')
-            ? result.data.favicon
-            : `${IMAGE_UPLOAD_PATH}/favicons/${result.data.favicon}`;
+          const faviconUrl = buildUploadedAssetUrl(result.data.favicon, "favicons");
           setFaviconPreview(faviconUrl);
           setOriginalFaviconUrl(faviconUrl);
         } else {
@@ -179,9 +173,7 @@ const ViewProfileLayer = () => {
         }
 
         if (result.data.minified_logo) {
-          const miniLogoUrl = result.data.minified_logo.startsWith('http')
-            ? result.data.minified_logo
-            : `${IMAGE_UPLOAD_PATH}/minified-logos/${result.data.minified_logo}`;
+          const miniLogoUrl = buildUploadedAssetUrl(result.data.minified_logo, "minified-logos");
           setMinifiedLogoPreview(miniLogoUrl);
           setOriginalMinifiedLogoUrl(miniLogoUrl);
         } else {
@@ -190,9 +182,7 @@ const ViewProfileLayer = () => {
         }
 
         if (result.data.profile_image_alt) {
-          const profileAltUrl = result.data.profile_image_alt.startsWith('http')
-            ? result.data.profile_image_alt
-            : `${IMAGE_UPLOAD_PATH}/profile-image-alt/${result.data.profile_image_alt}`;
+          const profileAltUrl = buildUploadedAssetUrl(result.data.profile_image_alt, "profile-image-alt");
           setProfileAltPreview(profileAltUrl);
           setOriginalProfileAltUrl(profileAltUrl);
         } else {
@@ -345,7 +335,7 @@ const ViewProfileLayer = () => {
         setSuccess(true);
         setSuccessMessage("Profile image updated successfully!");
         setError("");
-        const imageUrl = `${IMAGE_UPLOAD_PATH}/profile-images/${result.data.filename}`;
+        const imageUrl = buildUploadedAssetUrl(result.data.filename, "profile-images");
         setImagePreview(imageUrl);
         setOriginalImageUrl(imageUrl);
 
@@ -432,7 +422,7 @@ const ViewProfileLayer = () => {
         setSuccess(true);
         setSuccessMessage("Logo updated successfully!");
         setError("");
-        const logoUrl = `${IMAGE_UPLOAD_PATH}/logos/${result.data.filename}`;
+        const logoUrl = buildLogoPublicUrl(result.data.filename);
         setLogoPreview(logoUrl);
         setOriginalLogoUrl(logoUrl);
 
@@ -515,14 +505,13 @@ const ViewProfileLayer = () => {
         setSuccess(true);
         setSuccessMessage(successText);
         const filename = result?.data?.[filenameKey] || result?.data?.filename;
-        const imageUrl = filename && !String(filename).startsWith("http")
-          ? `${IMAGE_UPLOAD_PATH}/${imageFolder}/${filename}`
-          : filename;
+        const imageUrl = filename ? buildUploadedAssetUrl(String(filename), imageFolder) : null;
         if (imageUrl) {
           setPreview(imageUrl);
           setOriginal(imageUrl);
         }
-        if (filename && !String(filename).startsWith("http")) {
+        const rawName = filename != null ? String(filename) : "";
+        if (rawName && !/^(https?:\/\/|data:|\/)/i.test(rawName)) {
           const brandingPatch =
             formKey === "favicon"
               ? { favicon: filename }
@@ -778,6 +767,9 @@ const ViewProfileLayer = () => {
                     alt='Logo'
                     className='border br-white border-width-2-px w-150-px h-150-px object-fit-contain bg-light radius-8 p-2'
                     onError={(e) => {
+                      if (import.meta.env.DEV) {
+                        console.warn("[ViewProfileLayer] Business logo failed to load:", e.target?.src);
+                      }
                       e.target.src = 'assets/images/logo-icon.png';
                     }}
                   />

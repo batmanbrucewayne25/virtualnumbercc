@@ -24,8 +24,10 @@ export type Step4Props = BaseStepProps & { onSubmit: StepCallback };
 export type Step5Props = BaseStepProps & { onContinue: StepCallback };
 export type Step6Props = BaseStepProps & {
   onSubmit: StepCallback;
-  /** Route to published CMS Terms page (admin or reseller-scoped) */
-  termsPageHref?: string;
+  /** Opens Terms & Conditions CMS content in a modal (no /page/ navigation) */
+  onOpenTermsModal?: () => void;
+  /** Opens Privacy Policy CMS content in a modal */
+  onOpenPrivacyModal?: () => void;
 };
 
 export interface SignupFormData {

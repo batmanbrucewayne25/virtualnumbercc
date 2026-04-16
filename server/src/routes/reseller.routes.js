@@ -2,6 +2,7 @@ import express from 'express';
 import {
   getResellerByDomain,
   getMaintenanceModeStatus,
+  notifyCustomerKycSubmitted,
 } from '../controllers/reseller.controller.js';
 import {
   upsertAllowedCustomers,
@@ -32,6 +33,13 @@ router.get('/maintenance-mode', getMaintenanceModeStatus);
  * @access  Public
  */
 router.post('/check-allowed-customer', checkAllowedCustomer);
+
+/**
+ * @route   POST /api/reseller/notify-customer-kyc-submitted
+ * @desc    Notify reseller by email when customer completes ClientHub KYC
+ * @access  Public (resellerId + customerId verified in DB)
+ */
+router.post('/notify-customer-kyc-submitted', notifyCustomerKycSubmitted);
 
 /**
  * @route   POST /api/reseller/allowed-customers

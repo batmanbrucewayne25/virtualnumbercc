@@ -15,6 +15,7 @@ import { getVirtualNumberAssignedTemplate } from "../mailtemplate/virtualNumberA
 import { getRazorpayLinkTemplate } from "../mailtemplate/razorpayLink.js";
 import { getCustomerRejectionTemplate } from "../mailtemplate/customerRejection.js";
 import { getResellerRejectionTemplate } from "../mailtemplate/resellerRejection.js";
+import { PLATFORM_NAME } from "../src/services/transactionalEmail.service.js";
 
 // Load environment variables if not already loaded
 const __filename = fileURLToPath(import.meta.url);
@@ -397,6 +398,7 @@ export const sendAdminWelcomeEmail = async (
  * @param {string} virtualNumber - Virtual number assigned
  * @param {string} resellerName - Reseller name
  * @param {object} smtpConfig - Optional SMTP config from database (reseller/admin settings)
+ * @param {{ resellerId?: string|null, customerId?: string|null, forwardNumber?: string, startDate?: string, endDate?: string }|null} [options]
  */
 export const sendVirtualNumberEmail = async (
   email,
@@ -430,6 +432,7 @@ export const sendVirtualNumberEmail = async (
     let subject;
     let html;
     let text;
+    const customerId = options?.customerId || null;
     const resolved = await resolveTransactionalEmail(
       TEMPLATE_TYPE.NUMBER_ACTIVATED_CUSTOMER,
       {
@@ -440,7 +443,7 @@ export const sendVirtualNumberEmail = async (
         end_date: endDate,
         brand_name: resellerName,
       },
-      { resellerId },
+      { resellerId, ...(customerId ? { customerId } : {}) },
     );
     if (resolved?.subject && resolved?.html) {
       subject = resolved.subject;
@@ -491,6 +494,7 @@ export const sendVirtualNumberEmail = async (
  * @param {number} planAmount - Plan amount
  * @param {string} resellerName - Reseller name
  * @param {object} smtpConfig - Optional SMTP config from database (reseller/admin settings)
+ * @param {{ resellerId?: string|null, customerId?: string|null, supportNumber?: string, supportEmail?: string }|null} [options]
  */
 export const sendRazorpayLinkEmail = async (
   email,
@@ -525,6 +529,7 @@ export const sendRazorpayLinkEmail = async (
     let subject;
     let html;
     let text;
+    const customerId = options?.customerId || null;
     const resolved = await resolveTransactionalEmail(
       TEMPLATE_TYPE.PAYMENT_LINK_GENERATED,
       {
@@ -534,7 +539,7 @@ export const sendRazorpayLinkEmail = async (
         support_email: supportEmail,
         brand_name: resellerName,
       },
-      { resellerId },
+      { resellerId, ...(customerId ? { customerId } : {}) },
     );
     if (resolved?.subject && resolved?.html) {
       subject = resolved.subject;
@@ -585,7 +590,7 @@ export const sendRazorpayLinkEmail = async (
  * @param {string} rejectionReason - Reason for rejection
  * @param {string} resellerName - Reseller/brand name
  * @param {object} smtpConfig - Reseller SMTP config from getResellerSmtpConfig (required)
- * @param {{ resellerId?: string|null, supportNumber?: string, supportEmail?: string }} [opts]
+ * @param {{ resellerId?: string|null, customerId?: string|null, supportNumber?: string, supportEmail?: string }} [opts]
  */
 export const sendCustomerRejectionEmail = async (
   toEmail,
@@ -619,6 +624,7 @@ export const sendCustomerRejectionEmail = async (
     let subject;
     let html;
     let text;
+    const customerId = opts.customerId || null;
     const resolved = await resolveTransactionalEmail(
       TEMPLATE_TYPE.CUSTOMER_KYC_REJECTED,
       {
@@ -628,7 +634,7 @@ export const sendCustomerRejectionEmail = async (
         support_email: supportEmail,
         brand_name: resellerName,
       },
-      { resellerId },
+      { resellerId, ...(customerId ? { customerId } : {}) },
     );
     if (resolved?.subject && resolved?.html) {
       subject = resolved.subject;
@@ -704,113 +710,30 @@ export const sendResellerApprovalEmail = async (
       };
     }
 
-    const loginUrl = `${FRONTEND_URL}/sign-in`;
+    const displayUser = (resellerName && String(resellerName).trim()) || email;
 
-    // Build email content
-    const subject = "🎉 Your Reseller Account Has Been Approved!";
+    const resolved = await resolveTransactionalEmail(
+      TEMPLATE_TYPE.ADMIN_KYC_APPROVED,
+      {
+        user: displayUser,
+        platform_name: PLATFORM_NAME,
+      },
+      {},
+    );
 
-    let walletInfo = "";
-    if (walletBalance && walletBalance > 0) {
-      walletInfo = `<p><strong>Initial Wallet Balance:</strong> ₹${walletBalance.toLocaleString(
-        "en-IN"
-      )}</p>`;
+    let subject;
+    let html;
+    let text;
+    if (resolved?.subject && resolved?.html) {
+      subject = resolved.subject;
+      html = resolved.html;
+      text = resolved.text;
+    } else {
+      subject = "Your KYC Verification Has Been Approved";
+      const loginUrl = `${FRONTEND_URL}/sign-in`;
+      html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:Arial,sans-serif;padding:20px;"><p>Hello ${displayUser},</p><p>Your KYC verification has been approved.</p><p><a href="${loginUrl}">Sign in</a></p></body></html>`;
+      text = `Hello ${displayUser},\n\nYour KYC verification has been approved.\n\nSign in: ${loginUrl}`;
     }
-
-    let validityInfo = "";
-    if (validityDate) {
-      const expiryDate = new Date(validityDate).toLocaleDateString("en-IN", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-      validityInfo = `<p><strong>Account Validity:</strong> Valid until ${expiryDate}</p>`;
-    }
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Reseller Account Approved</title>
-      </head>
-      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Account Approved! 🎉</h1>
-        </div>
-        
-        <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e0e0e0; border-top: none;">
-          <p style="font-size: 16px; margin-bottom: 20px;">Dear <strong>${resellerName}</strong>,</p>
-          
-          <p style="font-size: 16px; margin-bottom: 20px;">
-            We are pleased to inform you that your reseller account has been <strong style="color: #28a745;">successfully approved</strong>!
-          </p>
-          
-          <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;">
-            <h2 style="color: #28a745; margin-top: 0; font-size: 20px;">What's Next?</h2>
-            <ul style="padding-left: 20px; line-height: 1.8;">
-              <li>You can now log in to your reseller dashboard</li>
-              <li>Start managing your customers and virtual numbers</li>
-              <li>Access all reseller features and tools</li>
-            </ul>
-          </div>
-          
-          ${walletInfo}
-          ${validityInfo}
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${loginUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-              Login to Dashboard
-            </a>
-          </div>
-          
-          <p style="font-size: 14px; color: #666; margin-top: 30px;">
-            If you have any questions or need assistance, please don't hesitate to contact our support team.
-          </p>
-          
-          <p style="font-size: 14px; color: #666; margin-top: 20px;">
-            Best regards,<br>
-            <strong>${fromName} Team</strong>
-          </p>
-        </div>
-        
-        <div style="text-align: center; margin-top: 20px; padding: 20px; color: #999; font-size: 12px;">
-          <p>This is an automated email. Please do not reply to this message.</p>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const text = `
-Dear ${resellerName},
-
-We are pleased to inform you that your reseller account has been successfully approved!
-
-What's Next?
-- You can now log in to your reseller dashboard
-- Start managing your customers and virtual numbers
-- Access all reseller features and tools
-
-${
-  walletBalance && walletBalance > 0
-    ? `Initial Wallet Balance: ₹${walletBalance.toLocaleString("en-IN")}\n`
-    : ""
-}
-${
-  validityDate
-    ? `Account Validity: Valid until ${new Date(
-        validityDate
-      ).toLocaleDateString("en-IN")}\n`
-    : ""
-}
-
-Login to your dashboard: ${loginUrl}
-
-If you have any questions or need assistance, please don't hesitate to contact our support team.
-
-Best regards,
-${fromName} Team
-    `;
 
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,

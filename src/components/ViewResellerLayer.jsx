@@ -7,6 +7,7 @@ import { getMstResellerDomainByResellerId } from "@/hasura/mutations/resellerDom
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import { getAuthToken, getUserData } from "@/utils/auth";
 import { formatDateIST, formatDateTimeIST } from "@/utils/dateUtils";
+import { formatAddressDisplayMultiline } from "@/utils/addressDisplay.js";
 import SignatureImage from "./SignatureImage";
 import { getSignatureImageAbsoluteUrl } from "@/utils/signatureImageUrl";
 
@@ -368,8 +369,11 @@ const ViewResellerLayer = () => {
 
                 <div className='mb-16'>
                   <label className='form-label text-xs text-secondary-light mb-4'>Address</label>
-                  <p className='text-md fw-medium text-primary-light mb-0'>
-                    {reseller.address || "-"}
+                  <p
+                    className='text-md fw-medium text-primary-light mb-0'
+                    style={{ whiteSpace: "pre-line" }}
+                  >
+                    {formatAddressDisplayMultiline(reseller.address) || "-"}
                   </p>
                 </div>
 
