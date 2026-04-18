@@ -1,5 +1,55 @@
+import crypto from "crypto";
 import Razorpay from "razorpay";
 import { getHasuraClient } from "../config/hasura.client.js";
+import { normalizeIndiaContactE164 } from "../utils/phone-formatter.js";
+
+/**
+ * Default Payment Link checkout methods for INR (explicit; avoids relying on Razorpay default drift).
+ * Merged with optional linkData.options for advanced overrides.
+ */
+function defaultInrPaymentLinkOptions() {
+  return {
+    checkout: {
+      method: {
+        card: true,
+        netbanking: true,
+        upi: true,
+        wallet: true,
+      },
+    },
+  };
+}
+
+function mergeDeep(base, override) {
+  if (override == null) return base;
+  if (base == null) return override;
+  if (typeof override !== "object" || Array.isArray(override)) return override;
+  if (typeof base !== "object" || Array.isArray(base)) return override;
+  const out = { ...base };
+  for (const k of Object.keys(override)) {
+    const bv = base[k];
+    const ov = override[k];
+    if (
+      ov &&
+      typeof ov === "object" &&
+      !Array.isArray(ov) &&
+      bv &&
+      typeof bv === "object" &&
+      !Array.isArray(bv)
+    ) {
+      out[k] = mergeDeep(bv, ov);
+    } else {
+      out[k] = ov;
+    }
+  }
+  return out;
+}
+
+/** Razorpay reference_id max length 40; unique per link for dashboard correlation. */
+function generatePaymentLinkReferenceId() {
+  const id = `vn_${Date.now()}_${crypto.randomBytes(5).toString("hex")}`;
+  return id.length <= 40 ? id : id.slice(0, 40);
+}
 
 /**
  * Get Razorpay config from database by reseller ID
@@ -61,8 +111,8 @@ async function getRazorpayInstance(resellerId) {
   }
 
   return new Razorpay({
-    key_id: config.key_id,
-    key_secret: config.key_secret,
+    key_id: config.key_id.trim(),
+    key_secret: config.key_secret.trim(),
   });
 }
 
@@ -79,7 +129,9 @@ async function getRazorpayInstance(resellerId) {
  */
 export async function createRazorpayPlan(resellerId, planData) {
   try {
+    console.log(`[createRazorpayPlan] Initiating for resellerId=${resellerId}`);
     const razorpay = await getRazorpayInstance(resellerId);
+    console.log(`[createRazorpayPlan] Razorpay instance created successfully.`);
 
     // Convert amount to paise (smallest currency unit for INR)
     const amountInPaise = Math.round(planData.amount * 100);
@@ -121,7 +173,9 @@ export async function createRazorpayPlan(resellerId, planData) {
       },
     };
 
+    console.log(`[createRazorpayPlan] Plan creating via Razorpay API...`);
     const plan = await razorpay.plans.create(planOptions);
+    console.log(`[createRazorpayPlan] Plan created successfully: ${plan.id}`);
 
     return {
       success: true,
@@ -129,11 +183,13 @@ export async function createRazorpayPlan(resellerId, planData) {
       plan: plan,
     };
   } catch (error) {
-    console.error("Error creating Razorpay plan:", error);
+    console.error(`[createRazorpayPlan] Error details caught exactly from Razorpay SDK:`, error);
+    const errMsg = error.error?.description || error.message || "Failed to create Razorpay plan";
+    console.error(`[createRazorpayPlan] Extracted errMsg:`, errMsg);
     throw new Error(
-      error.error?.description ||
-        error.message ||
-        "Failed to create Razorpay plan"
+      errMsg === "Authentication failed" || errMsg.includes("Authentication failed")
+        ? "Razorpay Authentication failed: Invalid Key ID or Key Secret. Please check your Razorpay Configuration."
+        : errMsg
     );
   }
 }
@@ -176,10 +232,11 @@ export async function createRazorpaySubscription(resellerId, subscriptionData) {
     };
   } catch (error) {
     console.error("Error creating Razorpay subscription:", error);
+    const errMsg = error.error?.description || error.message || "Failed to create Razorpay subscription";
     throw new Error(
-      error.error?.description ||
-        error.message ||
-        "Failed to create Razorpay subscription"
+      errMsg === "Authentication failed"
+        ? "Razorpay Authentication failed: Invalid Key ID or Key Secret. Please check your Razorpay Configuration."
+        : errMsg
     );
   }
 }
@@ -197,10 +254,13 @@ export async function createRazorpayPlanAndSubscription(
   subscriptionData = {}
 ) {
   try {
+    console.log(`[createRazorpayPlanAndSubscription] Start for resellerId=${resellerId}`);
     // First create the plan
     const planResult = await createRazorpayPlan(resellerId, planData);
+    console.log(`[createRazorpayPlanAndSubscription] Plan creation yielded: ${planResult.plan_id}`);
 
     // Then create subscription using the plan ID
+    console.log(`[createRazorpayPlanAndSubscription] Calling createRazorpaySubscription...`);
     const subscriptionResult = await createRazorpaySubscription(resellerId, {
       plan_id: planResult.plan_id,
       ...subscriptionData,
@@ -218,7 +278,7 @@ export async function createRazorpayPlanAndSubscription(
       subscription: subscriptionResult.subscription,
     };
   } catch (error) {
-    console.error("Error creating Razorpay plan and subscription:", error);
+    console.error("[createRazorpayPlanAndSubscription] Error caught heavily:", error);
     throw error;
   }
 }
@@ -259,10 +319,11 @@ export async function createRazorpayOrder(resellerId, orderData) {
     };
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
+    const errMsg = error.error?.description || error.message || "Failed to create Razorpay order";
     throw new Error(
-      error.error?.description ||
-        error.message ||
-        "Failed to create Razorpay order"
+      errMsg === "Authentication failed"
+        ? "Razorpay Authentication failed: Invalid Key ID or Key Secret. Please check your Razorpay Configuration."
+        : errMsg
     );
   }
 }
@@ -275,8 +336,10 @@ export async function createRazorpayOrder(resellerId, orderData) {
  * @param {string} linkData.currency - Currency code (default: INR)
  * @param {string} linkData.description - Description of payment
  * @param {object} linkData.customer - Customer details (name, email, contact)
- * @param {object} linkData.notify - Notification settings (email, sms)
+ * @param {object} linkData.notify - Notification settings (email, sms); defaults to both false (we email via SMTP)
  * @param {object} linkData.notes - Additional notes
+ * @param {string} [linkData.reference_id] - Optional Razorpay reference (max 40 chars); auto-generated if omitted
+ * @param {object} [linkData.options] - Optional override/merge for Payment Link `options` (INR merges with default checkout.method)
  * @returns {Promise<object>} Razorpay payment link object
  */
 export async function createRazorpayPaymentLink(resellerId, linkData) {
@@ -303,21 +366,41 @@ export async function createRazorpayPaymentLink(resellerId, linkData) {
 
     // Convert amount to paise
     const amountInPaise = Math.round(linkData.amount * 100);
+    const currency = linkData.currency || "INR";
+
+    const customerPayload = { ...(linkData.customer || {}) };
+    if (customerPayload.contact != null && customerPayload.contact !== "") {
+      const normalized = normalizeIndiaContactE164(customerPayload.contact);
+      if (normalized) {
+        customerPayload.contact = normalized;
+      } else {
+        delete customerPayload.contact;
+      }
+    }
+
+    const optionsPayload =
+      currency === "INR"
+        ? linkData.options
+          ? mergeDeep(defaultInrPaymentLinkOptions(), linkData.options)
+          : defaultInrPaymentLinkOptions()
+        : linkData.options || undefined;
 
     // Prepare payment link payload
     // Note: We disable Razorpay's email notification because we send emails ourselves
     // using the reseller's SMTP configuration to maintain branding
     const paymentLinkPayload = {
       amount: amountInPaise,
-      currency: linkData.currency || "INR",
+      currency,
       description: linkData.description || "Payment",
-      customer: linkData.customer || {},
-      notify: { email: false, sms: false }, // Disable Razorpay's email - we send it ourselves
+      customer: customerPayload,
+      reference_id: linkData.reference_id || generatePaymentLinkReferenceId(),
+      notify: linkData.notify ?? { email: false, sms: false },
       reminder_enable: false, // We handle reminders ourselves if needed
       notes: {
         reseller_id: resellerId,
         ...(linkData.notes || {}),
       },
+      ...(optionsPayload ? { options: optionsPayload } : {}),
     };
 
     // Use direct HTTP API call since SDK might not have paymentLinks property
@@ -401,8 +484,11 @@ export async function fetchPayment(resellerId, paymentId) {
     };
   } catch (error) {
     console.error("Error fetching payment:", error);
+    const errMsg = error.error?.description || error.message || "Failed to fetch payment";
     throw new Error(
-      error.error?.description || error.message || "Failed to fetch payment"
+      errMsg === "Authentication failed"
+        ? "Razorpay Authentication failed: Invalid Key ID or Key Secret. Please check your Razorpay Configuration."
+        : errMsg
     );
   }
 }
@@ -425,8 +511,11 @@ export async function capturePayment(resellerId, paymentId, amount) {
     };
   } catch (error) {
     console.error("Error capturing payment:", error);
+    const errMsg = error.error?.description || error.message || "Failed to capture payment";
     throw new Error(
-      error.error?.description || error.message || "Failed to capture payment"
+      errMsg === "Authentication failed"
+        ? "Razorpay Authentication failed: Invalid Key ID or Key Secret. Please check your Razorpay Configuration."
+        : errMsg
     );
   }
 }
@@ -466,8 +555,11 @@ export async function createRefund(
     };
   } catch (error) {
     console.error("Error creating refund:", error);
+    const errMsg = error.error?.description || error.message || "Failed to create refund";
     throw new Error(
-      error.error?.description || error.message || "Failed to create refund"
+      errMsg === "Authentication failed"
+        ? "Razorpay Authentication failed: Invalid Key ID or Key Secret. Please check your Razorpay Configuration."
+        : errMsg
     );
   }
 }

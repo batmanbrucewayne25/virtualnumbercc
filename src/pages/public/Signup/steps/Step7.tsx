@@ -8,6 +8,13 @@ import { useStepValidation } from "@/hooks/useStepValidation";
 import { getApiBaseUrl } from "@/utils/apiUrl";
 import { buildLogoPublicUrl, buildUploadedAssetUrl } from "@/utils/resellerAssetUrl.js";
 
+/** Mask PAN: first 2 + **** + last 2 (e.g. AB******4F) */
+const maskPanNumber = (pan: string) => {
+  const s = String(pan ?? "").trim().toUpperCase();
+  if (!s || s.length < 5) return "****";
+  return `${s.slice(0, 2)}****${s.slice(-2)}`;
+};
+
 interface UserData {
   address?: string | string[];
   business_address?: string;
@@ -403,7 +410,10 @@ const Step7 = ({
               <div className="ps-12">
                 <p className="text-sm mb-4"><strong>Business Name:</strong> {userData.business_name || "N/A"}</p>
                 <p className="text-sm mb-4"><strong>Business Type:</strong> {userData.constitution_of_business || "N/A"}</p>
-                <p className="text-sm mb-4"><strong>Business PAN:</strong> {userData.gst_pan_number || "N/A"}</p>
+                <p className="text-sm mb-4">
+                  <strong>Business PAN:</strong>{" "}
+                  {userData.gst_pan_number ? maskPanNumber(userData.gst_pan_number) : "N/A"}
+                </p>
                 <p className="text-sm mb-4">
                   <strong>Business Address:</strong>{" "}
                   {userData.business_address || userData.address ? (
@@ -427,7 +437,10 @@ const Step7 = ({
               <strong className="d-block mb-8 text-success">✓ PAN Verified</strong>
               <div className="ps-12">
                 <p className="text-sm mb-4"><strong>Name:</strong> {userData.pan_full_name || "N/A"}</p>
-                <p className="text-sm mb-4"><strong>PAN:</strong> {userData.pan_number || "N/A"}</p>
+                <p className="text-sm mb-4">
+                  <strong>PAN:</strong>{" "}
+                  {userData.pan_number ? maskPanNumber(userData.pan_number) : "N/A"}
+                </p>
                 <p className="text-sm"><strong>DOB:</strong> {userData.pan_dob || "N/A"}</p>
               </div>
             </div>

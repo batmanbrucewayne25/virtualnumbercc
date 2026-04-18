@@ -268,6 +268,44 @@ export const updateMstResellerStatus = async (id: string, status: boolean) => {
     };
   }
 
+  const APPROVAL_CHECK = `query GetResellerForStatusUpdate($id: uuid!) {
+    mst_reseller_by_pk(id: $id) {
+      id
+      approval
+      suspended_at
+    }
+  }`;
+
+  try {
+    const checkResult = await graphqlRequest(APPROVAL_CHECK, { id });
+    const row = checkResult?.data?.mst_reseller_by_pk;
+    if (!row) {
+      return {
+        success: false,
+        message: "Reseller not found",
+      };
+    }
+    if (row.suspended_at) {
+      return {
+        success: false,
+        message:
+          "Cannot change active/inactive status while the reseller is suspended. Reactivate first.",
+      };
+    }
+    if (String(row.approval ?? "").toLowerCase() !== "approved") {
+      return {
+        success: false,
+        message:
+          "Status can only be changed after the reseller is approved.",
+      };
+    }
+  } catch (e) {
+    return {
+      success: false,
+      message: (e as Error)?.message || "Could not verify reseller approval",
+    };
+  }
+
   const MUTATION = `mutation UpdateMstResellerStatus(
     $id: uuid!
     $status: Boolean!

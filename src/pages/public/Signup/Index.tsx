@@ -429,6 +429,7 @@ const SignUpLayer = ({ skipOtpVerification = false }: SignUpLayerProps) => {
               onBack={() => handleStepChange(7)}
               onConfirm={() => setShowSuccess(true)}
               onOpenTermsModal={openTermsModal}
+              onOpenPrivacyModal={openPrivacyModal}
             />
           )}
 

@@ -12,13 +12,26 @@ function parseResellerId(raw) {
   return s;
 }
 
+/** @param {unknown} raw */
+function parseOptionalNamePart(raw) {
+  if (raw == null) return undefined;
+  const s = typeof raw === 'string' ? raw.trim() : String(raw).trim();
+  return s === '' ? undefined : s;
+}
+
 /**
  * @desc    Send email OTP
  * @route   POST /api/otp/send-email
  * @access  Public
  */
 export const sendEmailOTP = asyncHandler(async (req, res) => {
-  const { email, user_type: userType, reseller_id: resellerIdRaw } = req.body;
+  const {
+    email,
+    user_type: userType,
+    reseller_id: resellerIdRaw,
+    first_name: firstNameRaw,
+    last_name: lastNameRaw,
+  } = req.body;
 
   if (!email) {
     return res.status(400).json({
@@ -28,7 +41,21 @@ export const sendEmailOTP = asyncHandler(async (req, res) => {
   }
 
   const resellerId = parseResellerId(resellerIdRaw);
-  const result = await OTPService.sendEmailOTP(email, userType, resellerId);
+  const fn = parseOptionalNamePart(firstNameRaw);
+  const ln = parseOptionalNamePart(lastNameRaw);
+  /** @type {{ first_name?: string; last_name?: string } | undefined} */
+  let nameHints;
+  if (fn || ln) {
+    nameHints = {};
+    if (fn) nameHints.first_name = fn;
+    if (ln) nameHints.last_name = ln;
+  }
+  const result = await OTPService.sendEmailOTP(
+    email,
+    userType,
+    resellerId,
+    nameHints,
+  );
 
   if (result.success) {
     res.status(200).json({
@@ -157,6 +184,8 @@ export const sendDualChannelOTP = asyncHandler(async (req, res) => {
     phone,
     user_type: userType,
     reseller_id: resellerIdRaw,
+    first_name: firstNameRaw,
+    last_name: lastNameRaw,
   } = req.body;
 
   if (!email || !phone) {
@@ -167,11 +196,21 @@ export const sendDualChannelOTP = asyncHandler(async (req, res) => {
   }
 
   const resellerId = parseResellerId(resellerIdRaw);
+  const fnDual = parseOptionalNamePart(firstNameRaw);
+  const lnDual = parseOptionalNamePart(lastNameRaw);
+  /** @type {{ first_name?: string; last_name?: string } | undefined} */
+  let nameHintsDual;
+  if (fnDual || lnDual) {
+    nameHintsDual = {};
+    if (fnDual) nameHintsDual.first_name = fnDual;
+    if (lnDual) nameHintsDual.last_name = lnDual;
+  }
   const result = await OTPService.sendDualChannelOtp(
     email,
     phone,
     userType || 'reseller',
     resellerId,
+    nameHintsDual,
   );
 
   if (result.success) {

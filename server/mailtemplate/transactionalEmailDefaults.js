@@ -44,7 +44,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Verify Your Email Address – OTP Code",
-      html: layout(v,
+      html: layout(
+        v,
         platform,
         `<p>Hello ${user},</p>
 <p>Welcome to ${platform}!</p>
@@ -69,7 +70,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Verify Your Email Address – OTP Code",
-      html: layout(v,
+      html: layout(
+        v,
         brand,
         `<p>Hello ${greet},</p>
 <p>Welcome to ${brand}!</p>
@@ -92,7 +94,8 @@ const DEFAULTS = {
     const p = esc(v.platform_name);
     return {
       subject: "New Admin KYC Submission Received",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello,</p>
 <p>A new admin KYC submission has been received for verification.</p>
@@ -109,7 +112,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Your KYC Verification Has Been Approved",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>We are pleased to inform you that your KYC verification has been successfully approved.</p>
@@ -125,7 +129,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Action Required – KYC Verification Rejected",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>We regret to inform you that your KYC verification has been rejected.</p>
@@ -143,7 +148,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Your Account Has Been Deactivated",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>Your Reseller account has been deactivated.</p>
@@ -154,20 +160,44 @@ const DEFAULTS = {
     };
   },
 
+  [TEMPLATE_TYPE.RESELLER_ACCOUNT_SUSPENDED]: (v) => {
+    const p = esc(v.platform_name);
+    const user = esc(v.user);
+    const reason =
+      v.suspension_reason != null && String(v.suspension_reason).trim() !== ""
+        ? esc(v.suspension_reason)
+        : "—";
+    return {
+      subject: "Your Reseller Account Has Been Suspended",
+      html: layout(
+        v,
+        p,
+        `<p>Hello ${user},</p>
+<p>Your reseller account has been <strong>suspended</strong> by an administrator.</p>
+<p><strong>Reason:</strong> ${reason}</p>
+<p>You will not be able to sign in until your account is reactivated. If you believe this is a mistake, please contact support at ${esc(v.support_number)} or ${esc(v.support_email)}.</p>
+<p>Best regards,<br/>${p}</p>`,
+      ),
+      text: `Account suspended: ${v.suspension_reason || ""}`,
+    };
+  },
+
   [TEMPLATE_TYPE.CUSTOMER_KYC_SUBMITTED_ADMIN]: (v) => {
     const b = esc(v.brand_name);
     const user = esc(v.user);
+    const custLine = adminCustomerLineEsc(v);
     return {
-      subject: "New Customer KYC Submission Received",
-      html: layout(v,
+      subject: "New Customer KYC Submission",
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A customer has submitted their KYC for verification.</p>
-<p><strong>Customer Name:</strong> ${adminCustomerLineEsc(v)}<br/><strong>Email:</strong> ${esc(v.customer_email)}</p>
-<p>Please review the submitted documents and take appropriate action.</p>
+<p><strong>Customer Name:</strong> ${custLine}<br/><strong>Email:</strong> ${esc(v.customer_email)}</p>
+<p>Please review and take appropriate action.</p>
 <p>Best regards,<br/>${b}</p>`,
       ),
-      text: `New customer KYC: ${v.customer_display_name || v.customer_name}`,
+      text: `New Customer KYC Submission — ${custLine} (${v.customer_email})`,
     };
   },
 
@@ -178,7 +208,8 @@ const DEFAULTS = {
     const rEmail = esc(v.reseller_email ?? v.admin_email ?? "");
     return {
       subject: "Your KYC Has Been Approved",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your KYC verification has been successfully approved.</p>
@@ -198,7 +229,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "KYC Rejected – Action Required",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your KYC verification has been rejected.</p>
@@ -216,7 +248,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Complete Your Virtual Number Activation",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your virtual number request is almost complete.</p>
@@ -235,7 +268,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Payment Successful",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your payment has been successfully completed.</p>
@@ -253,7 +287,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Payment Received",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A payment has been successfully received.</p>
@@ -269,7 +304,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Payment Failed – Try Again",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your payment attempt was unsuccessful.</p>
@@ -286,7 +322,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Your Virtual Number is Activated",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your virtual number has been successfully activated.</p>
@@ -306,7 +343,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Call Forward Updated Successfully",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your call forwarding number has been updated.</p>
@@ -323,7 +361,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Your Virtual Number Has Been Suspended",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your virtual number has been suspended.</p>
@@ -340,7 +379,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Your Number Will Expire Soon",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your virtual number will expire in 30 days.</p>
@@ -358,7 +398,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Urgent: Your Number is Expiring Soon",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your virtual number will expire in 7 days.</p>
@@ -375,7 +416,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Your Number Will Expire in 15 Days",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your virtual number will expire in 15 days.</p>
@@ -392,7 +434,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Payment Link (Resent)",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Here is your payment link again:</p>
@@ -409,7 +452,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Payment Failed",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A customer payment attempt failed.</p>
@@ -427,7 +471,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Renewal Payment Successful",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your renewal payment was successful.</p>
@@ -445,7 +490,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Renewal Payment Received",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>Renewal payment received.</p>
@@ -463,7 +509,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Renewal Payment Failed",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your renewal payment could not be completed.</p>
@@ -480,7 +527,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Renewal Payment Failed",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A renewal payment failed.</p>
@@ -498,7 +546,8 @@ const DEFAULTS = {
     const greet = customerGreetEsc(v);
     return {
       subject: "Offline Payment Approved",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${greet},</p>
 <p>Your offline payment has been approved and your virtual number is being activated.</p>
@@ -514,7 +563,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Offline Payment Approved (Record)",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>An offline customer payment was approved.</p>
@@ -532,7 +582,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Virtual Number Activated",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A virtual number was activated for a customer.</p>
@@ -552,7 +603,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Call Forward Updated",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>Call forwarding was updated for a customer number.</p>
@@ -570,7 +622,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Customer Number Suspended",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A customer virtual number was suspended.</p>
@@ -586,7 +639,8 @@ const DEFAULTS = {
     const p = esc(v.platform_name);
     return {
       subject: "Telecom Suspension Alert",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello,</p>
 <p>A virtual number suspension was flagged as telecom-related.</p>
@@ -603,7 +657,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Wallet Debited (Activation)",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>Your wallet was debited for a customer activation.</p>
@@ -620,7 +675,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Wallet Debited (Renewal)",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>Your wallet was debited for a customer renewal.</p>
@@ -636,7 +692,8 @@ const DEFAULTS = {
     const p = esc(v.platform_name);
     return {
       subject: "Wallet Top-Up Request",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello,</p>
 <p>A reseller has requested a wallet top-up.</p>
@@ -653,7 +710,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Wallet Top-Up Approved",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>Your wallet top-up request was approved.</p>
@@ -669,7 +727,8 @@ const DEFAULTS = {
     const user = esc(v.user);
     return {
       subject: "Wallet Top-Up Rejected",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>Your wallet top-up request was rejected.</p>
@@ -693,7 +752,8 @@ const DEFAULTS = {
         : "";
     return {
       subject: "Low Wallet Balance Alert",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>Your wallet balance is low.</p>
@@ -711,7 +771,8 @@ ${bal}${thr}
     const user = esc(v.user);
     return {
       subject: "Wallet Credit Successful",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>Your wallet has been successfully credited.</p>
@@ -727,7 +788,8 @@ ${bal}${thr}
     const user = esc(v.user);
     return {
       subject: "New Login Detected",
-      html: layout(v,
+      html: layout(
+        v,
         b,
         `<p>Hello ${user},</p>
 <p>A new login was detected on your account.</p>
@@ -744,7 +806,8 @@ ${bal}${thr}
     const user = esc(v.user);
     return {
       subject: "Scheduled Maintenance Notification",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
 <p>The system is currently under maintenance.</p>
@@ -761,10 +824,11 @@ ${bal}${thr}
     const user = esc(v.user);
     return {
       subject: "Maintenance Completed",
-      html: layout(v,
+      html: layout(
+        v,
         p,
         `<p>Hello ${user},</p>
-<p>Maintenance mode has been disabled and services should be available as usual.</p>
+<p>Maintenance activities have been completed, and all services are now running normally.</p>
 <p>Best regards,<br/>${p}</p>`,
       ),
       text: `Maintenance disabled: ${p}`,

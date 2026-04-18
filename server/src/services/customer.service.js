@@ -1,4 +1,5 @@
 import { getHasuraClient } from "../config/hasura.client.js";
+import { normalizeIndiaContactE164 } from "../utils/phone-formatter.js";
 import {
   sendVirtualNumberEmail,
   sendRazorpayLinkEmail,
@@ -325,6 +326,8 @@ export class CustomerService {
             r.business_name ||
             `${r.first_name || ""} ${r.last_name || ""}`.trim() ||
             r.email;
+          const resellerGreetingName =
+            `${r.first_name || ""} ${r.last_name || ""}`.trim() || r.email;
           await sendWalletDebitNotificationEmail({
             resellerEmail: r.email,
             resellerDisplay: display,
@@ -337,8 +340,9 @@ export class CustomerService {
             resellerId,
             balanceAfter,
             resellerEmail: r.email,
-            resellerDisplay: display,
+            resellerGreetingName,
             resellerPhone: r.phone,
+            pricePerNumber: amountNum,
           });
         }
       } catch (e) {
@@ -1041,44 +1045,11 @@ export class CustomerService {
           throw new Error("Subscription plan not found");
         }
 
-        // 2. Create pending transaction record.
-        // IMPORTANT: Store customer_email and notes.customer_id so the webhook
-        // service can match this pending record even when using static payment
-        // links (which don't embed customer_id in Razorpay's own notes).
-        await this.createTransaction({
-          customer_id: customer_id,
-          reseller_id: effectiveResellerId,
-          virtual_number_id: null, // Will be updated after payment
-          transaction_type: "payment",
-          payment_mode: "online",
-          payment_method: "razorpay",
-          amount: Number(subscriptionPlan.amount) || 0,
-          status: "pending",
-          reference_number: null,
-          payment_date: null,
-          customer_email: customer.email || null,
-          customer_name: customer.profile_name || null,
-          notes: {
-            customer_id: customer_id,
-            reseller_id: effectiveResellerId,
-            subscription_plan_id: subscription_plan_id,
-            plan_name: subscriptionPlan.plan_name,
-          },
-        });
-
-        // 3. Update customer status (but don't generate virtual number yet - wait for payment)
-        await this.updateCustomerStatus(
-          customer_id,
-          "pending_payment",
-          "verified",
-        );
-
-        // 4. Get reseller SMTP config for sending emails (customer's reseller)
         const resellerSmtpConfig =
           await getResellerSmtpConfig(effectiveResellerId);
 
-        // 5. Generate Razorpay payment link
         let razorpayLink = null;
+        let razorpayPaymentLinkId = null;
 
         // If razorpay_link_id is provided, use it (format: https://rzp.io/i/{link_id})
         // IMPORTANT: razorpay_link_id should be a payment link ID (plink_...), NOT a subscription ID (sub_...)
@@ -1095,6 +1066,9 @@ export class CustomerService {
             );
             // Fall through to create payment link dynamically
           } else {
+            if (linkId.startsWith("plink_")) {
+              razorpayPaymentLinkId = linkId;
+            }
             // Check if it's already a full URL
             if (linkId.startsWith("http://") || linkId.startsWith("https://")) {
               razorpayLink = linkId;
@@ -1106,7 +1080,6 @@ export class CustomerService {
               razorpayLink = `https://${linkId}`;
             } else {
               // Format as rzp.io short link (correct Razorpay payment link format)
-              // Remove any leading slashes or spaces
               const cleanLinkId = linkId.replace(/^\/+/, "").trim();
               razorpayLink = `https://rzp.io/i/${cleanLinkId}`;
             }
@@ -1137,7 +1110,7 @@ export class CustomerService {
                 customer: {
                   name: customer.profile_name || customer.email,
                   email: customer.email,
-                  contact: customer.phone || undefined,
+                  contact: normalizeIndiaContactE164(customer.phone),
                 },
                 // Disable Razorpay's email notification - we send it ourselves using reseller SMTP
                 notify: {
@@ -1153,6 +1126,9 @@ export class CustomerService {
               },
             );
 
+            if (paymentLinkResult?.id) {
+              razorpayPaymentLinkId = paymentLinkResult.id;
+            }
             if (paymentLinkResult && paymentLinkResult.short_url) {
               razorpayLink = paymentLinkResult.short_url;
             } else if (paymentLinkResult && paymentLinkResult.id) {
@@ -1178,6 +1154,36 @@ export class CustomerService {
             "Razorpay link not configured for this subscription plan. Please add razorpay_link_id or razorpay_plan_id to the subscription plan.",
           );
         }
+
+        await this.createTransaction({
+          customer_id: customer_id,
+          reseller_id: effectiveResellerId,
+          virtual_number_id: null,
+          transaction_type: "payment",
+          payment_mode: "online",
+          payment_method: "razorpay",
+          amount: Number(subscriptionPlan.amount) || 0,
+          status: "pending",
+          reference_number: null,
+          payment_date: null,
+          customer_email: customer.email || null,
+          customer_name: customer.profile_name || null,
+          notes: {
+            customer_id: customer_id,
+            reseller_id: effectiveResellerId,
+            subscription_plan_id: subscription_plan_id,
+            plan_name: subscriptionPlan.plan_name,
+            ...(razorpayPaymentLinkId
+              ? { razorpay_payment_link_id: razorpayPaymentLinkId }
+              : {}),
+          },
+        });
+
+        await this.updateCustomerStatus(
+          customer_id,
+          "pending_payment",
+          "verified",
+        );
 
         const resellerDisplayName =
           reseller.brand_name ||
@@ -1380,7 +1386,7 @@ export class CustomerService {
             customer: {
               name: customer.profile_name || customer.email,
               email: customer.email,
-              contact: customer.phone || undefined,
+              contact: normalizeIndiaContactE164(customer.phone),
             },
             notify: { email: false, sms: false },
             notes: {
@@ -2065,7 +2071,7 @@ export class CustomerService {
                 customer: {
                   name: customer.profile_name || customer.email,
                   email: customer.email,
-                  contact: customer.phone || undefined,
+                  contact: normalizeIndiaContactE164(customer.phone),
                 },
                 notify: { email: false, sms: false },
                 notes: {

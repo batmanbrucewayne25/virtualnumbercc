@@ -3,6 +3,8 @@ import OtpVerify from "../../Signup/steps/Components/OtpVerify";
 
 interface Step3Props {
   email: string;
+  firstName?: string;
+  lastName?: string;
   resellerId?: string | null;
   skipOtpVerification?: boolean;
   onBack: () => void;
@@ -11,6 +13,8 @@ interface Step3Props {
 
 const Step3 = ({
   email,
+  firstName,
+  lastName,
   resellerId,
   skipOtpVerification = false,
   onBack,
@@ -42,6 +46,8 @@ const Step3 = ({
       label="Email"
       email={email}
       userType="customer"
+      firstName={firstName}
+      lastName={lastName}
       resellerId={resellerId || undefined}
       onBack={onBack}
       onVerify={async () => {

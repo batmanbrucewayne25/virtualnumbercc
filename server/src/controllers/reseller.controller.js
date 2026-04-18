@@ -255,8 +255,8 @@ export const notifyCustomerKycSubmitted = asyncHandler(async (req, res) => {
         mst_customer_by_pk(id: $cid) {
           id
           email
-          first_name
-          last_name
+          firstName
+          lastName
           profile_name
           reseller_id
           mst_reseller {
@@ -287,16 +287,22 @@ export const notifyCustomerKycSubmitted = asyncHandler(async (req, res) => {
       });
     }
 
-    const resellerName =
+    const resellerGreetingName =
+      `${r.first_name || ""} ${r.last_name || ""}`.trim() ||
       r.brand_name ||
       r.business_name ||
-      `${r.first_name || ''} ${r.last_name || ''}`.trim() ||
+      r.email;
+    const brandName =
+      r.brand_name ||
+      r.business_name ||
+      `${r.first_name || ""} ${r.last_name || ""}`.trim() ||
       r.email;
     const customerName = formatCustomerDisplayName(cust) || cust.email;
 
     const emailResult = await sendCustomerKycSubmittedAdminEmail({
       resellerEmail: r.email,
-      resellerName,
+      resellerGreetingName,
+      brandName,
       customerName,
       customerEmail: cust.email,
       resellerId: String(resellerId),

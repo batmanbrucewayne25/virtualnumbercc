@@ -8,6 +8,9 @@ type OtpVerifyProps = {
   phone?: string;
   /** "customer" for clienthub onboarding, omit for reseller signup */
   userType?: "customer" | "reseller";
+  /** ClientHub customer signup: used in email OTP greeting */
+  firstName?: string;
+  lastName?: string;
   /** ClientHub: pass so OTP uses reseller SMTP / WhatsApp */
   resellerId?: string;
   onBack: () => void;
@@ -20,6 +23,8 @@ const OtpVerify = ({
   email,
   phone,
   userType,
+  firstName,
+  lastName,
   resellerId,
   onBack,
   onVerify,
@@ -65,6 +70,8 @@ const OtpVerify = ({
               email,
               ...(userType && { user_type: userType }),
               ...(resellerId && { reseller_id: resellerId }),
+              ...(firstName?.trim() && { first_name: firstName.trim() }),
+              ...(lastName?.trim() && { last_name: lastName.trim() }),
             }
           : {
               phone,
@@ -94,7 +101,7 @@ const OtpVerify = ({
     } finally {
       setSending(false);
     }
-  }, [email, phone, label, userType, resellerId]);
+  }, [email, phone, label, userType, resellerId, firstName, lastName]);
 
   // Auto-send OTP exactly once when the required contact value is available.
   // We wait until the prop is non-empty (parent may set it asynchronously from

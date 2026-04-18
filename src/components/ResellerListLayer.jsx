@@ -184,7 +184,9 @@ const ResellerListLayer = () => {
       const result = await rejectMstReseller(selectedReseller.id, userData.id, rejectionReason);
       
       if (result.success) {
-        const resellerName = selectedReseller.business_name || `${selectedReseller.first_name || ""} ${selectedReseller.last_name || ""}`.trim() || selectedReseller.email;
+        const resellerName =
+          `${selectedReseller.first_name || ""} ${selectedReseller.last_name || ""}`.trim() ||
+          selectedReseller.email;
         try {
           const API_BASE_URL = getApiBaseUrl();
           const response = await fetch(`${API_BASE_URL}/notifications/reseller-rejection`, {
@@ -247,6 +249,30 @@ const ResellerListLayer = () => {
       const result = await suspendMstReseller(selectedReseller.id, userData.id, suspendedReason);
       
       if (result.success) {
+        if (selectedReseller.email) {
+          const resellerName =
+            `${selectedReseller.first_name || ""} ${selectedReseller.last_name || ""}`.trim() ||
+            selectedReseller.email;
+          try {
+            const API_BASE_URL = getApiBaseUrl();
+            const token =
+              typeof window !== "undefined" ? localStorage.getItem("authToken") || "" : "";
+            await fetch(`${API_BASE_URL}/notifications/reseller-suspended`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({
+                email: selectedReseller.email,
+                resellerName,
+                suspensionReason: suspendedReason,
+              }),
+            });
+          } catch {
+            /* best-effort; suspension already persisted */
+          }
+        }
         setSuccess("Reseller suspended successfully!");
         setTimeout(() => {
           setSuccess("");
@@ -309,6 +335,14 @@ const ResellerListLayer = () => {
       return;
     }
 
+    if (!canToggleResellerActiveStatus(reseller)) {
+      setError(
+        "Status can only be changed after the reseller is approved. Pending and rejected accounts cannot be activated or deactivated from here.",
+      );
+      setTimeout(() => setError(""), 5000);
+      return;
+    }
+
     const newStatus = !reseller.status;
     const action = newStatus ? "activate" : "deactivate";
     
@@ -336,7 +370,6 @@ const ResellerListLayer = () => {
 
       if (newStatus === false && reseller.email) {
         const resellerName =
-          reseller.business_name ||
           `${reseller.first_name || ""} ${reseller.last_name || ""}`.trim() ||
           reseller.email;
         try {
@@ -403,6 +436,12 @@ const ResellerListLayer = () => {
   const isPendingReseller = (reseller) => {
     // A reseller is pending if they have completed signup but haven't been approved yet
     return reseller.signup_completed && !reseller.approval_date;
+  };
+
+  /** Active/inactive may be toggled only for admin-approved resellers (not pending approval or rejected). */
+  const canToggleResellerActiveStatus = (reseller) => {
+    if (!reseller || reseller.suspended_at) return false;
+    return String(reseller.approval ?? "").toLowerCase() === "approved";
   };
 
   // Filter resellers based on search and status
@@ -626,6 +665,17 @@ const ResellerListLayer = () => {
                             <span className="bg-warning-focus text-warning-600 border border-warning-main px-24 py-4 radius-4 fw-medium text-sm">
                               SUSPEND
                             </span>
+                          ) : !canToggleResellerActiveStatus(reseller) ? (
+                            <span
+                              className={`${
+                                reseller.status
+                                  ? "bg-success-focus text-success-600 border border-success-main"
+                                  : "bg-danger-focus text-danger-600 border border-danger-main"
+                              } px-24 py-4 radius-4 fw-medium text-sm`}
+                              title="Active/Inactive can be changed only after this reseller is approved."
+                            >
+                              {reseller.status ? "Active" : "Inactive"}
+                            </span>
                           ) : (
                             <PermissionGuard
                               module="Reseller"
@@ -650,13 +700,13 @@ const ResellerListLayer = () => {
                                   id={`status-toggle-${reseller.id}`}
                                   checked={reseller.status || false}
                                   onChange={() => handleToggleStatusClick(reseller)}
-                                  disabled={actionLoading || reseller.suspended_at}
-                                  style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer', width: '3rem', height: '1.5rem', marginLeft: '-3.5rem' }}
+                                  disabled={actionLoading}
+                                  style={{ cursor: actionLoading ? 'not-allowed' : 'pointer', width: '3rem', height: '1.5rem', marginLeft: '-3.5rem' }}
                                 />
                                 <label
                                   className="text-sm fw-medium mb-0"
                                   htmlFor={`status-toggle-${reseller.id}`}
-                                  style={{ cursor: actionLoading || reseller.suspended_at ? 'not-allowed' : 'pointer' }}
+                                  style={{ cursor: actionLoading ? 'not-allowed' : 'pointer' }}
                                 >
                                   {reseller.status ? "Active" : "Inactive"}
                                 </label>

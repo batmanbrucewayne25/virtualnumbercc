@@ -7,7 +7,13 @@ import * as RazorpayService from '../services/razorpay.service.js';
  * @access  Private
  */
 export const createPlan = asyncHandler(async (req, res) => {
-  const { reseller_id, plan_name, amount, currency, duration_days, description } = req.body;
+  let { reseller_id, plan_name, amount, currency, duration_days, description } = req.body;
+
+  // FAANG-grade security: Ensure resellers can only create plans for themselves,
+  // and automatically inject their ID if missing from the request body.
+  if (req.user && req.user.role === 'reseller') {
+    reseller_id = req.user.userId;
+  }
 
   // Validate required fields
   if (!reseller_id || !plan_name || !amount || !duration_days) {
@@ -66,7 +72,13 @@ export const createPlan = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createSubscription = asyncHandler(async (req, res) => {
-  const { reseller_id, plan_id, total_count, customer, notes } = req.body;
+  let { reseller_id, plan_id, total_count, customer, notes } = req.body;
+
+  // FAANG-grade security: Ensure resellers can only create subscriptions for themselves,
+  // and automatically inject their ID if missing from the request body.
+  if (req.user && req.user.role === 'reseller') {
+    reseller_id = req.user.userId;
+  }
 
   // Validate required fields
   if (!reseller_id || !plan_id) {
@@ -106,7 +118,7 @@ export const createSubscription = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createPlanAndSubscription = asyncHandler(async (req, res) => {
-  const { 
+  let { 
     reseller_id, 
     plan_name, 
     amount, 
@@ -117,6 +129,12 @@ export const createPlanAndSubscription = asyncHandler(async (req, res) => {
     customer,
     notes
   } = req.body;
+
+  // FAANG-grade security: Ensure resellers can only create combined plans/subscriptions for themselves,
+  // and automatically inject their ID if missing from the request body.
+  if (req.user && req.user.role === 'reseller') {
+    reseller_id = req.user.userId;
+  }
 
   // Validate required fields
   if (!reseller_id || !plan_name || !amount || !duration_days) {
@@ -144,7 +162,11 @@ export const createPlanAndSubscription = asyncHandler(async (req, res) => {
     });
   }
 
+  console.log(`[createPlanAndSubscription] Received request for reseller_id=${reseller_id}`);
+  console.log(`[createPlanAndSubscription] Payload:`, { plan_name, amountNum, durationDaysNum });
+
   try {
+    console.log(`[createPlanAndSubscription] Calling RazorpayService.createRazorpayPlanAndSubscription...`);
     const result = await RazorpayService.createRazorpayPlanAndSubscription(
       reseller_id,
       {
@@ -172,6 +194,8 @@ export const createPlanAndSubscription = asyncHandler(async (req, res) => {
       }
     });
   } catch (error) {
+    console.error(`[createPlanAndSubscription] Controller Error caught:`, error);
+    console.error(`[createPlanAndSubscription] Controller Error message:`, error.message);
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to create Razorpay plan and subscription'

@@ -3,6 +3,8 @@ import {
   sendResellerApprovalNotifications,
   sendResellerRejectionNotifications,
   sendResellerAccountDeactivatedNotification,
+  sendResellerAccountSuspendedNotification,
+  sendWalletCreditApprovedNotification,
 } from '../controllers/notification.controller.js';
 
 const router = express.Router();
@@ -30,6 +32,20 @@ router.post(
   '/reseller-account-deactivated',
   sendResellerAccountDeactivatedNotification,
 );
+
+/**
+ * @route   POST /api/notifications/reseller-suspended
+ * @desc    Email reseller when admin suspends their account
+ * @access  Private (Admin only)
+ */
+router.post('/reseller-suspended', sendResellerAccountSuspendedNotification);
+
+/**
+ * @route   POST /api/notifications/wallet-credit-approved
+ * @desc    Email reseller when admin approves/credits their wallet
+ * @access  Private (Admin only)
+ */
+router.post('/wallet-credit-approved', sendWalletCreditApprovedNotification);
 
 export default router;
 

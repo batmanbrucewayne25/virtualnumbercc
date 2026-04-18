@@ -23,8 +23,7 @@ export const PLATFORM_NAME =
   process.env.PLATFORM_NAME || "Virtual Number India";
 export const PLATFORM_SUPPORT_NUMBER =
   process.env.PLATFORM_SUPPORT_NUMBER || "";
-export const PLATFORM_SUPPORT_EMAIL =
-  process.env.PLATFORM_SUPPORT_EMAIL || "";
+export const PLATFORM_SUPPORT_EMAIL = process.env.PLATFORM_SUPPORT_EMAIL || "";
 
 /**
  * Support phone/email for platform/admin emails: mst_admin_setting.site_phone / site_email,
@@ -93,7 +92,10 @@ function createTransporter(smtpConfig = null) {
 
 function senderFromConfig(smtpConfig, brandFallback) {
   const fromEmail =
-    smtpConfig?.from_email || SMTP_FROM_EMAIL || smtpConfig?.username || SMTP_USER;
+    smtpConfig?.from_email ||
+    SMTP_FROM_EMAIL ||
+    smtpConfig?.username ||
+    SMTP_USER;
   const fromName =
     smtpConfig?.from_name ||
     (brandFallback ? String(brandFallback).trim() : "") ||
@@ -172,7 +174,10 @@ export async function fetchResellerBrandingForOtp(resellerId) {
   }
 }
 
-export async function fetchVirtualNumberEmailContext(virtualNumber, resellerId) {
+export async function fetchVirtualNumberEmailContext(
+  virtualNumber,
+  resellerId,
+) {
   const client = getHasuraClient();
   const q = `
     query VnEmailCtx($vn: String!, $rid: uuid!) {
@@ -191,8 +196,8 @@ export async function fetchVirtualNumberEmailContext(virtualNumber, resellerId) 
           id
           email
           profile_name
-          first_name
-          last_name
+          firstName
+          lastName
         }
         mst_reseller {
           brand_name
@@ -219,6 +224,37 @@ export async function fetchVirtualNumberEmailContext(virtualNumber, resellerId) 
   }
 }
 
+/**
+ * Same credential rules as createTransporter: username/password can come from env
+ * if the DB row omits them (e.g. Hasura hides password).
+ */
+function smtpConfigIsUsable(smtp) {
+  const username = smtp?.username || SMTP_USER;
+  const password = smtp?.password || SMTP_PASSWORD;
+  return !!(username && password);
+}
+
+/**
+ * Try reseller SMTP first, then first admin SMTP, then null so sendTemplatedEmail
+ * uses env-only credentials (createTransporter(null)).
+ */
+async function smtpResellerOrAdmin(resellerId) {
+  if (resellerId) {
+    const r = await getResellerSmtpConfig(resellerId);
+    if (smtpConfigIsUsable(r)) return r;
+  }
+  const admin = await getFirstAdminSmtpConfig();
+  if (smtpConfigIsUsable(admin)) return admin;
+  return null;
+}
+
+/** Platform / admin-only mail: DB admin SMTP row, then env (createTransporter(null)). */
+async function smtpAdminOrEnv() {
+  const admin = await getFirstAdminSmtpConfig();
+  if (smtpConfigIsUsable(admin)) return admin;
+  return null;
+}
+
 /** Call forward / suspend notifications (best-effort). */
 export async function notifyCallForwardUpdated(
   virtualNumber,
@@ -228,42 +264,71 @@ export async function notifyCallForwardUpdated(
   const row = await fetchVirtualNumberEmailContext(virtualNumber, resellerId);
   const cust = row?.mst_customer;
   const res = row?.mst_reseller;
-  if (!cust?.email) return { success: false, message: "No customer email" };
+  if (!row) {
+    return { success: false, message: "Virtual number not found for email context" };
+  }
+
   const brand = resellerDisplayName(res);
-  const smtp = await getResellerSmtpConfig(resellerId);
-  const out = await sendTemplatedEmail({
-    to: cust.email,
-    smtpConfig: smtp,
-    templateType: TEMPLATE_TYPE.CALL_FORWARD_UPDATED,
-    variables: {
-      user: cust.profile_name || cust.email,
-      forward_number: forwardValue,
-      brand_name: brand,
-    },
-    context: { resellerId, customerId: cust.id || null },
-    brandFallback: brand,
-  });
-  if (res?.email) {
-    try {
+  const smtp = await smtpResellerOrAdmin(resellerId);
+  if (!smtpConfigIsUsable(smtp)) {
+    return { success: false, message: "SMTP not configured" };
+  }
+
+  const customerDisplay =
+    (cust &&
+      (String(cust.profile_name || "").trim() ||
+        `${String(cust.firstName ?? "").trim()} ${String(cust.lastName ?? "").trim()}`.trim() ||
+        String(cust.email || "").trim())) ||
+    "";
+
+  const sent = [];
+  if (cust?.email) {
+    sent.push(
       await sendTemplatedEmail({
-        to: res.email,
+        to: cust.email,
         smtpConfig: smtp,
-        templateType: TEMPLATE_TYPE.CALL_FORWARD_UPDATED_ADMIN,
+        templateType: TEMPLATE_TYPE.CALL_FORWARD_UPDATED,
         variables: {
-          user: brand,
-          customer_name: cust.profile_name || cust.email,
-          virtual_number: virtualNumber,
+          user: customerDisplay || cust.email,
           forward_number: forwardValue,
           brand_name: brand,
         },
         context: { resellerId, customerId: cust.id || null },
         brandFallback: brand,
-      });
+      }),
+    );
+  }
+  if (res?.email) {
+    try {
+      sent.push(
+        await sendTemplatedEmail({
+          to: res.email,
+          smtpConfig: smtp,
+          templateType: TEMPLATE_TYPE.CALL_FORWARD_UPDATED_ADMIN,
+          variables: {
+            user: brand,
+            customer_name: customerDisplay || cust?.email || "Customer",
+            virtual_number: virtualNumber,
+            forward_number: forwardValue,
+            brand_name: brand,
+          },
+          context: { resellerId, customerId: cust?.id || null },
+          brandFallback: brand,
+        }),
+      );
     } catch (e) {
-      console.warn("[notifyCallForwardUpdated] admin email skipped:", e.message);
+      console.warn("[notifyCallForwardUpdated] reseller copy skipped:", e.message);
     }
   }
-  return out;
+
+  if (!cust?.email && !res?.email) {
+    return { success: false, message: "No customer or reseller email" };
+  }
+  const anyOk = sent.some((r) => r?.success === true);
+  return {
+    success: anyOk,
+    message: anyOk ? "Sent" : sent[0]?.message || "Failed to send email",
+  };
 }
 
 export async function notifyNumberSuspended(virtualNumber, resellerId) {
@@ -272,13 +337,21 @@ export async function notifyNumberSuspended(virtualNumber, resellerId) {
   const res = row?.mst_reseller;
   if (!cust?.email) return { success: false, message: "No customer email" };
   const brand = resellerDisplayName(res);
-  const smtp = await getResellerSmtpConfig(resellerId);
+  const smtp = await smtpResellerOrAdmin(resellerId);
+  if (!smtpConfigIsUsable(smtp)) {
+    return { success: false, message: "SMTP not configured" };
+  }
+  const customerGreeting =
+    `${String(cust.firstName ?? "").trim()} ${String(cust.lastName ?? "").trim()}`.trim() ||
+    String(cust.profile_name || "").trim() ||
+    cust.email;
+  const customerDisplay = customerGreeting;
   const out = await sendTemplatedEmail({
     to: cust.email,
     smtpConfig: smtp,
     templateType: TEMPLATE_TYPE.NUMBER_SUSPENDED,
     variables: {
-      user: cust.profile_name || cust.email,
+      user: customerGreeting,
       virtual_number: virtualNumber,
       support_number: res?.support_number || PLATFORM_SUPPORT_NUMBER,
       brand_name: brand,
@@ -294,7 +367,7 @@ export async function notifyNumberSuspended(virtualNumber, resellerId) {
         templateType: TEMPLATE_TYPE.NUMBER_SUSPENDED_ADMIN,
         variables: {
           user: brand,
-          customer_name: cust.profile_name || cust.email,
+          customer_name: customerDisplay,
           virtual_number: virtualNumber,
           brand_name: brand,
         },
@@ -466,9 +539,7 @@ export async function sendNewLoginAlertEmail({
   const brand =
     userType === "admin" ? PLATFORM_NAME : userName || PLATFORM_NAME;
   const support =
-    userType === "admin"
-      ? PLATFORM_SUPPORT_NUMBER
-      : PLATFORM_SUPPORT_NUMBER;
+    userType === "admin" ? PLATFORM_SUPPORT_NUMBER : PLATFORM_SUPPORT_NUMBER;
   return sendTemplatedEmail({
     to: toEmail,
     smtpConfig: smtp,
@@ -528,9 +599,8 @@ export async function sendExpiryReminderEmail({
   const sendWa = [30, 7].includes(Math.round(dNum));
   if (customerPhone && sendWa) {
     try {
-      const { notifyCustomerExpiryReminderWhatsApp } = await import(
-        "./transactionalWhatsApp.service.js"
-      );
+      const { notifyCustomerExpiryReminderWhatsApp } =
+        await import("./transactionalWhatsApp.service.js");
       await notifyCustomerExpiryReminderWhatsApp({
         phone: customerPhone,
         virtualNumber,
@@ -545,7 +615,9 @@ export async function sendExpiryReminderEmail({
   return emailResult;
 }
 
-/** Platform → reseller / admin (wallet low). Uses first admin SMTP. */
+/**
+ * Low wallet alert to reseller: reseller SMTP → admin SMTP → env (same as smtpResellerOrAdmin).
+ */
 export async function sendLowWalletBalanceEmail(
   toEmail,
   userName,
@@ -553,7 +625,10 @@ export async function sendLowWalletBalanceEmail(
   threshold = "",
   resellerId = null,
 ) {
-  const smtp = await getFirstAdminSmtpConfig();
+  const smtp = await smtpResellerOrAdmin(resellerId);
+  if (!smtpConfigIsUsable(smtp)) {
+    return { success: false, message: "SMTP not configured" };
+  }
   return sendTemplatedEmail({
     to: toEmail,
     smtpConfig: smtp,
@@ -563,15 +638,19 @@ export async function sendLowWalletBalanceEmail(
       platform_name: PLATFORM_NAME,
       brand_name: userName || toEmail,
       balance: balance !== "" && balance != null ? String(balance) : "",
-      threshold:
-        threshold !== "" && threshold != null ? String(threshold) : "",
+      threshold: threshold !== "" && threshold != null ? String(threshold) : "",
     },
     context: resellerId ? { resellerId } : {},
     brandFallback: PLATFORM_NAME,
   });
 }
 
-export async function sendWalletCreditApprovedEmail(toEmail, userName, amount, dateStr) {
+export async function sendWalletCreditApprovedEmail(
+  toEmail,
+  userName,
+  amount,
+  dateStr,
+) {
   const smtp = await getFirstAdminSmtpConfig();
   return sendTemplatedEmail({
     to: toEmail,
@@ -654,7 +733,8 @@ export async function notifyTelecomSuspensionSuper({
     } catch (_) {}
   }
   const emails = await fetchActiveSuperAdminEmails();
-  if (!emails.length) return { success: false, message: "No super admin emails" };
+  if (!emails.length)
+    return { success: false, message: "No super admin emails" };
   const smtp = await getFirstAdminSmtpConfig();
   for (const to of emails) {
     await sendTemplatedEmail({
@@ -961,7 +1041,8 @@ export async function sendWalletTopUpRequestSuperEmail({
   amount,
 }) {
   const emails = await fetchActiveSuperAdminEmails();
-  if (!emails.length) return { success: false, message: "No super admin emails" };
+  if (!emails.length)
+    return { success: false, message: "No super admin emails" };
   const smtp = await getFirstAdminSmtpConfig();
   for (const to of emails) {
     await sendTemplatedEmail({
@@ -997,11 +1078,7 @@ export async function sendWalletTopUpApprovedEmail(toEmail, userName, amount) {
   });
 }
 
-export async function sendWalletTopUpRejectedEmail(
-  toEmail,
-  userName,
-  reason,
-) {
+export async function sendWalletTopUpRejectedEmail(toEmail, userName, reason) {
   const smtp = await getFirstAdminSmtpConfig();
   return sendTemplatedEmail({
     to: toEmail,
@@ -1018,25 +1095,59 @@ export async function sendWalletTopUpRejectedEmail(
 }
 
 /**
- * After wallet debit: optional low-balance email + WhatsApp to reseller.
+ * After wallet debit: low-balance email + WhatsApp to reseller when:
+ * - remaining balance is below price-per-number (cannot cover another activation/renewal at same rate), or
+ * - optional LOW_WALLET_BALANCE_THRESHOLD_RUPEES (if set) and balance is at or below that.
+ *
+ * Previously this only ran when LOW_WALLET_BALANCE_THRESHOLD_RUPEES was set; env alone was required,
+ * so with no env the alert never sent.
  */
 export async function maybeNotifyResellerLowWallet({
   resellerId,
   balanceAfter,
   resellerEmail,
+  /** @deprecated Prefer resellerGreetingName — was often brand/business name */
   resellerDisplay,
+  /** Personal name for "Hello …" (first + last); not brand name */
+  resellerGreetingName,
   resellerPhone,
+  pricePerNumber = null,
 }) {
-  const threshold = Number(process.env.LOW_WALLET_BALANCE_THRESHOLD_RUPEES || 0);
-  if (!threshold || balanceAfter > threshold) return;
-  const name = resellerDisplay || resellerEmail || "Reseller";
+  const envThreshold = Number(
+    process.env.LOW_WALLET_BALANCE_THRESHOLD_RUPEES || 0,
+  );
+  const ppn = Number(pricePerNumber);
+  const bal = Number(balanceAfter);
+
+  const belowPricePerNumber =
+    Number.isFinite(ppn) && ppn > 0 && Number.isFinite(bal) && bal < ppn;
+  const belowEnvThreshold =
+    Number.isFinite(envThreshold) &&
+    envThreshold > 0 &&
+    Number.isFinite(bal) &&
+    bal <= envThreshold;
+
+  if (!belowPricePerNumber && !belowEnvThreshold) return;
+
+  const thresholdForTemplate =
+    belowPricePerNumber && ppn > 0
+      ? String(ppn)
+      : envThreshold > 0
+        ? String(envThreshold)
+        : "";
+
+  const name =
+    String(resellerGreetingName || "").trim() ||
+    String(resellerDisplay || "").trim() ||
+    resellerEmail ||
+    "Reseller";
   try {
     if (resellerEmail) {
       await sendLowWalletBalanceEmail(
         resellerEmail,
         name,
         String(balanceAfter),
-        String(threshold),
+        thresholdForTemplate,
         resellerId,
       );
     }
@@ -1045,13 +1156,12 @@ export async function maybeNotifyResellerLowWallet({
   }
   if (resellerPhone) {
     try {
-      const { notifyResellerLowWalletWhatsApp } = await import(
-        "./transactionalWhatsApp.service.js"
-      );
+      const { notifyResellerLowWalletWhatsApp } =
+        await import("./transactionalWhatsApp.service.js");
       await notifyResellerLowWalletWhatsApp({
         phone: resellerPhone,
         balance: String(balanceAfter),
-        threshold: String(threshold),
+        threshold: thresholdForTemplate || String(envThreshold || ppn || ""),
         platformName: PLATFORM_NAME,
         resellerId,
       });
@@ -1061,7 +1171,11 @@ export async function maybeNotifyResellerLowWallet({
   }
 }
 
-export async function sendAdminKycSubmittedSuperEmail(superAdminEmail, adminName, adminEmail) {
+export async function sendAdminKycSubmittedSuperEmail(
+  superAdminEmail,
+  adminName,
+  adminEmail,
+) {
   const smtp = await getFirstAdminSmtpConfig();
   return sendTemplatedEmail({
     to: superAdminEmail,
@@ -1110,7 +1224,10 @@ export async function sendAdminKycRejectedEmail(toEmail, userName, reason) {
 }
 
 export async function sendAdminAccountDeactivatedEmail(toEmail, userName) {
-  const smtp = await getFirstAdminSmtpConfig();
+  const smtp = await smtpAdminOrEnv();
+  if (!smtpConfigIsUsable(smtp)) {
+    return { success: false, message: "SMTP not configured" };
+  }
   const { support_number, support_email } =
     await fetchPlatformSupportFromAdminSettings();
   return sendTemplatedEmail({
@@ -1128,22 +1245,71 @@ export async function sendAdminAccountDeactivatedEmail(toEmail, userName) {
   });
 }
 
+/**
+ * Email reseller when admin suspends the account (suspended_at / reason set).
+ * Uses same SMTP chain as deactivation: admin DB → env.
+ */
+export async function sendResellerAccountSuspendedEmail(
+  toEmail,
+  userName,
+  suspensionReason,
+) {
+  const smtp = await smtpAdminOrEnv();
+  if (!smtpConfigIsUsable(smtp)) {
+    return { success: false, message: "SMTP not configured" };
+  }
+  const { support_number, support_email } =
+    await fetchPlatformSupportFromAdminSettings();
+  return sendTemplatedEmail({
+    to: toEmail,
+    smtpConfig: smtp,
+    templateType: TEMPLATE_TYPE.RESELLER_ACCOUNT_SUSPENDED,
+    variables: {
+      user: userName || toEmail,
+      suspension_reason: suspensionReason != null ? String(suspensionReason) : "",
+      support_number,
+      support_email,
+      platform_name: PLATFORM_NAME,
+    },
+    context: {},
+    brandFallback: PLATFORM_NAME,
+  });
+}
+
 export async function sendCustomerKycSubmittedAdminEmail({
   resellerEmail,
-  resellerName,
+  /** Display name for "Hello …" (prefer reseller first + last name) */
+  resellerGreetingName,
+  /** Brand shown in header/footer (brand_name / business_name) */
+  brandName,
   customerName,
   customerEmail,
   resellerId,
   customerId = null,
 }) {
-  const smtp = await getResellerSmtpConfig(resellerId);
-  const brand = resellerName || "Team";
+  let smtpConfig = resellerId ? await getResellerSmtpConfig(resellerId) : null;
+  if (!smtpConfig) {
+    console.warn(
+      "[sendCustomerKycSubmittedAdminEmail] No active reseller SMTP; trying admin SMTP",
+    );
+    smtpConfig = await getFirstAdminSmtpConfig();
+  }
+  if (!smtpConfig) {
+    console.warn(
+      "[sendCustomerKycSubmittedAdminEmail] No DB SMTP; using process env SMTP_* if set",
+    );
+  }
+
+  const brand = String(brandName || "").trim() || "Team";
+  const greet =
+    String(resellerGreetingName || "").trim() || resellerEmail || "there";
+
   return sendTemplatedEmail({
     to: resellerEmail,
-    smtpConfig: smtp,
+    smtpConfig,
     templateType: TEMPLATE_TYPE.CUSTOMER_KYC_SUBMITTED_ADMIN,
     variables: {
-      user: resellerName || resellerEmail,
+      user: greet,
       customer_name: customerName,
       customer_email: customerEmail,
       brand_name: brand,

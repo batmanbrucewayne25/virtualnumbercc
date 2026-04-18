@@ -11,6 +11,8 @@ export const TEMPLATE_TYPE = {
   ADMIN_KYC_APPROVED: "admin_kyc_approved",
   ADMIN_KYC_REJECTED: "admin_kyc_rejected",
   ADMIN_ACCOUNT_DEACTIVATED: "admin_account_deactivated",
+  /** Admin suspended reseller (suspended_at set); includes suspension_reason */
+  RESELLER_ACCOUNT_SUSPENDED: "reseller_account_suspended",
   CUSTOMER_KYC_SUBMITTED_ADMIN: "customer_kyc_submitted_admin",
   CUSTOMER_KYC_APPROVED: "customer_kyc_approved",
   CUSTOMER_KYC_REJECTED: "customer_kyc_rejected",
@@ -89,6 +91,13 @@ export const TEMPLATE_VARIABLES = {
   ],
   [TEMPLATE_TYPE.ADMIN_ACCOUNT_DEACTIVATED]: [
     "user",
+    "support_number",
+    "support_email",
+    "platform_name",
+  ],
+  [TEMPLATE_TYPE.RESELLER_ACCOUNT_SUSPENDED]: [
+    "user",
+    "suspension_reason",
     "support_number",
     "support_email",
     "platform_name",

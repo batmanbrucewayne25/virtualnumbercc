@@ -8,12 +8,14 @@ interface Step8Props {
   onBack: () => void;
   onConfirm: () => void;
   onOpenTermsModal?: () => void;
+  onOpenPrivacyModal?: () => void;
 }
 
-/** Mask PAN: first 4 + **** + last 2 */
+/** Mask PAN: first 2 + **** + last 2 */
 const maskPan = (pan: string) => {
-  if (!pan || pan.length < 6) return "****";
-  return `${pan.slice(0, 4)}****${pan.slice(-2)}`;
+  const s = String(pan ?? "").trim().toUpperCase();
+  if (!s || s.length < 5) return "****";
+  return `${s.slice(0, 2)}****${s.slice(-2)}`;
 };
 
 /** Mask Aadhaar: XXXX-XXXX-last4 */
@@ -77,6 +79,7 @@ const Step8 = ({
   onBack,
   onConfirm,
   onOpenTermsModal,
+  onOpenPrivacyModal,
 }: Step8Props) => {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -300,6 +303,15 @@ const Step8 = ({
           onClick={() => onOpenTermsModal?.()}
         >
           Terms &amp; Conditions
+        </button>{" "}
+        and{" "}
+        <button
+          type="button"
+          className="fw-semibold text-primary-600 text-decoration-underline border-0 bg-transparent p-0 align-baseline"
+          style={{ cursor: "pointer" }}
+          onClick={() => onOpenPrivacyModal?.()}
+        >
+          Privacy Policy
         </button>
         .
       </div>

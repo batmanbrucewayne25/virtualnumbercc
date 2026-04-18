@@ -47,10 +47,11 @@ interface Step10Props {
   onSubmit: () => void;
 }
 
-/** Mask PAN number: first 4 + **** + last 2 (e.g. CHWPJ2392B → CHWP****2B) */
+/** Mask PAN: first 2 + **** + last 2 */
 const maskPanNumber = (pan: string): string => {
-  if (!pan || pan.length < 6) return "****";
-  return `${pan.slice(0, 4)}****${pan.slice(-2)}`;
+  const s = String(pan ?? "").trim().toUpperCase();
+  if (!s || s.length < 5) return "****";
+  return `${s.slice(0, 2)}****${s.slice(-2)}`;
 };
 
 /** Format date from YYYY-MM-DD to DD-MM-YYYY */

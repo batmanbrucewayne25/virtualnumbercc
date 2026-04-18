@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { useState, useEffect } from "react";
 import { creditWallet } from "@/hasura/mutations/wallet";
 import { getMstResellers } from "@/hasura/mutations/reseller";
+import { getApiBaseUrl } from "@/utils/apiUrl";
 
 /**
  * Reusable "Add Wallet Amount" modal.
@@ -136,6 +137,36 @@ const AddWalletAmountModal = ({ isOpen, onClose, onSuccess, initialValues }) => 
       );
 
       if (result.success) {
+        // Fire wallet-credit-approved email (best-effort; don't block success on it)
+        try {
+          const token = localStorage.getItem("authToken");
+          const API_BASE_URL = getApiBaseUrl();
+          await fetch(`${API_BASE_URL}/notifications/wallet-credit-approved`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              resellerId: formData.reseller_id,
+              amount: amount,
+              dateStr: formData.validity_date
+                ? new Date(formData.validity_date).toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : new Date().toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  }),
+            }),
+          });
+        } catch (_emailErr) {
+          // Best-effort; wallet credit already succeeded
+        }
+
         setSuccess("Wallet credited successfully!");
         setTimeout(() => {
           setSuccess("");

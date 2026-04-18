@@ -273,7 +273,10 @@ const ResellerPaymentsLayer = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((transaction, index) => (
+                  {transactions.map((transaction, index) => {
+                    const customerPersonal =
+                      `${transaction.mst_customer?.first_name || ""} ${transaction.mst_customer?.last_name || ""}`.trim();
+                    return (
                     <tr key={transaction.id}>
                       <td>{offset + index + 1}</td>
                       <td className="text-nowrap">{formatDate(transaction.created_at)}</td>
@@ -304,9 +307,9 @@ const ResellerPaymentsLayer = () => {
                       <td>
                         <div>
                           <span className='text-md mb-0 fw-normal text-secondary-light d-block'>
-                            {transaction.customer_name || 
-                             transaction.mst_customer?.profile_name || 
-                             transaction.customer_email?.split('@')[0] || 
+                            {transaction.customer_name ||
+                             customerPersonal ||
+                             transaction.mst_customer?.profile_name ||
                              "-"}
                           </span>
                           {(transaction.customer_email || transaction.mst_customer?.email) && (
@@ -330,7 +333,8 @@ const ResellerPaymentsLayer = () => {
                         </span>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>

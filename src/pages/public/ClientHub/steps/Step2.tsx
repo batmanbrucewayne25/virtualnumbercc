@@ -4,6 +4,17 @@ import { checkMstCustomerExists, createMstCustomer } from "@/hasura/mutations/cu
 import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import { getStrongPasswordError, STRONG_PASSWORD_HINT } from "@/utils/passwordPolicy";
+import { mergeAutofillWithState } from "@/utils/formAutofillSync";
+
+/** Stable ids for DOM read at submit (Chrome autofill often skips React onChange). */
+const CLIENTHUB_SIGNUP_FIELD_IDS = {
+  firstName: "clienthub-first-name",
+  lastName: "clienthub-last-name",
+  email: "clienthub-email",
+  phone: "clienthub-phone",
+  password: "clienthub-password",
+  confirmPassword: "clienthub-confirm-password",
+} as const;
 
 interface Step2Props {
   resellerId: string;
@@ -36,59 +47,76 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
   };
 
   const handleEmailBlur = () => {
+    const em = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.email, email);
+    setEmail(em);
     setEmailError("");
-    if (!email) {
+    if (!em) {
       setEmailError("Email is required.");
       return;
     }
-    if (!validateEmail(email)) {
+    if (!validateEmail(em)) {
       setEmailError("Enter a valid email address.");
       return;
     }
   };
 
   const handleContinue = async () => {
+    const fn = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.firstName, firstName);
+    const ln = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.lastName, lastName);
+    const em = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.email, email);
+    const phRaw = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.phone, phone);
+    const ph = phRaw.replace(/\D/g, "").slice(0, 10);
+    const pw = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.password, password);
+    const pw2 = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.confirmPassword, confirmPassword);
+
+    setFirstName(fn);
+    setLastName(ln);
+    setEmail(em);
+    setPhone(ph);
+    setPassword(pw);
+    setConfirmPassword(pw2);
+
     setError("");
     setFirstNameError("");
     setLastNameError("");
     setEmailError("");
     setPhoneError("");
 
-    // Validate all fields
-    if (!firstName?.trim()) {
+    // Validate all fields (use merged values — authoritative for autofill)
+    if (!fn) {
       setFirstNameError("First name is required.");
       setError("Please fill all required fields.");
       return;
     }
-    if (!lastName?.trim()) {
+    if (!ln) {
       setLastNameError("Last name is required.");
       setError("Please fill all required fields.");
       return;
     }
-    if (!email || !phone || !password || !confirmPassword) {
+    if (!em || !ph || !pw || !pw2) {
       setError("Please fill all required fields.");
       return;
     }
 
-    if (!validateEmail(email)) {
+    if (!validateEmail(em)) {
       setEmailError("Enter a valid email address.");
       setError("Please fix the errors above before continuing.");
       return;
     }
 
-    if (!validatePhone(phone)) {
+    if (!validatePhone(ph)) {
       setPhoneError("Enter a valid 10-digit phone number starting with 6-9.");
       setError("Please enter a valid phone number.");
       return;
     }
 
-    const passwordError = getStrongPasswordError(password);
+    const passwordError = getStrongPasswordError(pw);
     if (passwordError) {
       setError(passwordError);
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (pw !== pw2) {
       setError("Passwords do not match.");
       return;
     }
@@ -104,8 +132,8 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resellerId,
-            email: email.trim(),
-            phone: phone.trim(),
+            email: em.trim(),
+            phone: ph.trim(),
           }),
         });
         const checkData = await checkRes.json();
@@ -119,16 +147,16 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
       }
 
       // Check if email or phone already exists
-      const checkResult = await checkMstCustomerExists(email, phone);
+      const checkResult = await checkMstCustomerExists(em, ph);
       
       if (checkResult?.exists && checkResult.data) {
         const existingUser = checkResult.data;
-        if (existingUser.email === email) {
+        if (existingUser.email === em) {
           setEmailError("Email already exists. Please use a different email.");
           setLoading(false);
           return;
         }
-        if (existingUser.phone === phone) {
+        if (existingUser.phone === ph) {
           setPhoneError("Phone number already exists. Please use a different phone number.");
           setLoading(false);
           return;
@@ -138,11 +166,11 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
       // Create customer record (DB columns: first_name, last_name)
       const result = await createMstCustomer({
         reseller_id: resellerId,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        email,
-        phone,
-        password_hash: password,
+        first_name: fn,
+        last_name: ln,
+        email: em,
+        phone: ph,
+        password_hash: pw,
       });
 
       // Check for GraphQL errors in response
@@ -167,7 +195,7 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
 
       // Call onSuccess to proceed to next step
       if (onSuccess) {
-        onSuccess({ firstName: firstName.trim(), lastName: lastName.trim(), email, phone, password });
+        onSuccess({ firstName: fn, lastName: ln, email: em, phone: ph, password: pw });
       } else {
         console.error("onSuccess callback is not defined");
         setError("An error occurred. Please try again.");
@@ -206,12 +234,19 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
             First Name <span className="text-danger">*</span>
           </label>
           <input
+            id={CLIENTHUB_SIGNUP_FIELD_IDS.firstName}
             className={`form-control h-56-px ${firstNameError ? "is-invalid" : ""}`}
             type="text"
+            name="given-name"
+            autoComplete="given-name"
             placeholder="Enter first name"
             value={firstName}
             onChange={(e) => {
               setFirstName(e.target.value);
+              if (firstNameError) setFirstNameError("");
+            }}
+            onInput={(e) => {
+              setFirstName(e.currentTarget.value);
               if (firstNameError) setFirstNameError("");
             }}
           />
@@ -222,12 +257,19 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
             Last Name <span className="text-danger">*</span>
           </label>
           <input
+            id={CLIENTHUB_SIGNUP_FIELD_IDS.lastName}
             className={`form-control h-56-px ${lastNameError ? "is-invalid" : ""}`}
             type="text"
+            name="family-name"
+            autoComplete="family-name"
             placeholder="Enter last name"
             value={lastName}
             onChange={(e) => {
               setLastName(e.target.value);
+              if (lastNameError) setLastNameError("");
+            }}
+            onInput={(e) => {
+              setLastName(e.currentTarget.value);
               if (lastNameError) setLastNameError("");
             }}
           />
@@ -240,12 +282,19 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
           Email <span className="text-danger">*</span>
         </label>
         <input
+          id={CLIENTHUB_SIGNUP_FIELD_IDS.email}
           className={`form-control h-56-px ${emailError ? "is-invalid" : ""}`}
           type="email"
+          name="email"
+          autoComplete="email"
           placeholder="Enter your email address"
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
+            if (emailError) setEmailError("");
+          }}
+          onInput={(e) => {
+            setEmail(e.currentTarget.value);
             if (emailError) setEmailError("");
           }}
           onBlur={handleEmailBlur}
@@ -258,8 +307,12 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
           Mobile Number <span className="text-danger">*</span>
         </label>
         <input
+          id={CLIENTHUB_SIGNUP_FIELD_IDS.phone}
           className={`form-control h-56-px ${phoneError ? "is-invalid" : ""}`}
           type="tel"
+          name="tel"
+          autoComplete="tel"
+          inputMode="numeric"
           placeholder="10-digit mobile number"
           value={phone}
           onChange={(e) => {
@@ -267,8 +320,16 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
             setPhone(value);
             if (phoneError) setPhoneError("");
           }}
+          onInput={(e) => {
+            const value = e.currentTarget.value.replace(/\D/g, "").slice(0, 10);
+            setPhone(value);
+            if (phoneError) setPhoneError("");
+          }}
           onBlur={() => {
-            if (phone && !validatePhone(phone)) {
+            const raw = mergeAutofillWithState(CLIENTHUB_SIGNUP_FIELD_IDS.phone, phone);
+            const digits = raw.replace(/\D/g, "").slice(0, 10);
+            setPhone(digits);
+            if (digits && !validatePhone(digits)) {
               setPhoneError("Enter a valid 10-digit phone number.");
             }
           }}
@@ -281,13 +342,14 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
           Password <span className="text-danger">*</span>
         </label>
         <PasswordField
-          id="clienthub-password"
-          name="password"
+          id={CLIENTHUB_SIGNUP_FIELD_IDS.password}
+          name="new-password"
           placeholder="Enter password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="mb-0"
           required
+          autoComplete="new-password"
         />
         <small className="text-secondary-light">{STRONG_PASSWORD_HINT}</small>
       </div>
@@ -297,13 +359,14 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
           Confirm Password <span className="text-danger">*</span>
         </label>
         <PasswordField
-          id="clienthub-confirm-password"
-          name="confirmPassword"
+          id={CLIENTHUB_SIGNUP_FIELD_IDS.confirmPassword}
+          name="confirm-password"
           placeholder="Confirm password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           className="mb-0"
           required
+          autoComplete="new-password"
         />
       </div>
 

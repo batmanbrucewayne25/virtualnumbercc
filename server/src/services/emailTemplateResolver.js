@@ -8,7 +8,23 @@ import {
   buildLogoImageUrl,
   formatCustomerDisplayName,
   formatResellerDisplayName,
+  formatResellerPersonalName,
 } from "../utils/emailBranding.js";
+
+/** True if we should replace a template `user` value derived from email / empty. */
+function shouldReplacePlaceholderUserName(u, email) {
+  const ut = String(u ?? "").trim();
+  const em = String(email ?? "").trim();
+  if (!em) return !ut;
+  if (!ut) return true;
+  const uLower = ut.toLowerCase();
+  const eLower = em.toLowerCase();
+  if (uLower === eLower) return true;
+  const at = eLower.indexOf("@");
+  if (at === -1) return false;
+  const local = eLower.slice(0, at);
+  return uLower === local;
+}
 
 function htmlToText(html) {
   if (!html) return "";
@@ -57,19 +73,19 @@ async function enrichTransactionalVariables(variables, context) {
             r.email ||
             "Team";
         }
-        const resellerDisplay = formatResellerDisplayName(r);
+        const personalName = formatResellerPersonalName(r);
         const re = String(r.email ?? "").trim();
         const u = String(merged.user ?? "").trim();
-        if (
-          resellerDisplay &&
-          re &&
-          (!u || u.toLowerCase() === re.toLowerCase())
-        ) {
-          merged.user = resellerDisplay;
+        const greetingName = personalName || formatResellerDisplayName(r);
+        if (greetingName && re && shouldReplacePlaceholderUserName(u, re)) {
+          merged.user = greetingName;
         }
       }
     } catch (e) {
-      console.warn("[resolveTransactionalEmail] reseller enrich skipped:", e.message);
+      console.warn(
+        "[resolveTransactionalEmail] reseller enrich skipped:",
+        e.message,
+      );
     }
   } else {
     const pl = (process.env.PLATFORM_LOGO_URL || "").trim();
@@ -82,8 +98,8 @@ async function enrichTransactionalVariables(variables, context) {
       const d = await client.client.request(
         `query C($id: uuid!) {
           mst_customer_by_pk(id: $id) {
-            first_name
-            last_name
+            firstName
+            lastName
             profile_name
             email
           }
@@ -93,21 +109,31 @@ async function enrichTransactionalVariables(variables, context) {
       const c = d.mst_customer_by_pk;
       if (c) {
         const dn = formatCustomerDisplayName(c);
+        const em = String(c.email ?? "").trim();
+        const useDnForGreeting =
+          dn &&
+          em &&
+          dn.toLowerCase() !== em.toLowerCase();
         if (dn) {
           merged.customer_display_name = dn;
-          const em = String(c.email ?? "").trim();
           const u = String(merged.user ?? "").trim();
-          if (!u || (em && u.toLowerCase() === em.toLowerCase())) {
+          if (useDnForGreeting && shouldReplacePlaceholderUserName(u, em)) {
             merged.user = dn;
           }
           const cm = String(merged.customer_name ?? "").trim();
-          if (!cm || (em && cm.toLowerCase() === em.toLowerCase())) {
+          if (
+            useDnForGreeting &&
+            (!cm || shouldReplacePlaceholderUserName(cm, em))
+          ) {
             merged.customer_name = dn;
           }
         }
       }
     } catch (e) {
-      console.warn("[resolveTransactionalEmail] customer enrich skipped:", e.message);
+      console.warn(
+        "[resolveTransactionalEmail] customer enrich skipped:",
+        e.message,
+      );
     }
   }
 

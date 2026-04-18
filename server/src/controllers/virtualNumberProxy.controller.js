@@ -66,6 +66,52 @@ export const updateCallForwarding = asyncHandler(async (req, res) => {
     }
   }
 
+  // Email: customer + reseller copy (best-effort; was never wired before)
+  try {
+    const client = getHasuraClient();
+    let resellerIdForNotify = null;
+    let vnStr = String(number || "").trim();
+    if (virtual_number_id) {
+      const vq = await client.client.request(
+        `query Vnpk($id: uuid!) {
+          mst_virtual_number_by_pk(id: $id) { virtual_number reseller_id }
+        }`,
+        { id: virtual_number_id },
+      );
+      const vn = vq?.mst_virtual_number_by_pk;
+      if (vn?.reseller_id) {
+        resellerIdForNotify = vn.reseller_id;
+        if (vn.virtual_number) vnStr = vn.virtual_number;
+      }
+    } else if (vnStr) {
+      const vq2 = await client.client.request(
+        `query VnStr($n: String!) {
+          mst_virtual_number(where: { virtual_number: { _eq: $n } }, limit: 1) {
+            virtual_number
+            reseller_id
+          }
+        }`,
+        { n: vnStr },
+      );
+      const vn = vq2?.mst_virtual_number?.[0];
+      if (vn?.reseller_id) {
+        resellerIdForNotify = vn.reseller_id;
+        if (vn.virtual_number) vnStr = vn.virtual_number;
+      }
+    }
+    if (resellerIdForNotify && vnStr) {
+      const { notifyCallForwardUpdated } = await import(
+        "../services/transactionalEmail.service.js"
+      );
+      await notifyCallForwardUpdated(vnStr, forward_value, resellerIdForNotify);
+    }
+  } catch (notifyErr) {
+    console.warn(
+      "[virtualNumberProxy] call-forward email notify skipped:",
+      notifyErr?.message || notifyErr,
+    );
+  }
+
   res.status(200).json({
     success: true,
     message: apiResult.message || "Call forwarding updated successfully",

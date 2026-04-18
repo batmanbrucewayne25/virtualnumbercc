@@ -24,8 +24,8 @@ export function buildLogoImageUrl(filenameOrUrl) {
  */
 export function formatCustomerDisplayName(c) {
   if (!c) return "";
-  const fn = String(c.first_name ?? "").trim();
-  const ln = String(c.last_name ?? "").trim();
+  const fn = String(c.firstName ?? c.first_name ?? "").trim();
+  const ln = String(c.lastName ?? c.last_name ?? "").trim();
   const full = `${fn} ${ln}`.trim();
   if (full) return full;
   const profile = String(c.profile_name ?? "").trim();
@@ -33,6 +33,14 @@ export function formatCustomerDisplayName(c) {
   const email = String(c.email ?? "").trim();
   if (email) return email;
   return "";
+}
+
+/**
+ * Reseller personal name for greetings: "first_name last_name" only (no brand / email).
+ */
+export function formatResellerPersonalName(r) {
+  if (!r) return "";
+  return `${String(r.first_name ?? "").trim()} ${String(r.last_name ?? "").trim()}`.trim();
 }
 
 /**

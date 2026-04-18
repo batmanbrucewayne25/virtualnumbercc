@@ -4,7 +4,10 @@ import { sendResellerApprovalWhatsApp } from '../services/whatsapp.service.js';
 import {
   sendAdminAccountDeactivatedEmail,
   sendAdminKycRejectedEmail,
+  sendWalletCreditApprovedEmail,
+  sendResellerAccountSuspendedEmail,
 } from '../services/transactionalEmail.service.js';
+import { getHasuraClient } from '../config/hasura.client.js';
 
 /**
  * @desc    Send reseller approval notifications (email and WhatsApp)
@@ -135,6 +138,127 @@ export const sendResellerRejectionNotifications = asyncHandler(async (req, res) 
     results,
   });
 });
+
+/**
+ * @desc    Send wallet credit approved email to reseller
+ * @route   POST /api/notifications/wallet-credit-approved
+ * @access  Private (Admin only)
+ */
+export const sendWalletCreditApprovedNotification = asyncHandler(
+  async (req, res) => {
+    const { resellerId, amount, dateStr } = req.body || {};
+
+    if (!resellerId) {
+      return res.status(400).json({ success: false, message: 'resellerId is required' });
+    }
+    if (amount == null || isNaN(Number(amount)) || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: 'A positive amount is required' });
+    }
+
+    let email;
+    let userName;
+    try {
+      const client = getHasuraClient();
+      const d = await client.client.request(
+        `query R($id: uuid!) {
+          mst_reseller_by_pk(id: $id) {
+            email
+            first_name
+            last_name
+            brand_name
+            business_name
+          }
+        }`,
+        { id: resellerId },
+      );
+      const r = d?.mst_reseller_by_pk;
+      if (!r?.email) {
+        return res.status(422).json({ success: false, message: 'Reseller email not found' });
+      }
+      email = r.email;
+      userName =
+        `${r.first_name || ''} ${r.last_name || ''}`.trim() ||
+        r.brand_name ||
+        r.business_name ||
+        r.email;
+    } catch {
+      return res.status(500).json({ success: false, message: 'Failed to fetch reseller details' });
+    }
+
+    const amountNum = Number(amount);
+    const date = dateStr || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    let result;
+    try {
+      result = await sendWalletCreditApprovedEmail(email, userName, amountNum, date);
+    } catch (err) {
+      result = { success: false, message: err.message };
+    }
+
+    const ok = result?.success === true;
+    return res.status(ok ? 200 : 502).json({
+      success: ok,
+      message: ok ? 'Wallet credit email sent to reseller' : result?.message || 'Failed to send email',
+    });
+  },
+);
+
+/**
+ * @desc    Email reseller when admin suspends the account (Suspend action)
+ * @route   POST /api/notifications/reseller-suspended
+ * @access  Private (Admin only)
+ */
+export const sendResellerAccountSuspendedNotification = asyncHandler(
+  async (req, res) => {
+    const { email, resellerName, suspensionReason } = req.body || {};
+
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required',
+      });
+    }
+
+    if (
+      !suspensionReason ||
+      typeof suspensionReason !== 'string' ||
+      !suspensionReason.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Suspension reason is required',
+      });
+    }
+
+    const displayName =
+      typeof resellerName === 'string' && resellerName.trim()
+        ? resellerName.trim()
+        : email.trim();
+
+    let emailResult;
+    try {
+      emailResult = await sendResellerAccountSuspendedEmail(
+        email.trim(),
+        displayName,
+        suspensionReason.trim(),
+      );
+    } catch (error) {
+      console.error('Error sending reseller account suspended email:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to send email',
+      });
+    }
+
+    const success = emailResult?.success === true;
+    return res.status(success ? 200 : 502).json({
+      success,
+      message: success
+        ? 'Suspension notification sent'
+        : emailResult?.message || 'Failed to send suspension notification',
+    });
+  },
+);
 
 /**
  * @desc    Send account deactivated email when admin deactivates a reseller (status toggle)

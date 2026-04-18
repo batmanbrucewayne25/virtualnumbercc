@@ -8,7 +8,12 @@ interface Step2PropsWithSkip extends Step2Props {
   skipOtpVerification?: boolean;
 }
 
-const Step2 = ({ email, onBack, onVerify, skipOtpVerification = false }: Step2PropsWithSkip) => {
+const Step2 = ({
+  email,
+  onBack,
+  onVerify,
+  skipOtpVerification = false,
+}: Step2PropsWithSkip) => {
   // Validate step access
   const { isValid, loading } = useStepValidation({ email, currentStep: 2 });
 
@@ -49,7 +54,9 @@ const Step2 = ({ email, onBack, onVerify, skipOtpVerification = false }: Step2Pr
         <div className="alert alert-info mb-16">
           <p className="mb-0">Email verification skipped (Admin mode)</p>
         </div>
-        <p className="text-sm text-secondary-light mb-16">Verifying email automatically...</p>
+        <p className="text-sm text-secondary-light mb-16">
+          Verifying email automatically...
+        </p>
       </>
     );
   }

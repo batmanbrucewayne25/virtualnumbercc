@@ -14,6 +14,7 @@ import {
 import nodemailer from "nodemailer";
 import axios from "axios";
 import { assertOtpRateLimit } from "../utils/otpRateLimit.js";
+import { formatResellerPersonalName } from "../utils/emailBranding.js";
 
 // SMTP configuration from environment variables
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
@@ -68,7 +69,7 @@ const createTransporter = (smtpConfig = null) => {
     if (!validation.isValid) {
       console.error(
         "[SMTP] Configuration validation failed:",
-        validation.errors
+        validation.errors,
       );
       return {
         transporter: null,
@@ -289,6 +290,92 @@ export class OTPService {
   }
 
   /**
+   * first_name + last_name from mst_reseller for this email (signup / reseller OTP greeting).
+   */
+  static async getResellerPersonalNameByEmail(email) {
+    if (!email || typeof email !== "string") {
+      return null;
+    }
+    try {
+      const client = getHasuraClient();
+      const q = `
+        query GetResellerPersonalName($email: String!) {
+          mst_reseller(where: { email: { _eq: $email } }, limit: 1) {
+            first_name
+            last_name
+          }
+        }
+      `;
+      const result = await client.client.request(q, { email });
+      const row = result?.mst_reseller?.[0];
+      const name = formatResellerPersonalName(row);
+      return name || null;
+    } catch (error) {
+      console.warn(
+        "[OTP] Could not load reseller name for email greeting:",
+        error.message,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * first+last or profile_name from mst_customer (no email-as-name) for customer OTP greeting.
+   * When resellerId is set, scopes the row to that reseller (ClientHub signup).
+   */
+  static async getCustomerGreetingNameByEmail(email, resellerId = null) {
+    if (!email || typeof email !== "string") {
+      return null;
+    }
+    const em = email.trim();
+    if (!em) return null;
+    try {
+      const client = getHasuraClient();
+      const q = resellerId
+        ? `
+        query GetCustomerGreetingName($email: String!, $resellerId: uuid!) {
+          mst_customer(
+            where: {
+              _and: [
+                { email: { _eq: $email } },
+                { reseller_id: { _eq: $resellerId } }
+              ]
+            }
+            limit: 1
+          ) {
+            firstName
+            lastName
+            profile_name
+          }
+        }
+      `
+        : `
+        query GetCustomerGreetingName($email: String!) {
+          mst_customer(where: { email: { _eq: $email } }, limit: 1) {
+            firstName
+            lastName
+            profile_name
+          }
+        }
+      `;
+      const vars = resellerId ? { email: em, resellerId } : { email: em };
+      const result = await client.client.request(q, vars);
+      const row = result?.mst_customer?.[0];
+      if (!row) return null;
+      const full = `${String(row.firstName ?? row.first_name ?? "").trim()} ${String(row.lastName ?? row.last_name ?? "").trim()}`.trim();
+      if (full) return full;
+      const profile = String(row.profile_name ?? "").trim();
+      return profile || null;
+    } catch (error) {
+      console.warn(
+        "[OTP] Could not load customer name for email greeting:",
+        error.message,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Store OTP in database with expiration (5 minutes)
    */
   static async storeOTP(email, phone, otp, type, userType = "reseller") {
@@ -386,11 +473,11 @@ export class OTPService {
 
       if (userId) {
         console.log(
-          `[OTP] OTP stored successfully for ${actualUserType} ${userId}`
+          `[OTP] OTP stored successfully for ${actualUserType} ${userId}`,
         );
       } else {
         console.log(
-          `[OTP] OTP stored successfully for ${contactInfo} (user not yet created - signup flow)`
+          `[OTP] OTP stored successfully for ${contactInfo} (user not yet created - signup flow)`,
         );
       }
 
@@ -408,7 +495,7 @@ export class OTPService {
         errorMessage = graphqlErrors.map((e) => e.message).join(", ");
         console.error(
           "GraphQL errors:",
-          JSON.stringify(graphqlErrors, null, 2)
+          JSON.stringify(graphqlErrors, null, 2),
         );
       } else if (error.message) {
         errorMessage = error.message;
@@ -568,7 +655,13 @@ export class OTPService {
   /**
    * Deliver email OTP (SMTP send only; OTP must already be stored).
    */
-  static async _deliverEmailOtp(email, otp, userType = "reseller", resellerId = null) {
+  static async _deliverEmailOtp(
+    email,
+    otp,
+    userType = "reseller",
+    resellerId = null,
+    nameHints = undefined,
+  ) {
     try {
       let smtpConfig = null;
       try {
@@ -584,14 +677,14 @@ export class OTPService {
             console.log("[SMTP] Using admin database SMTP configuration");
           } else {
             console.log(
-              "[SMTP] No database SMTP config found, using environment variables"
+              "[SMTP] No database SMTP config found, using environment variables",
             );
           }
         }
       } catch (error) {
         console.warn(
           "[SMTP] Error fetching SMTP config, using environment variables:",
-          error.message
+          error.message,
         );
       }
 
@@ -618,12 +711,12 @@ export class OTPService {
       }
 
       const verification = await verifyTransporter(
-        transporterResult.transporter
+        transporterResult.transporter,
       );
       if (!verification.success) {
         console.error(
           "[SMTP] Connection verification failed:",
-          verification.message
+          verification.message,
         );
         return {
           success: false,
@@ -662,17 +755,48 @@ export class OTPService {
         }
       }
 
+      let userGreeting = "there";
+      if (userType === "customer") {
+        const fnHint = String(nameHints?.first_name ?? "").trim();
+        const lnHint = String(nameHints?.last_name ?? "").trim();
+        const fromHints = [fnHint, lnHint].filter(Boolean).join(" ").trim();
+        if (fromHints) {
+          userGreeting = fromHints;
+        } else {
+          const fromProfile = await OTPService.getCustomerGreetingNameByEmail(
+            email,
+            resellerId,
+          );
+          if (fromProfile) {
+            userGreeting = fromProfile;
+          }
+        }
+      } else {
+        const personalFromProfile =
+          await OTPService.getResellerPersonalNameByEmail(email);
+        if (personalFromProfile) {
+          userGreeting = personalFromProfile;
+        }
+      }
+
       let templateVars = {
         otp,
         expiry_time: String(OTP_EXPIRY_MINUTES),
-        user: email.split("@")[0] || email,
+        user: userGreeting,
       };
 
       if (userType === "customer" && resellerId) {
         const branding = await fetchResellerBrandingForOtp(resellerId);
         templateVars.brand_name = branding?.brand_name || "Team";
-        templateVars.support_number = branding?.support_number || "";
-        templateVars.support_email = branding?.support_email || "";
+        let sn = String(branding?.support_number ?? "").trim();
+        let se = String(branding?.support_email ?? "").trim();
+        if (!sn || !se) {
+          const plat = await fetchPlatformSupportFromAdminSettings();
+          if (!sn) sn = String(plat.support_number ?? "").trim();
+          if (!se) se = String(plat.support_email ?? "").trim();
+        }
+        templateVars.support_number = sn;
+        templateVars.support_email = se;
       } else {
         templateVars.platform_name = PLATFORM_NAME;
         const platSupport = await fetchPlatformSupportFromAdminSettings();
@@ -758,11 +882,16 @@ export class OTPService {
   /**
    * Deliver WhatsApp OTP template (OTP must already be stored).
    */
-  static async _deliverWhatsAppOtp(phone, otp, userType = "reseller", resellerId = null) {
+  static async _deliverWhatsAppOtp(
+    phone,
+    otp,
+    userType = "reseller",
+    resellerId = null,
+  ) {
     try {
       const whatsappConfig = await resolveWhatsAppConfigForOtp(
         userType,
-        resellerId
+        resellerId,
       );
       if (!whatsappConfig?.api_key || !whatsappConfig?.phone_number_id) {
         return {
@@ -775,8 +904,8 @@ export class OTPService {
       const formattedPhone = phone.startsWith("+")
         ? phone.substring(1)
         : phone.startsWith("91")
-        ? phone
-        : `91${phone}`;
+          ? phone
+          : `91${phone}`;
 
       const apiUrl = `${whatsappConfig.api_url}/${whatsappConfig.phone_number_id}/messages`;
       const accessToken = whatsappConfig.api_key;
@@ -835,14 +964,12 @@ export class OTPService {
       const errorData = error.response?.data?.error || error.response?.data;
       console.error(
         "Error sending WhatsApp OTP:",
-        JSON.stringify(errorData || error.message, null, 2)
+        JSON.stringify(errorData || error.message, null, 2),
       );
       return {
         success: false,
         message:
-          errorData?.message ||
-          error.message ||
-          "Failed to send WhatsApp OTP",
+          errorData?.message || error.message || "Failed to send WhatsApp OTP",
         errorCode: errorData?.code,
         errorDetails: errorData?.error_data?.details,
       };
@@ -854,32 +981,53 @@ export class OTPService {
    * @param {string} email - Email address
    * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
    * @param {string|null} [resellerId] - When userType is customer, use this reseller's SMTP first; then admin/env (lenient fallback)
+   * @param {{ first_name?: string; last_name?: string }|undefined} [nameHints] - Customer signup: names for email greeting when DB lookup is unavailable
    */
-  static async sendEmailOTP(email, userType = "reseller", resellerId = null) {
+  static async sendEmailOTP(
+    email,
+    userType = "reseller",
+    resellerId = null,
+    nameHints = undefined,
+  ) {
+    const emailTrim = String(email ?? "").trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
+    if (!emailTrim || !emailRegex.test(emailTrim)) {
       return {
         success: false,
         message: "Invalid email address format",
       };
     }
 
-    const rl = assertOtpRateLimit(`email:${email}:${userType}`);
+    const rl = assertOtpRateLimit(`email:${emailTrim}:${userType}`);
     if (!rl.ok) {
       return { success: false, message: rl.message };
     }
 
     const otp = this.generateOTP();
-    console.log(`[OTP] Generating OTP for email: ${email} (user_type: ${userType})`);
+    console.log(
+      `[OTP] Generating OTP for email: ${emailTrim} (user_type: ${userType})`,
+    );
 
-    const storeResult = await this.storeOTP(email, null, otp, "email", userType);
+    const storeResult = await this.storeOTP(
+      emailTrim,
+      null,
+      otp,
+      "email",
+      userType,
+    );
     if (!storeResult.success) {
       console.error("[OTP] Failed to store OTP:", storeResult.message);
       return storeResult;
     }
 
     console.log("[OTP] OTP stored successfully");
-    return await this._deliverEmailOtp(email, otp, userType, resellerId);
+    return await this._deliverEmailOtp(
+      emailTrim,
+      otp,
+      userType,
+      resellerId,
+      nameHints,
+    );
   }
 
   /**
@@ -891,9 +1039,11 @@ export class OTPService {
     phone,
     userType = "reseller",
     resellerId = null,
+    nameHints = undefined,
   ) {
+    const emailTrim = String(email ?? "").trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
+    if (!emailTrim || !emailRegex.test(emailTrim)) {
       return { success: false, message: "Invalid email address format" };
     }
     const phoneStr = phone != null ? String(phone).trim() : "";
@@ -901,13 +1051,13 @@ export class OTPService {
       return { success: false, message: "Invalid phone number" };
     }
 
-    const rl = assertOtpRateLimit(`dual:${email}:${phoneStr}:${userType}`);
+    const rl = assertOtpRateLimit(`dual:${emailTrim}:${phoneStr}:${userType}`);
     if (!rl.ok) {
       return { success: false, message: rl.message };
     }
 
     const otp = this.generateOTP();
-    const s1 = await this.storeOTP(email, null, otp, "email", userType);
+    const s1 = await this.storeOTP(emailTrim, null, otp, "email", userType);
     if (!s1.success) {
       return s1;
     }
@@ -916,8 +1066,19 @@ export class OTPService {
       return s2;
     }
 
-    const emailRes = await this._deliverEmailOtp(email, otp, userType, resellerId);
-    const waRes = await this._deliverWhatsAppOtp(phoneStr, otp, userType, resellerId);
+    const emailRes = await this._deliverEmailOtp(
+      emailTrim,
+      otp,
+      userType,
+      resellerId,
+      nameHints,
+    );
+    const waRes = await this._deliverWhatsAppOtp(
+      phoneStr,
+      otp,
+      userType,
+      resellerId,
+    );
 
     const ok = emailRes.success && waRes.success;
     let message = "OTP sent to your email and WhatsApp";
@@ -947,7 +1108,11 @@ export class OTPService {
    * @param {string} [userType='reseller'] - 'customer' for clienthub onboarding, 'reseller' for reseller signup
    * @param {string|null} [resellerId] - When userType is customer, use reseller WhatsApp config first (see whatsappConfig.service)
    */
-  static async sendWhatsAppOTP(phone, userType = "reseller", resellerId = null) {
+  static async sendWhatsAppOTP(
+    phone,
+    userType = "reseller",
+    resellerId = null,
+  ) {
     const phoneStr = phone != null ? String(phone).trim() : "";
     if (!phoneStr || phoneStr.replace(/\D/g, "").length < 10) {
       return { success: false, message: "Invalid phone number" };
@@ -960,7 +1125,13 @@ export class OTPService {
 
     const otp = this.generateOTP();
 
-    const storeResult = await this.storeOTP(null, phoneStr, otp, "phone", userType);
+    const storeResult = await this.storeOTP(
+      null,
+      phoneStr,
+      otp,
+      "phone",
+      userType,
+    );
     if (!storeResult.success) {
       return storeResult;
     }

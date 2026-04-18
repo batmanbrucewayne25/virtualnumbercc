@@ -522,6 +522,8 @@ const ClientHubLayer = ({
           {step === 3 && (
             <Step3
               email={formData.email}
+              firstName={formData.firstName}
+              lastName={formData.lastName}
               resellerId={resellerId}
               skipOtpVerification={skipOtpVerification}
               onBack={() => handleStepChange(2)}
