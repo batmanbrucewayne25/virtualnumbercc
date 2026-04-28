@@ -1,6 +1,6 @@
 import PasswordField from "@/components/Form/PasswordField";
 import { useState } from "react";
-import { checkMstCustomerExists, createMstCustomer } from "@/hasura/mutations/customer";
+import { checkMstCustomerExists, createMstCustomer, deleteIncompleteCustomer } from "@/hasura/mutations/customer";
 import { getConstraintViolationMessage, extractGraphQLError } from "@/utils/graphqlErrorHandler";
 import { getApiBaseUrl } from "@/utils/apiUrl.js";
 import { getStrongPasswordError, STRONG_PASSWORD_HINT } from "@/utils/passwordPolicy";
@@ -146,22 +146,44 @@ const Step2 = ({ resellerId, allowExistingCustomer, onBack, onSuccess }: Step2Pr
         }
       }
 
-      // Check if email or phone already exists
+      // Check if email or phone already exists.
+      // Block only when an existing record reached Step 10 (profile_name set).
+      // Partial mid-flow records are deleted so the user can start fresh.
       const checkResult = await checkMstCustomerExists(em, ph);
-      
-      if (checkResult?.exists && checkResult.data) {
-        const existingUser = checkResult.data;
-        if (existingUser.email === em) {
-          setEmailError("Email already exists. Please use a different email.");
-          setLoading(false);
-          return;
+      const matches: Array<{
+        id: string;
+        email: string;
+        phone: string;
+        profile_name?: string | null;
+      }> = Array.isArray(checkResult?.data) ? checkResult.data : [];
+
+      const completed = matches.find((m) => !!m.profile_name);
+      if (completed) {
+        if (completed.email === em) {
+          setEmailError("Email already registered. Please log in instead.");
+        } else if (completed.phone === ph) {
+          setPhoneError("Phone number already registered. Please log in instead.");
+        } else {
+          setError("An account with these details already exists. Please log in instead.");
         }
-        if (existingUser.phone === ph) {
-          setPhoneError("Phone number already exists. Please use a different phone number.");
-          setLoading(false);
-          return;
+        setLoading(false);
+        return;
+      }
+
+      // Delete any incomplete partial records colliding on email/phone.
+      for (const m of matches) {
+        try {
+          await deleteIncompleteCustomer(m.id);
+        } catch (delErr) {
+          console.warn("Failed to delete incomplete customer", m.id, delErr);
         }
       }
+
+      // Clear stale onboarding progress for this reseller so the new attempt
+      // doesn't auto-jump to a step from someone else's session on this device.
+      try {
+        sessionStorage.removeItem(`clienthub_progress_${resellerId}`);
+      } catch {}
 
       // Create customer record (DB columns: first_name, last_name)
       const result = await createMstCustomer({

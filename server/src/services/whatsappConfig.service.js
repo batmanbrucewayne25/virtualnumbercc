@@ -33,7 +33,7 @@ function normalizeOtpConfig(config) {
   return {
     ...config,
     api_url: config.api_url?.trim() || DEFAULT_API_URL,
-    template_name: config.template_name || DEFAULT_OTP_TEMPLATE_NAME,
+    template_name: config.template_name || config.business_account_id || DEFAULT_OTP_TEMPLATE_NAME,
   };
 }
 

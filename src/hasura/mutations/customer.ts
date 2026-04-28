@@ -2,7 +2,10 @@ import { graphqlRequest } from "@/hasura";
 import { normalizeDate } from "@/utils/dateComparison";
 
 /**
- * Check if customer exists by email or phone
+ * Check if customer exists by email or phone.
+ * Returns ALL matching rows (not just the first) so the caller can distinguish
+ * between fully onboarded customers (profile_name set, treat as collision)
+ * and partial onboardings (profile_name null, safe to delete + recreate).
  */
 export const checkMstCustomerExists = async (email: string, phone: string) => {
   const QUERY = `query CheckMstCustomerExists($email: String!, $phone: String!) {
@@ -17,6 +20,9 @@ export const checkMstCustomerExists = async (email: string, phone: string) => {
       id
       email
       phone
+      profile_name
+      kyc_status
+      status
     }
   }`;
 
@@ -27,24 +33,68 @@ export const checkMstCustomerExists = async (email: string, phone: string) => {
         success: false,
         message: result.errors[0]?.message || "Failed to check customer",
         exists: false,
+        data: [],
       };
     }
-    if (result?.data?.mst_customer && result.data.mst_customer.length > 0) {
+    const rows = result?.data?.mst_customer || [];
+    if (rows.length > 0) {
       return {
         success: true,
         exists: true,
-        data: result.data.mst_customer[0],
+        data: rows,
       };
     }
     return {
       success: true,
       exists: false,
+      data: [],
     };
   } catch (error: any) {
     return {
       success: false,
       message: error.message || "Failed to check customer",
       exists: false,
+      data: [],
+    };
+  }
+};
+
+/**
+ * Delete an incomplete (mid-onboarding) customer row by id.
+ * Guarded by `profile_name IS NULL` so a fully onboarded customer can never
+ * be wiped even if the caller passes the wrong id.
+ */
+export const deleteIncompleteCustomer = async (id: string) => {
+  const MUTATION = `mutation DeleteIncompleteCustomer($id: uuid!) {
+    delete_mst_customer(
+      where: {
+        id: { _eq: $id },
+        profile_name: { _is_null: true }
+      }
+    ) {
+      affected_rows
+    }
+  }`;
+
+  try {
+    const result = await graphqlRequest(MUTATION, { id });
+    if (result?.errors) {
+      return {
+        success: false,
+        message: result.errors[0]?.message || "Failed to delete incomplete customer",
+        affected_rows: 0,
+      };
+    }
+    const affected = result?.data?.delete_mst_customer?.affected_rows ?? 0;
+    return {
+      success: true,
+      affected_rows: affected,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || "Failed to delete incomplete customer",
+      affected_rows: 0,
     };
   }
 };
