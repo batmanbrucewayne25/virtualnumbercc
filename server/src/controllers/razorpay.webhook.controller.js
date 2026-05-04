@@ -52,6 +52,22 @@ export const handleWebhook = asyncHandler(async (req, res) => {
     });
   }
 
+  // Razorpay sends unique event id in header; JSON body may omit event_id.
+  const hdrEventIdRaw =
+    req.headers["x-razorpay-event-id"] ||
+    req.headers["X-Razorpay-Event-Id"] ||
+    req.headers["X-RAZORPAY-EVENT-ID"];
+  const hdrEventId =
+    hdrEventIdRaw != null && String(hdrEventIdRaw).trim() !== ""
+      ? String(hdrEventIdRaw).trim()
+      : null;
+  if (!payload.event_id && hdrEventId) {
+    payload.event_id = hdrEventId;
+  }
+  if (!payload.id && hdrEventId) {
+    payload.id = hdrEventId;
+  }
+
   // Extract payment entity for logging (declared here so it's available throughout the handler)
   const paymentEntity = payload.payload?.payment?.entity;
 
@@ -203,10 +219,18 @@ export const handleWebhook = asyncHandler(async (req, res) => {
             break;
           }
         }
-        result = await WebhookService.processPaymentCaptured(
-          resellerId,
-          payload
+        // No DB row matched yet: do NOT run processPaymentCaptured here.
+        // Razorpay emits payment_link.paid and payment.captured for the same payment (different
+        // event ids). Running fulfillment twice causes duplicate wallet debits. payment.captured
+        // is the authoritative handler (Razorpay: idempotent, at-least-once delivery).
+        console.log(
+          `[Webhook] payment_link.paid: fulfillment deferred to payment.captured (pay=${paymentId || "n/a"})`,
         );
+        result = {
+          success: true,
+          message:
+            "payment_link.paid acknowledged; fulfillment runs on payment.captured only",
+        };
         break;
       }
 
@@ -231,7 +255,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         result = { success: true, message: `Event ${event} acknowledged` };
     }
 
-    if (result.success) {
+    if (result.success || result.idempotentNoop) {
       console.log(
         `Webhook processed successfully: ${event} for reseller ${resellerId}`
       );

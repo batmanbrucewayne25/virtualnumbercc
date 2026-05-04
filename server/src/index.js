@@ -6,8 +6,20 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env from server directory (parent of src)
-dotenv.config({ path: path.join(__dirname, "../.env") });
+// Prefer server/.env; fall back to repo-root .env (when running from server/ with .env only at project root)
+const serverEnvPath = path.join(__dirname, "../.env");
+const rootEnvPath = path.join(__dirname, "../../.env");
+dotenv.config({ path: serverEnvPath });
+if (!process.env.HASURA_GRAPHQL_ENDPOINT) {
+  dotenv.config({ path: rootEnvPath });
+}
+// Shared .env often uses VITE_* for the frontend; server needs unprefixed names.
+if (!process.env.HASURA_GRAPHQL_ENDPOINT && process.env.VITE_HASURA_GRAPHQL_ENDPOINT) {
+  process.env.HASURA_GRAPHQL_ENDPOINT = process.env.VITE_HASURA_GRAPHQL_ENDPOINT;
+}
+if (!process.env.HASURA_ADMIN_SECRET && process.env.VITE_HASURA_ADMIN_SECRET) {
+  process.env.HASURA_ADMIN_SECRET = process.env.VITE_HASURA_ADMIN_SECRET;
+}
 
 import express from "express";
 import cors from "cors";
@@ -35,7 +47,7 @@ app.use(
   cors({
     origin: corsOriginHandler,
     credentials: true,
-  })
+  }),
 );
 
 // Body parser middleware
@@ -122,7 +134,11 @@ app.use(express.static(distPath));
 // For React Router - serve index.html for all non-API routes
 app.get("*", (req, res, next) => {
   // Skip API routes, virtualnumbers routes, and static uploads
-  if (req.path.startsWith("/api") || req.path.startsWith("/virtualnumbers") || req.path.startsWith("/uploads")) {
+  if (
+    req.path.startsWith("/api") ||
+    req.path.startsWith("/virtualnumbers") ||
+    req.path.startsWith("/uploads")
+  ) {
     return next();
   }
 

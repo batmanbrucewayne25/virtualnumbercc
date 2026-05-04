@@ -323,6 +323,8 @@ export const getMstWalletTransactions = async (walletId: string) => {
         profile_name
         business_name
         pan_full_name
+        email
+        phone
       }
       mst_virtual_number {
         id
@@ -436,6 +438,8 @@ export const getAllMstWalletTransactions = async (resellerId?: string) => {
         profile_name
         business_name
         pan_full_name
+        email
+        phone
       }
       mst_virtual_number {
         id

@@ -7,6 +7,7 @@ import {
 } from "../../services/emailService.js";
 import { getResellerSmtpConfig } from "./smtpConfig.service.js";
 import { VnApiClient } from "../utils/vnApiClient.js";
+import { debitWalletLedgerFirst } from "./walletLedger.service.js";
 
 /**
  * Customer-related emails (approve, reject, payment link, etc.) must use reseller SMTP
@@ -122,43 +123,18 @@ export class CustomerService {
     try {
       const client = getHasuraClient();
 
-      // Get current balance
-      const getWalletQuery = `
-        query GetWallet($id: uuid!) {
-          mst_wallet_by_pk(id: $id) {
-            id
-            balance
-          }
-        }
-      `;
-
-      const walletData = await client.client.request(getWalletQuery, {
-        id: walletId,
+      const debitResult = await debitWalletLedgerFirst(client, {
+        walletId,
+        amount,
+        description: "Admin wallet debit",
+        reference: `admin_wallet_debit:${walletId}:${Date.now()}`,
       });
-      const currentBalance = Number(walletData.mst_wallet_by_pk?.balance || 0);
-
-      if (currentBalance < amount) {
-        throw new Error("Insufficient wallet balance");
+      if (!debitResult.ok) {
+        throw new Error(
+          debitResult.message ||
+            `Admin wallet debit failed (${debitResult.status || "unknown"})`,
+        );
       }
-
-      // Update wallet balance
-      const updateMutation = `
-        mutation UpdateWallet($id: uuid!, $balance: numeric!) {
-          update_mst_wallet_by_pk(
-            pk_columns: { id: $id }
-            _set: { balance: $balance }
-          ) {
-            id
-            balance
-          }
-        }
-      `;
-
-      const newBalance = currentBalance - amount;
-      await client.client.request(updateMutation, {
-        id: walletId,
-        balance: newBalance,
-      });
 
       return true;
     } catch (error) {
@@ -222,85 +198,35 @@ export class CustomerService {
     if (!wallet) {
       throw new Error("Wallet not found");
     }
-    const balanceBefore = Number(String(wallet.balance).replace(/,/g, "")) || 0;
+    const client = getHasuraClient();
+    const refStr =
+      reference != null && reference !== "" ? String(reference).trim() : null;
+
+    if (!refStr) {
+      throw new Error("Wallet debit reference is required");
+    }
+
     const amountNum = Number(amount) || 0;
     if (amountNum <= 0) {
       throw new Error("Invalid debit amount");
     }
-    if (balanceBefore < amountNum) {
+    const debitResult = await debitWalletLedgerFirst(client, {
+      walletId: wallet.id,
+      amount: amountNum,
+      description: description || "Wallet debit",
+      reference: refStr,
+      customerId: customerId || null,
+      virtualNumberId: virtualNumberId || null,
+    });
+
+    if (!debitResult.ok) {
       throw new Error(
-        `Insufficient wallet balance. Required: ₹${amountNum.toFixed(2)} (price per number). Your balance: ₹${balanceBefore.toFixed(2)}.`,
+        debitResult.message ||
+          `Wallet debit failed (${debitResult.status || "unknown"})`,
       );
     }
-    const balanceAfter = balanceBefore - amountNum;
-    const existingDebitAmount = Number(wallet.debit_amount) || 0;
-    const client = getHasuraClient();
 
-    const insertTransactionMutation = `
-      mutation CreateMstWalletTransaction(
-        $wallet_id: uuid!
-        $transaction_type: String!
-        $amount: numeric!
-        $balance_before: numeric!
-        $balance_after: numeric!
-        $description: String
-        $reference: String
-        $customer_id: uuid
-        $virtual_number_id: uuid
-      ) {
-        insert_mst_wallet_transaction_one(object: {
-          wallet_id: $wallet_id
-          transaction_type: $transaction_type
-          amount: $amount
-          balance_before: $balance_before
-          balance_after: $balance_after
-          description: $description
-          reference: $reference
-          customer_id: $customer_id
-          virtual_number_id: $virtual_number_id
-        }) {
-          id
-        }
-      }
-    `;
-    await client.client.request(insertTransactionMutation, {
-      wallet_id: wallet.id,
-      transaction_type: "DEBIT",
-      amount: amountNum,
-      balance_before: balanceBefore,
-      balance_after: balanceAfter,
-      description: description || "Wallet debit",
-      reference: reference || null,
-      customer_id: customerId || null,
-      virtual_number_id: virtualNumberId || null,
-    });
-
-    const updateMutation = `
-      mutation UpdateMstWallet(
-        $id: uuid!
-        $balance: numeric!
-        $debit_amount: numeric!
-        $last_transaction_at: timestamp!
-      ) {
-        update_mst_wallet_by_pk(
-          pk_columns: { id: $id }
-          _set: {
-            balance: $balance
-            debit_amount: $debit_amount
-            last_transaction_at: $last_transaction_at
-          }
-        ) {
-          id
-          balance
-        }
-      }
-    `;
-    await client.client.request(updateMutation, {
-      id: wallet.id,
-      balance: balanceAfter,
-      debit_amount: existingDebitAmount + amountNum,
-      last_transaction_at: new Date().toISOString(),
-    });
+    const balanceAfter = debitResult.balanceAfter;
 
     if (
       debitNotify?.kind === "activation" ||
@@ -466,6 +392,7 @@ export class CustomerService {
           $customer_email: String
           $customer_name: String
           $notes: jsonb
+          $razorpay_order_id: String
         ) {
           insert_mst_transaction_one(object: {
             transaction_number: $transaction_number
@@ -482,6 +409,7 @@ export class CustomerService {
             customer_email: $customer_email
             customer_name: $customer_name
             notes: $notes
+            razorpay_order_id: $razorpay_order_id
           }) {
             id
             transaction_number
@@ -515,6 +443,7 @@ export class CustomerService {
         customer_email: transactionData.customer_email || null,
         customer_name: transactionData.customer_name || null,
         notes: transactionData.notes || null,
+        razorpay_order_id: transactionData.razorpay_order_id || null,
       });
 
       return result.insert_mst_transaction_one;
@@ -1050,6 +979,7 @@ export class CustomerService {
 
         let razorpayLink = null;
         let razorpayPaymentLinkId = null;
+        let razorpayOrderId = null;
 
         // If razorpay_link_id is provided, use it (format: https://rzp.io/i/{link_id})
         // IMPORTANT: razorpay_link_id should be a payment link ID (plink_...), NOT a subscription ID (sub_...)
@@ -1129,6 +1059,11 @@ export class CustomerService {
             if (paymentLinkResult?.id) {
               razorpayPaymentLinkId = paymentLinkResult.id;
             }
+            // Extract order_id from payment link (Razorpay creates an order when payment link is created)
+            razorpayOrderId = paymentLinkResult?.paymentLink?.order_id || null;
+            if (razorpayOrderId) {
+              console.log(`[approveCustomer] Payment link created with order_id=${razorpayOrderId}`);
+            }
             if (paymentLinkResult && paymentLinkResult.short_url) {
               razorpayLink = paymentLinkResult.short_url;
             } else if (paymentLinkResult && paymentLinkResult.id) {
@@ -1139,6 +1074,11 @@ export class CustomerService {
                 "Payment link creation returned invalid response",
               );
             }
+            // Log the payment link URL for easy access (useful when email fails)
+            console.log(`\n========================================`);
+            console.log(`💳 PAYMENT LINK CREATED (copy this for testing):`);
+            console.log(`   ${razorpayLink}`);
+            console.log(`========================================\n`);
           } catch (linkError) {
             console.error("Error creating Razorpay payment link:", linkError);
             throw new Error(
@@ -1168,6 +1108,7 @@ export class CustomerService {
           payment_date: null,
           customer_email: customer.email || null,
           customer_name: customer.profile_name || null,
+          razorpay_order_id: razorpayOrderId || null,
           notes: {
             customer_id: customer_id,
             reseller_id: effectiveResellerId,

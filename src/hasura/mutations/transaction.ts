@@ -463,6 +463,13 @@ export const getMstTransactionStats = async () => {
         count
       }
     }
+    fulfillment_in_progress: mst_transaction_aggregate(
+      where: { status: { _in: ["captured", "processing_vn"] } }
+    ) {
+      aggregate {
+        count
+      }
+    }
   }`;
 
   try {
@@ -485,6 +492,8 @@ export const getMstTransactionStats = async () => {
         successful_amount: result?.data?.successful?.aggregate?.sum?.amount || 0,
         failed_count: result?.data?.failed?.aggregate?.count || 0,
         pending_count: result?.data?.pending?.aggregate?.count || 0,
+        fulfillment_in_progress_count:
+          result?.data?.fulfillment_in_progress?.aggregate?.count || 0,
       },
     };
   } catch (error: any) {

@@ -131,6 +131,7 @@ export class DashboardService {
       let paymentStats = {
         total_transactions: 0,
         successful_transactions: 0,
+        fulfillment_in_progress_transactions: 0,
         total_amount: 0,
         today_transactions: 0,
         today_amount: 0,
@@ -160,6 +161,13 @@ export class DashboardService {
                 }
               }
             }
+            fulfillment_in_progress: mst_transaction_aggregate(
+              where: { status: { _in: ["captured", "processing_vn"] } }
+            ) {
+              aggregate {
+                count
+              }
+            }
             today: mst_transaction_aggregate(
               where: { created_at: { _gte: "${today}" } }
             ) {
@@ -179,6 +187,8 @@ export class DashboardService {
         paymentStats.total_transactions = transactionStatsResult.total?.aggregate?.count || 0;
         paymentStats.total_amount = transactionStatsResult.total?.aggregate?.sum?.amount || 0;
         paymentStats.successful_transactions = transactionStatsResult.successful?.aggregate?.count || 0;
+        paymentStats.fulfillment_in_progress_transactions =
+          transactionStatsResult.fulfillment_in_progress?.aggregate?.count || 0;
         paymentStats.today_transactions = transactionStatsResult.today?.aggregate?.count || 0;
         paymentStats.today_amount = transactionStatsResult.today?.aggregate?.sum?.amount || 0;
         paymentStats.active_resellers = transactionStatsResult.resellers_with_transactions?.length || 0;

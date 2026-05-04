@@ -1,4 +1,5 @@
 import { getHasuraClient } from '../config/hasura.client.js';
+import { debitWalletLedgerFirst } from './walletLedger.service.js';
 
 /**
  * Virtual Numbers Service
@@ -149,7 +150,7 @@ export class VirtualNumbersService {
       const expiryDate = new Date(today);
       expiryDate.setMonth(expiryDate.getMonth() + this.ACTIVATION_MONTHS);
 
-      // 4. Update virtual number
+      // 4. Claim and update virtual number
       const updateMutation = `
         mutation UpdateVirtualNumber(
           $id: uuid!
@@ -158,8 +159,13 @@ export class VirtualNumbersService {
           $purchase_date: date!
           $expiry_date: date!
         ) {
-          update_mst_virtual_number_by_pk(
-            pk_columns: { id: $id }
+          update_mst_virtual_number(
+            where: {
+              _and: [
+                { id: { _eq: $id } }
+                { status: { _neq: "active" } }
+              ]
+            }
             _set: {
               status: $status
               reseller_id: $reseller_id
@@ -167,16 +173,19 @@ export class VirtualNumbersService {
               expiry_date: $expiry_date
             }
           ) {
-            id
-            virtual_number
-            status
-            purchase_date
-            expiry_date
+            affected_rows
+            returning {
+              id
+              virtual_number
+              status
+              purchase_date
+              expiry_date
+            }
           }
         }
       `;
 
-      await client.client.request(updateMutation, {
+      const updateResult = await client.client.request(updateMutation, {
         id: existingNumber.id,
         status: 'active',
         reseller_id: resellerId,
@@ -184,62 +193,51 @@ export class VirtualNumbersService {
         expiry_date: expiryDate.toISOString().split('T')[0]
       });
 
-      // 5. Deduct from wallet
-      const newBalance = Number(wallet.balance) - this.DEFAULT_RATE;
-      const walletUpdateMutation = `
-        mutation UpdateWallet($id: uuid!, $balance: numeric!) {
-          update_mst_wallet_by_pk(
-            pk_columns: { id: $id }
-            _set: { balance: $balance }
-          ) {
-            id
-            balance
-          }
-        }
-      `;
+      if ((updateResult?.update_mst_virtual_number?.affected_rows || 0) !== 1) {
+        return {
+          success: false,
+          status: 409,
+          message: 'Number was already activated by another request'
+        };
+      }
 
-      await client.client.request(walletUpdateMutation, {
-        id: wallet.id,
-        balance: newBalance
-      });
-
-      // 6. Create wallet transaction
-      const transactionMutation = `
-        mutation CreateTransaction(
-          $wallet_id: uuid!
-          $amount: numeric!
-          $transaction_type: String!
-          $balance_before: numeric!
-          $balance_after: numeric!
-          $description: String!
-          $customer_id: uuid
-          $virtual_number_id: uuid
-        ) {
-          insert_mst_wallet_transaction_one(object: {
-            wallet_id: $wallet_id
-            amount: $amount
-            transaction_type: $transaction_type
-            balance_before: $balance_before
-            balance_after: $balance_after
-            description: $description
-            customer_id: $customer_id
-            virtual_number_id: $virtual_number_id
-          }) {
-            id
-          }
-        }
-      `;
-
-      await client.client.request(transactionMutation, {
-        wallet_id: wallet.id,
+      // 5. Deduct from wallet via idempotent ledger-first CAS.
+      const debitResult = await debitWalletLedgerFirst(client, {
+        walletId: wallet.id,
         amount: this.DEFAULT_RATE,
-        transaction_type: 'debit',
-        balance_before: Number(wallet.balance),
-        balance_after: newBalance,
         description: `Virtual number activation: ${number}`,
-        customer_id: existingNumber.customer_id || null,
-        virtual_number_id: existingNumber.id || null,
+        reference: `virtual_number_activation:${existingNumber.id}`,
+        customerId: existingNumber.customer_id || null,
+        virtualNumberId: existingNumber.id || null,
       });
+
+      if (!debitResult.ok) {
+        await client.client.request(
+          `mutation RollbackVirtualNumberActivation($id: uuid!, $status: String, $reseller_id: uuid, $purchase_date: date, $expiry_date: date) {
+            update_mst_virtual_number_by_pk(
+              pk_columns: { id: $id }
+              _set: {
+                status: $status
+                reseller_id: $reseller_id
+                purchase_date: $purchase_date
+                expiry_date: $expiry_date
+              }
+            ) { id }
+          }`,
+          {
+            id: existingNumber.id,
+            status: existingNumber.status || 'available',
+            reseller_id: existingNumber.reseller_id || null,
+            purchase_date: existingNumber.purchase_date || null,
+            expiry_date: existingNumber.expiry_date || null,
+          },
+        );
+        return {
+          success: false,
+          status: 400,
+          message: debitResult.message || 'Wallet debit failed'
+        };
+      }
 
       return {
         success: true,
@@ -249,7 +247,7 @@ export class VirtualNumbersService {
           activation_date: today.toISOString().split('T')[0],
           expiry_date: expiryDate.toISOString().split('T')[0],
           amount_deducted: this.DEFAULT_RATE,
-          wallet_balance: newBalance
+          wallet_balance: debitResult.balanceAfter
         }
       };
     } catch (error) {
@@ -590,85 +588,77 @@ export class VirtualNumbersService {
       const expiryDate = new Date(today);
       expiryDate.setMonth(expiryDate.getMonth() + this.ACTIVATION_MONTHS);
 
-      // Update virtual number
+      // Claim and update virtual number
       const updateMutation = `
         mutation ReactivateNumber($id: uuid!, $expiry_date: date!) {
-          update_mst_virtual_number_by_pk(
-            pk_columns: { id: $id }
+          update_mst_virtual_number(
+            where: {
+              _and: [
+                { id: { _eq: $id } }
+                { status: { _eq: "suspended" } }
+              ]
+            }
             _set: { 
               status: "active",
               expiry_date: $expiry_date
             }
           ) {
-            id
-            virtual_number
-            status
-            expiry_date
+            affected_rows
+            returning {
+              id
+              virtual_number
+              status
+              expiry_date
+            }
           }
         }
       `;
 
-      await client.client.request(updateMutation, {
+      const updateResult = await client.client.request(updateMutation, {
         id: virtualNumber.id,
         expiry_date: expiryDate.toISOString().split('T')[0]
       });
 
-      // Deduct from wallet
-      const newBalance = Number(wallet.balance) - this.DEFAULT_RATE;
-      const walletUpdateMutation = `
-        mutation UpdateWallet($id: uuid!, $balance: numeric!) {
-          update_mst_wallet_by_pk(
-            pk_columns: { id: $id }
-            _set: { balance: $balance }
-          ) {
-            id
-            balance
-          }
-        }
-      `;
+      if ((updateResult?.update_mst_virtual_number?.affected_rows || 0) !== 1) {
+        return {
+          success: false,
+          status: 409,
+          message: 'Number was already reactivated by another request'
+        };
+      }
 
-      await client.client.request(walletUpdateMutation, {
-        id: wallet.id,
-        balance: newBalance
-      });
-
-      // Create wallet transaction
-      const transactionMutation = `
-        mutation CreateTransaction(
-          $wallet_id: uuid!
-          $amount: numeric!
-          $transaction_type: String!
-          $balance_before: numeric!
-          $balance_after: numeric!
-          $description: String!
-          $customer_id: uuid
-          $virtual_number_id: uuid
-        ) {
-          insert_mst_wallet_transaction_one(object: {
-            wallet_id: $wallet_id
-            amount: $amount
-            transaction_type: $transaction_type
-            balance_before: $balance_before
-            balance_after: $balance_after
-            description: $description
-            customer_id: $customer_id
-            virtual_number_id: $virtual_number_id
-          }) {
-            id
-          }
-        }
-      `;
-
-      await client.client.request(transactionMutation, {
-        wallet_id: wallet.id,
+      // Deduct from wallet via idempotent ledger-first CAS.
+      const debitResult = await debitWalletLedgerFirst(client, {
+        walletId: wallet.id,
         amount: this.DEFAULT_RATE,
-        transaction_type: 'debit',
-        balance_before: Number(wallet.balance),
-        balance_after: newBalance,
         description: `Virtual number reactivation: ${number}`,
-        customer_id: virtualNumber.customer_id || null,
-        virtual_number_id: virtualNumber.id || null,
+        reference: `virtual_number_reactivation:${virtualNumber.id}:${virtualNumber.expiry_date || 'none'}`,
+        customerId: virtualNumber.customer_id || null,
+        virtualNumberId: virtualNumber.id || null,
       });
+
+      if (!debitResult.ok) {
+        await client.client.request(
+          `mutation RollbackVirtualNumberReactivation($id: uuid!, $expiry_date: date) {
+            update_mst_virtual_number_by_pk(
+              pk_columns: { id: $id }
+              _set: {
+                status: "suspended"
+                expiry_date: $expiry_date
+              }
+            ) { id }
+          }`,
+          {
+            id: virtualNumber.id,
+            expiry_date: virtualNumber.expiry_date || null,
+          },
+        );
+        return {
+          success: false,
+          status: 400,
+          message: debitResult.message || 'Wallet debit failed'
+        };
+      }
 
       return {
         success: true,
@@ -678,7 +668,7 @@ export class VirtualNumbersService {
           reactivated_on: today.toISOString(),
           expiry_date: expiryDate.toISOString().split('T')[0],
           amount_deducted: this.DEFAULT_RATE,
-          wallet_balance: newBalance
+          wallet_balance: debitResult.balanceAfter
         }
       };
     } catch (error) {

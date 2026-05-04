@@ -9,7 +9,10 @@
     "start": "node src/index.js",
     "seed:admin": "node src/scripts/seedAdmin.js",
     "seed:permissions": "node src/scripts/seedPermissions.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:fulfillment-claim": "node ./src/scripts/razorpay-fulfillment-claim-concurrency-check.js",
+    "verify:db-invariants": "node ./src/scripts/print-db-invariants-hint.js",
+    "verify:payment-test-hint": "node ./src/scripts/print-payment-test-verify-hint.js"
   },
   "keywords": [
     "express",

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getHasuraClient } from "../config/hasura.client.js";
 import { VnApiClient } from "../utils/vnApiClient.js";
 import { TRANSACTION_STATES } from "../constants/transaction-states.js";
+import { debitWalletLedgerFirst } from "./walletLedger.service.js";
 
 /**
  * Extract Razorpay payment link id (plink_...) from webhook payload when present.
@@ -42,7 +43,9 @@ export function verifyWebhookSignature(body, signature, webhookSecret) {
 
   try {
     const secret = String(webhookSecret).trim();
-    const bodyBuffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body), "utf8");
+    const bodyBuffer = Buffer.isBuffer(body)
+      ? body
+      : Buffer.from(String(body), "utf8");
     const expectedSignature = crypto
       .createHmac("sha256", secret)
       .update(bodyBuffer)
@@ -261,6 +264,428 @@ export async function recordWebhookEvent(
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Max age of `processing_vn` without a linked VN before we release the lock (ms). */
+const STALE_PROCESSING_VN_MS = Number(process.env.STALE_PROCESSING_VN_MS) || 90000;
+
+/** Poll when peer holds processing_vn (ms). */
+const PROCESSING_VN_PEER_POLL_MS = 250;
+const PROCESSING_VN_PEER_POLL_ATTEMPTS = 40;
+
+/** Max age of a pending wallet ledger before retry recovery inspects it (ms). */
+const STALE_PENDING_WALLET_LEDGER_MS =
+  Number(process.env.STALE_PENDING_WALLET_LEDGER_MS) || 90000;
+
+/**
+ * If txn is stuck in processing_vn (no VN), wait briefly for a peer, then release stale lock.
+ * @returns {Promise<object|null>} Latest mst_transaction row shape (minimal fields) or null
+ */
+async function waitOrRecoverProcessingVnLock(
+  client,
+  transactionId,
+  razorpayPaymentId,
+  orderId,
+) {
+  if (!transactionId) return null;
+  const fetchTxnMin = async () => {
+    const q = await client.client.request(
+      `query Tvn($id: uuid!) {
+        mst_transaction_by_pk(id: $id) {
+          id
+          status
+          virtual_number_id
+          updated_at
+          customer_id
+          reseller_id
+          notes
+        }
+      }`,
+      { id: transactionId },
+    );
+    return q?.mst_transaction_by_pk || null;
+  };
+
+  let row = await fetchTxnMin();
+  if (!row || row.status !== "processing_vn" || row.virtual_number_id) {
+    return row;
+  }
+
+  for (let i = 0; i < PROCESSING_VN_PEER_POLL_ATTEMPTS; i++) {
+    await sleep(PROCESSING_VN_PEER_POLL_MS);
+    row = await fetchTxnMin();
+    if (!row) return null;
+    if (row.virtual_number_id || row.status !== "processing_vn") {
+      return row;
+    }
+  }
+
+  const uat = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+  const ageMs = uat ? Date.now() - uat : STALE_PROCESSING_VN_MS + 1;
+  if (ageMs < STALE_PROCESSING_VN_MS) {
+    return row;
+  }
+
+  try {
+    const rel = await client.client.request(
+      `mutation ReleaseStaleVnLock($id: uuid!) {
+        update_mst_transaction(
+          where: {
+            id: { _eq: $id }
+            status: { _eq: "processing_vn" }
+            virtual_number_id: { _is_null: true }
+          }
+          _set: { status: "captured" }
+        ) { affected_rows }
+      }`,
+      { id: transactionId },
+    );
+    const ar = rel?.update_mst_transaction?.affected_rows ?? 0;
+    if (ar === 1) {
+      console.warn(
+        `[vnLock] Released stale processing_vn for txn ${transactionId} (age ~${Math.round(ageMs)}ms > ${STALE_PROCESSING_VN_MS}ms)`,
+      );
+    }
+  } catch (e) {
+    console.warn(`[vnLock] stale release failed:`, e.message);
+  }
+
+  if (razorpayPaymentId || orderId) {
+    return await transactionExists(razorpayPaymentId || null, orderId || null);
+  }
+  return fetchTxnMin();
+}
+
+async function patchTransactionProvisionalVirtualNumber(
+  client,
+  transactionId,
+  vnRecord,
+) {
+  if (!transactionId || !vnRecord?.id) return;
+  try {
+    const current = await client.client.request(
+      `query TxnNotesForProvisionalVn($id: uuid!) {
+        mst_transaction_by_pk(id: $id) { notes }
+      }`,
+      { id: transactionId },
+    );
+    const prev = current?.mst_transaction_by_pk?.notes || {};
+    const notes = {
+      ...prev,
+      provisional_virtual_number_id: vnRecord.id,
+      provisional_virtual_number: vnRecord.virtual_number || null,
+      provisional_virtual_number_at: new Date().toISOString(),
+    };
+    await client.client.request(
+      `mutation PatchTxnProvisionalVn($id: uuid!, $notes: jsonb!) {
+        update_mst_transaction_by_pk(
+          pk_columns: { id: $id }
+          _set: { notes: $notes }
+        ) { id }
+      }`,
+      { id: transactionId, notes },
+    );
+  } catch (e) {
+    console.warn(
+      `[postPayment] provisional VN note patch skipped for txn=${transactionId}:`,
+      e.message,
+    );
+  }
+}
+
+async function clearTransactionProvisionalVirtualNumber(client, transactionId) {
+  if (!transactionId) return;
+  try {
+    const current = await client.client.request(
+      `query TxnNotesForClearProvisionalVn($id: uuid!) {
+        mst_transaction_by_pk(id: $id) { notes }
+      }`,
+      { id: transactionId },
+    );
+    const prev = current?.mst_transaction_by_pk?.notes || {};
+    if (
+      !prev.provisional_virtual_number_id &&
+      !prev.provisional_virtual_number &&
+      !prev.provisional_virtual_number_at
+    ) {
+      return;
+    }
+
+    const notes = { ...prev };
+    delete notes.provisional_virtual_number_id;
+    delete notes.provisional_virtual_number;
+    delete notes.provisional_virtual_number_at;
+
+    await client.client.request(
+      `mutation ClearTxnProvisionalVn($id: uuid!, $notes: jsonb!) {
+        update_mst_transaction_by_pk(
+          pk_columns: { id: $id }
+          _set: { notes: $notes }
+        ) { id }
+      }`,
+      { id: transactionId, notes },
+    );
+  } catch (e) {
+    console.warn(
+      `[postPayment] provisional VN note clear skipped for txn=${transactionId}:`,
+      e.message,
+    );
+  }
+}
+
+async function suspendUnlinkedVirtualNumberAfterRace(
+  client,
+  { vnId, virtualNumber, transactionId },
+) {
+  if (!vnId) return;
+  try {
+    const linked = await client.client.request(
+      `query IsVnLinkedToAnyTxn($vn_id: uuid!) {
+        mst_transaction(
+          where: { virtual_number_id: { _eq: $vn_id } }
+          limit: 1
+        ) { id }
+      }`,
+      { vn_id: vnId },
+    );
+    if ((linked?.mst_transaction?.length || 0) > 0) return;
+
+    await client.client.request(
+      `mutation SuspendUnlinkedRaceVn($vn_id: uuid!) {
+        update_mst_virtual_number(
+          where: {
+            id: { _eq: $vn_id }
+            status: { _eq: "active" }
+          }
+          _set: { status: "suspended" }
+        ) { affected_rows }
+      }`,
+      { vn_id: vnId },
+    );
+
+    if (virtualNumber) {
+      try {
+        await VnApiClient.suspendNumber(virtualNumber);
+      } catch (apiErr) {
+        console.warn(
+          `[postPayment] unlinked VN API suspend skipped number=${virtualNumber}:`,
+          apiErr.message,
+        );
+      }
+    }
+
+    console.warn(
+      `[postPayment] Suspended unlinked VN ${vnId} after link race txn=${transactionId}`,
+    );
+  } catch (e) {
+    console.warn(
+      `[postPayment] unlinked VN suspend skipped txn=${transactionId} vn=${vnId}:`,
+      e.message,
+    );
+  }
+}
+
+async function recoverProvisionalVirtualNumberForTransaction(
+  client,
+  { transactionId, txnRecord, customerId, resellerId, customer },
+) {
+  const provisionalVnId =
+    txnRecord?.notes?.provisional_virtual_number_id || null;
+  if (!transactionId || !provisionalVnId) return false;
+
+  try {
+    const linked = await client.client.request(
+      `mutation LinkProvisionalVnToTxn($txn_id: uuid!, $vn_id: uuid!) {
+        update_mst_transaction(
+          where: {
+            id: { _eq: $txn_id }
+            virtual_number_id: { _is_null: true }
+            status: { _in: ["processing_vn", "captured", "authorized", "success"] }
+          }
+          _set: { virtual_number_id: $vn_id, status: "success" }
+        ) {
+          affected_rows
+          returning { id virtual_number_id status }
+        }
+      }`,
+      { txn_id: transactionId, vn_id: provisionalVnId },
+    );
+    const row = linked?.update_mst_transaction?.returning?.[0] || null;
+    if (row?.virtual_number_id) {
+      console.warn(
+        `[postPayment] Recovered provisional VN ${provisionalVnId} for txn=${transactionId}`,
+      );
+      await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+        customerId,
+        resellerId,
+        transactionId,
+        virtualNumberId: row.virtual_number_id,
+        customer,
+      });
+      return true;
+    }
+
+    const refreshed = await client.client.request(
+      `query TxnVnAfterProvisionalRecovery($id: uuid!) {
+        mst_transaction_by_pk(id: $id) {
+          virtual_number_id
+          status
+        }
+      }`,
+      { id: transactionId },
+    );
+    const existingVn =
+      refreshed?.mst_transaction_by_pk?.virtual_number_id || null;
+    if (existingVn) {
+      await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+        customerId,
+        resellerId,
+        transactionId,
+        virtualNumberId: existingVn,
+        customer,
+      });
+      return true;
+    }
+  } catch (e) {
+    console.warn(
+      `[postPayment] provisional VN recovery failed txn=${transactionId}:`,
+      e.message,
+    );
+  }
+
+  return false;
+}
+
+/**
+ * Insert-first claim so only one worker runs fulfillment for a Razorpay payment id.
+ * @returns {Promise<{ won: boolean, skipped: boolean }>} skipped=true if migration/Hasura not ready.
+ */
+async function tryClaimRazorpayPaymentFulfillment(
+  client,
+  paymentId,
+  resellerId,
+) {
+  if (!paymentId || !resellerId) {
+    return { won: true, skipped: true };
+  }
+  const mutation = `
+    mutation TryClaimRazorpayPaymentFulfillment($payment_id: String!, $reseller_id: uuid!) {
+      insert_mst_razorpay_payment_fulfillment_claim(
+        objects: [{ razorpay_payment_id: $payment_id, reseller_id: $reseller_id }]
+        on_conflict: {
+          constraint: mst_razorpay_payment_fulfillment_claim_pkey
+          update_columns: []
+        }
+      ) {
+        affected_rows
+      }
+    }
+  `;
+  try {
+    const res = await client.client.request(mutation, {
+      payment_id: paymentId,
+      reseller_id: resellerId,
+    });
+    const affected =
+      res?.insert_mst_razorpay_payment_fulfillment_claim?.affected_rows ?? 0;
+    return { won: affected === 1, skipped: false };
+  } catch (e) {
+    const msg = String(e?.message || e?.response?.errors?.[0]?.message || "");
+    if (
+      msg.includes("mst_razorpay_payment_fulfillment_claim") ||
+      (msg.includes("field") && msg.includes("not found")) ||
+      msg.includes("does not exist")
+    ) {
+      console.warn(
+        "[fulfillmentClaim] Claim table or mutation unavailable — run add-razorpay-payment-fulfillment-claim.sql and track in Hasura; proceeding without mutex",
+      );
+      return { won: true, skipped: true };
+    }
+    console.error("[fulfillmentClaim] Unexpected error:", e);
+    return { won: true, skipped: true };
+  }
+}
+
+/**
+ * Release (delete) a fulfillment claim so another webhook can retry.
+ * Called after successful fulfillment or on error/rollback.
+ */
+async function releaseRazorpayPaymentFulfillmentClaim(client, paymentId) {
+  if (!paymentId) return;
+  try {
+    const mutation = `
+      mutation ReleaseRazorpayPaymentFulfillmentClaim($payment_id: String!) {
+        delete_mst_razorpay_payment_fulfillment_claim(
+          where: { razorpay_payment_id: { _eq: $payment_id } }
+        ) {
+          affected_rows
+        }
+      }
+    `;
+    const res = await client.client.request(mutation, { payment_id: paymentId });
+    const deleted = res?.delete_mst_razorpay_payment_fulfillment_claim?.affected_rows ?? 0;
+    if (deleted > 0) {
+      console.log(`[fulfillmentClaim] Released claim for pay=${paymentId}`);
+    }
+  } catch (e) {
+    console.warn(`[fulfillmentClaim] Failed to release claim for pay=${paymentId}:`, e.message);
+  }
+}
+
+/**
+ * Another worker holds the claim; wait for VN link + ensure wallet + record this event id.
+ */
+async function handleLostRazorpayPaymentFulfillmentClaim({
+  paymentData,
+  effectiveResellerId,
+  eventId,
+  payload,
+}) {
+  const pollMs = 200;
+  const maxAttempts = 25;
+  console.log(
+    `[fulfillmentClaim] Lost claim for pay=${paymentData.id} — polling for peer fulfillment`,
+  );
+  for (let i = 0; i < maxAttempts; i++) {
+    const txn = await transactionExists(
+      paymentData.id,
+      paymentData.order_id || null,
+    );
+    if (txn?.virtual_number_id && txn.customer_id) {
+      const hc = getHasuraClient();
+      await _ensureWalletDebitedForProcessedTxn(hc, {
+        resellerId: txn.reseller_id,
+        customerId: txn.customer_id,
+        transactionId: txn.id,
+        virtualNumberId: txn.virtual_number_id,
+      });
+      if (eventId) {
+        await recordWebhookEvent(eventId, effectiveResellerId, txn.id, payload);
+      }
+      console.log(
+        `[fulfillmentClaim] Peer completed pay=${paymentData.id} txn=${txn.id} — wallet ensured`,
+      );
+      return {
+        success: true,
+        data: txn,
+        message: "Concurrent fulfillment — recovered after peer completed",
+      };
+    }
+    await sleep(pollMs);
+  }
+  console.warn(
+    `[fulfillmentClaim] Timed out waiting for peer for pay=${paymentData.id} — check logs / replay if needed`,
+  );
+  return {
+    success: true,
+    data: null,
+    message:
+      "Lost fulfillment claim — peer did not complete within wait window; verify in dashboard",
+  };
+}
+
 /**
  * Check if transaction already exists (to prevent duplicates)
  * @param {string} razorpayPaymentId - Razorpay payment ID
@@ -313,7 +738,7 @@ export async function transactionExists(razorpayPaymentId, orderId = null) {
         mst_transaction(
           where: {
             razorpay_order_id: { _eq: $razorpay_order_id }
-            status: { _in: ["success", "authorized", "captured"] }
+            status: { _nin: ["failed", "refunded"] }
           }
           order_by: { created_at: desc }
           limit: 1
@@ -347,6 +772,79 @@ export async function transactionExists(razorpayPaymentId, orderId = null) {
   }
 
   return null;
+}
+
+/**
+ * Record Razorpay webhook event idempotency only after a durable fulfillment outcome
+ * (VN linked, or failed/refunded). Avoids marking events processed while `processing_vn`
+ * or `captured` without VN — duplicate deliveries must be able to re-enter the handler.
+ */
+async function maybeRecordWebhookEventIfTerminal({
+  eventId,
+  resellerId,
+  paymentId,
+  orderId,
+  payload,
+}) {
+  if (!eventId || !resellerId || !paymentId) return;
+  const row = await transactionExists(paymentId, orderId || null);
+  if (!row?.id) return;
+  const terminal =
+    !!row.virtual_number_id ||
+    (row.status && ["failed", "refunded"].includes(row.status));
+  if (!terminal) {
+    return;
+  }
+  await recordWebhookEvent(eventId, resellerId, row.id, payload);
+}
+
+/**
+ * Monotonic status guard for `updatePendingTransactionWithPayment` mutations.
+ * Prevents e.g. payment.authorized from overwriting a row already marked captured.
+ */
+function whereStatusPendingTxnUpdate(mappedStatus) {
+  switch (mappedStatus) {
+    case "authorized":
+      return `status: { _in: ["pending", "authorized"] }`;
+    case "captured":
+      return `_or: [
+        { status: { _in: ["pending", "authorized", "captured"] } },
+        { _and: [{ status: { _eq: "success" } }, { virtual_number_id: { _is_null: true } }] }
+      ]`;
+    case "failed":
+      return `status: { _in: ["pending", "authorized", "captured"] }`;
+    case "refunded":
+      return `status: { _eq: "success" }`;
+    default:
+      return `status: { _nin: ["success", "refunded", "processing_vn", "captured"] }`;
+  }
+}
+
+/**
+ * Monotonic status guards for `updateTransactionStatus` (by pk or payment_id).
+ */
+function whereGuardsUpdateTransactionStatus(mappedStatus) {
+  if (mappedStatus === "refunded") {
+    const g = `status: { _eq: "success" }`;
+    return { txn: g, payment: g };
+  }
+  if (mappedStatus === "authorized") {
+    const g = `status: { _in: ["pending", "authorized"] }`;
+    return { txn: g, payment: g };
+  }
+  if (mappedStatus === "captured") {
+    const g = `_or: [
+      { status: { _in: ["pending", "authorized", "captured"] } },
+      { _and: [{ status: { _eq: "success" } }, { virtual_number_id: { _is_null: true } }] }
+    ]`;
+    return { txn: g, payment: g };
+  }
+  if (mappedStatus === "failed") {
+    const g = `status: { _in: ["pending", "authorized", "captured"] }`;
+    return { txn: g, payment: g };
+  }
+  const g = `status: { _nin: ["success", "refunded", "processing_vn", "captured"] }`;
+  return { txn: g, payment: g };
 }
 
 /**
@@ -521,6 +1019,10 @@ export async function findPendingTransaction(
   // This is the critical path for Razorpay Payment Links:
   // The pending transaction was created with status="pending" and no payment_id.
   // We match it by customer + amount and claim it by writing the payment_id in.
+  //
+  // CRITICAL SAFEGUARD: If the incoming webhook has an orderId, and the found
+  // transaction has a DIFFERENT order_id stored, we must REJECT the match.
+  // This prevents old webhook retries from claiming newly created transactions.
   if (customerId) {
     try {
       const result = await client.client.request(query, {
@@ -531,10 +1033,19 @@ export async function findPendingTransaction(
         },
       });
       if (result.mst_transaction?.length > 0) {
-        console.log(
-          `[findPendingTransaction] Found by customer_id=${customerId}: ${result.mst_transaction[0].id}`,
-        );
-        return result.mst_transaction[0];
+        const foundTxn = result.mst_transaction[0];
+        // SAFEGUARD: Reject if order_id mismatch
+        if (orderId && foundTxn.razorpay_order_id && foundTxn.razorpay_order_id !== orderId) {
+          console.warn(
+            `[findPendingTransaction] REJECTED customer_id match — order_id mismatch: webhook=${orderId} vs txn=${foundTxn.razorpay_order_id}`,
+          );
+          // Don't return this transaction; fall through to other attempts or return null
+        } else {
+          console.log(
+            `[findPendingTransaction] Found by customer_id=${customerId}: ${foundTxn.id}`,
+          );
+          return foundTxn;
+        }
       }
     } catch (error) {
       console.error(
@@ -575,6 +1086,10 @@ export async function findPendingTransaction(
   // When payment.authorized runs before capture, attempts 2–3 miss because they require
   // razorpay_payment_id IS NULL. We intentionally do NOT filter on payment_id here.
   // Amount band is applied when `amount` is known to reduce wrong-row matches.
+  //
+  // CRITICAL SAFEGUARD: If the incoming webhook has an orderId, the found transaction
+  // MUST have a matching order_id (or no order_id at all). This prevents stale webhook
+  // retries from claiming transactions created for different payments.
   if (customerId) {
     try {
       const whereAuthFirst = {
@@ -589,10 +1104,19 @@ export async function findPendingTransaction(
         where: whereAuthFirst,
       });
       if (result.mst_transaction?.length > 0) {
-        console.log(
-          `[findPendingTransaction] Found by customer_id (authorized-first path)=${customerId}: ${result.mst_transaction[0].id} status=${result.mst_transaction[0].status} payment_id=${result.mst_transaction[0].razorpay_payment_id}`,
-        );
-        return result.mst_transaction[0];
+        const foundTxn = result.mst_transaction[0];
+        // SAFEGUARD: Reject if order_id mismatch (txn has different order_id than webhook)
+        if (orderId && foundTxn.razorpay_order_id && foundTxn.razorpay_order_id !== orderId) {
+          console.warn(
+            `[findPendingTransaction] REJECTED authorized-first match — order_id mismatch: webhook=${orderId} vs txn=${foundTxn.razorpay_order_id}`,
+          );
+          // Don't return; fall through to return null
+        } else {
+          console.log(
+            `[findPendingTransaction] Found by customer_id (authorized-first path)=${customerId}: ${foundTxn.id} status=${foundTxn.status} payment_id=${foundTxn.razorpay_payment_id}`,
+          );
+          return foundTxn;
+        }
       }
     } catch (error) {
       console.error(
@@ -625,12 +1149,13 @@ export async function updatePendingTransactionWithPayment(
   // Map Razorpay status to our status
   const statusMap = {
     authorized: "authorized",
-    captured: "success",
+    captured: "captured",
     failed: "failed",
     refunded: "refunded",
   };
 
   const mappedStatus = statusMap[status] || status;
+  const statusWhere = whereStatusPendingTxnUpdate(mappedStatus);
 
   // ── Fetch existing DB notes so we can MERGE, not overwrite ───────────────
   // Critical: the pending transaction was created with transaction_type and
@@ -669,8 +1194,7 @@ export async function updatePendingTransactionWithPayment(
       : {}),
   };
 
-  // Use update_mst_transaction with a where clause to prevent downgrading a
-  // "success" transaction to "authorized" in a race between concurrent webhooks.
+  // Monotonic WHERE per mappedStatus so authorized cannot overwrite captured/success.
   const mutation = `
     mutation UpdatePendingTransaction(
       $transaction_id: uuid!
@@ -691,7 +1215,7 @@ export async function updatePendingTransactionWithPayment(
       update_mst_transaction(
         where: {
           id: { _eq: $transaction_id }
-          status: { _nin: ["success", "refunded", "processing_vn"] }
+          ${statusWhere}
         }
         _set: {
           status: $status
@@ -762,9 +1286,9 @@ export async function updatePendingTransactionWithPayment(
       };
     }
 
-    // 0 rows updated = status guard fired: transaction is success, refunded, or processing_vn (VN creation in flight)
+    // 0 rows updated = status guard fired (e.g. captured row cannot downgrade to authorized)
     console.warn(
-      `[updatePendingTransaction] Transaction ${transactionId} not updated — already at terminal/in-flight status (success/refunded/processing_vn)`,
+      `[updatePendingTransaction] Transaction ${transactionId} not updated — status guard blocked update (terminal/in-flight or monotonic rule)`,
     );
     return {
       success: false,
@@ -792,12 +1316,17 @@ function normalizePaymentDataFromPayload(payload) {
 
   if (!paymentData && plEntity) {
     const payments = Array.isArray(plEntity.payments) ? plEntity.payments : [];
-    const capturedPayment = payments.find((p) => p?.status === "captured") || payments[0];
+    const capturedPayment =
+      payments.find((p) => p?.status === "captured") || payments[0];
     if (capturedPayment) {
-      const paymentId = capturedPayment.id ?? capturedPayment.payment_id ?? capturedPayment.paymentId;
+      const paymentId =
+        capturedPayment.id ??
+        capturedPayment.payment_id ??
+        capturedPayment.paymentId;
       paymentData = {
         id: paymentId,
-        amount: capturedPayment.amount ?? plEntity.amount_paid ?? plEntity.amount,
+        amount:
+          capturedPayment.amount ?? plEntity.amount_paid ?? plEntity.amount,
         status: capturedPayment.status ?? "captured",
         email: capturedPayment.email ?? plEntity.customer?.email ?? null,
         contact: capturedPayment.contact ?? plEntity.customer?.contact ?? null,
@@ -821,7 +1350,11 @@ function normalizePaymentDataFromPayload(payload) {
  * @param {string|null} options.preResolvedCustomerId - Customer ID already resolved by caller (avoids re-lookup)
  * @returns {Promise<object>}
  */
-export async function createTransactionFromWebhook(resellerId, paymentData, options = {}) {
+export async function createTransactionFromWebhook(
+  resellerId,
+  paymentData,
+  options = {},
+) {
   const client = getHasuraClient();
 
   // CRITICAL: The webhook URL reseller_id may differ from the reseller who actually
@@ -843,7 +1376,7 @@ export async function createTransactionFromWebhook(resellerId, paymentData, opti
   // Map Razorpay status to our status
   const statusMap = {
     authorized: "authorized",
-    captured: "success",
+    captured: "captured",
     failed: "failed",
     refunded: "refunded",
   };
@@ -855,7 +1388,8 @@ export async function createTransactionFromWebhook(resellerId, paymentData, opti
   const amountInRupees = (paymentData.amount || 0) / 100;
 
   // Extract customer_id: prefer pre-resolved from caller, then notes, then email lookup
-  let customerId = options.preResolvedCustomerId ?? paymentData.notes?.customer_id ?? null;
+  let customerId =
+    options.preResolvedCustomerId ?? paymentData.notes?.customer_id ?? null;
 
   const customerEmail =
     paymentData.email ||
@@ -961,7 +1495,6 @@ export async function createTransactionFromWebhook(resellerId, paymentData, opti
     console.log(
       `[createTransactionFromWebhook] Inserting transaction reseller_id=${effectiveResellerId} customer_id=${customerId} status=${status}`,
     );
-
     const result = await client.client.request(mutation, {
       transaction_number: transactionNumber,
       reseller_id: effectiveResellerId,
@@ -991,7 +1524,12 @@ export async function createTransactionFromWebhook(resellerId, paymentData, opti
     if (result?.insert_mst_transaction_one) {
       const newTxnId = result.insert_mst_transaction_one.id;
       // Trigger full post-payment flow (virtual number + customer activation + email)
-      if (customerId && (status === "success" || status === "authorized")) {
+      if (
+        customerId &&
+        (status === "success" ||
+          status === "authorized" ||
+          status === "captured")
+      ) {
         await updateCustomerStatusAfterPayment(
           customerId,
           effectiveResellerId,
@@ -1173,11 +1711,51 @@ async function _flagTransactionWalletDebitPending(
   }
 }
 
+async function _markTransactionWalletDebitSuccess(
+  client,
+  transactionId,
+  outcome,
+) {
+  if (!transactionId) return;
+  try {
+    const tq = await client.client.request(
+      `query T($id: uuid!) {
+        mst_transaction_by_pk(id: $id) { notes }
+      }`,
+      { id: transactionId },
+    );
+    const prev = tq?.mst_transaction_by_pk?.notes || {};
+    const notes = {
+      ...prev,
+      wallet_debit: {
+        state: "success",
+        outcome: String(outcome || "debited"),
+        at: new Date().toISOString(),
+      },
+    };
+    await client.client.request(
+      `mutation U($id: uuid!, $notes: jsonb!) {
+        update_mst_transaction_by_pk(
+          pk_columns: { id: $id }
+          _set: { notes: $notes }
+        ) { id }
+      }`,
+      { id: transactionId, notes },
+    );
+  } catch (e) {
+    console.warn(
+      `[postPayment][walletDebit] mark wallet_debit success skipped:`,
+      e.message,
+    );
+  }
+}
+
 /**
  * Re-run wallet debit when webhooks early-exit on vn_id but debit may have failed earlier.
  */
 async function _ensureWalletDebitedForProcessedTxn(client, params) {
-  const { resellerId, customerId, transactionId, virtualNumberId } = params || {};
+  const { resellerId, customerId, transactionId, virtualNumberId } =
+    params || {};
   if (!resellerId || !customerId || !transactionId) {
     console.warn(
       `[ensureWalletDebit] missing resellerId/customerId/transactionId — skip`,
@@ -1228,6 +1806,163 @@ async function _ensureWalletDebitedForProcessedTxn(client, params) {
   } catch (e) {
     console.error(`[ensureWalletDebit] error:`, e.message);
     return "debit_failed";
+  }
+}
+
+/**
+ * Peers (or a prior attempt) linked a VN to the txn; this worker lost the claim.
+ * Ensures wallet idempotency, then renewal vs first-activation follow-up (emails, etc.).
+ */
+async function finalizeOnlinePaymentWhenVnAlreadyLinked(
+  client,
+  { customerId, resellerId, transactionId, virtualNumberId, customer },
+) {
+  if (!customerId || !resellerId || !transactionId || !virtualNumberId) {
+    return;
+  }
+  const nq = await client.client.request(
+    `query TnForFinalize($id: uuid!) {
+      mst_transaction_by_pk(id: $id) {
+        notes
+        razorpay_payment_id
+      }
+    }`,
+    { id: transactionId },
+  );
+  const txnForFinalize = nq?.mst_transaction_by_pk || null;
+  const notes = txnForFinalize?.notes;
+  const paymentIdForClaimRelease = txnForFinalize?.razorpay_payment_id || null;
+  const isRenewal = notes?.transaction_type === "renewal";
+  const settleFulfillmentClaim = async () => {
+    await clearTransactionProvisionalVirtualNumber(client, transactionId);
+    if (paymentIdForClaimRelease) {
+      await releaseRazorpayPaymentFulfillmentClaim(
+        client,
+        paymentIdForClaimRelease,
+      );
+    }
+  };
+
+  const debitOut = await _ensureWalletDebitedForProcessedTxn(client, {
+    resellerId,
+    customerId,
+    transactionId,
+    virtualNumberId,
+  });
+  const debitOk =
+    debitOut === "debited" || debitOut === "already_debited";
+
+  if (isRenewal) {
+    if (!debitOk) {
+      await _flagTransactionWalletDebitPending(
+        client,
+        transactionId,
+        debitOut || "linked_vn_wallet_debit_failed",
+      );
+      console.error(
+        `[postPayment] linked-VN renewal held: wallet not debited (outcome=${debitOut}) txn=${transactionId}`,
+      );
+      return;
+    }
+    if (debitOut === "debited") {
+      await _extendVirtualNumberExpiry(client, virtualNumberId, 360);
+    }
+    await settleFulfillmentClaim();
+    await _notifyRenewalPaymentSuccessAfterOnlinePayment(
+      client,
+      customer,
+      resellerId,
+      transactionId,
+      virtualNumberId,
+    );
+    return;
+  }
+
+  if (!debitOk) {
+    await _flagTransactionWalletDebitPending(
+      client,
+      transactionId,
+      debitOut || "linked_vn_wallet_debit_failed",
+    );
+    console.error(
+      `[postPayment] linked-VN fulfillment held: wallet not debited (outcome=${debitOut}) txn=${transactionId}`,
+    );
+    return;
+  }
+  await settleFulfillmentClaim();
+
+  try {
+    await client.client.request(
+      `mutation ActivateCustomerPostPay($customer_id: uuid!) {
+        update_mst_customer_by_pk(
+          pk_columns: { id: $customer_id }
+          _set: { status: "active", kyc_status: "verified", approval: "approved" }
+        ) { id }
+      }`,
+      { customer_id: customerId },
+    );
+    console.log(
+      `[postPayment] Customer ${customerId} activated (VN already linked path)`,
+    );
+  } catch (e) {
+    console.warn(
+      `[postPayment] Customer activate (linked-VN path) non-fatal:`,
+      e.message,
+    );
+  }
+
+  try {
+    const vq = await client.client.request(
+      `query VnStrForEmail($id: uuid!) {
+        mst_virtual_number_by_pk(id: $id) {
+          virtual_number
+          purchase_date
+          expiry_date
+          call_forwarding_number
+        }
+      }`,
+      { id: virtualNumberId },
+    );
+    const vnRow = vq?.mst_virtual_number_by_pk;
+    const virtualNumber = vnRow?.virtual_number || "";
+    if (!virtualNumber || !customer?.email) return;
+
+    const { sendVirtualNumberEmail } =
+      await import("../../services/emailService.js");
+    const { getResellerSmtpConfig } = await import("./smtpConfig.service.js");
+    const reseller = customer?.mst_reseller;
+    const resellerName =
+      reseller?.brand_name ||
+      reseller?.business_name ||
+      (reseller?.first_name
+        ? `${reseller.first_name} ${reseller.last_name}`
+        : null) ||
+      reseller?.email ||
+      "Your Provider";
+    const smtpConfig = await getResellerSmtpConfig(resellerId);
+    const purchaseDate =
+      vnRow?.purchase_date || new Date().toISOString().split("T")[0];
+    const endDate = vnRow?.expiry_date || purchaseDate;
+    await sendVirtualNumberEmail(
+      customer.email,
+      customer.profile_name || customer.email,
+      virtualNumber,
+      resellerName,
+      smtpConfig,
+      {
+        resellerId,
+        customerId,
+        forwardNumber:
+          vnRow?.call_forwarding_number || customer.phone || "",
+        startDate: purchaseDate,
+        endDate: endDate,
+      },
+    );
+    console.log(
+      `[postPayment] Virtual number email sent (linked-VN path) to ${customer.email}`,
+    );
+  } catch (e) {
+    console.warn(`[postPayment] VN email (linked-VN path) skipped:`, e.message);
   }
 }
 
@@ -1295,16 +2030,14 @@ async function _notifyRenewalPaymentSuccessAfterOnlinePayment(
       });
     }
   } catch (e) {
-    console.warn(
-      "[postPayment][renewal] success notify skipped:",
-      e.message,
-    );
+    console.warn("[postPayment][renewal] success notify skipped:", e.message);
   }
 }
 
 /**
  * Debit reseller wallet for online VN fulfillment.
- * Order: CAS balance update -> insert ledger with debit_status=success (never insert before balance moves).
+ * Order: insert ledger row debit_status=pending (UNIQUE(wallet_id,reference) serializes workers) ->
+ * CAS on mst_wallet -> mark ledger success. Prevents concurrent CAS-only debits before any row exists.
  */
 async function _debitResellerWalletForOnlinePayment(
   client,
@@ -1345,35 +2078,46 @@ async function _debitResellerWalletForOnlinePayment(
     }
 
     if (!transactionId) {
-      console.error(`[postPayment][walletDebit] CRITICAL: missing transactionId — skip`);
+      console.error(
+        `[postPayment][walletDebit] CRITICAL: missing transactionId — skip`,
+      );
       return "debit_failed";
     }
 
-    const earlyWalletQuery = `
-      query GetResellerWalletIdempotency($reseller_id: uuid!) {
-        mst_wallet(where: { reseller_id: { _eq: $reseller_id } }, limit: 1) {
+    const walletsForResellerQuery = `
+      query GetResellerWalletsForDebitIdem($reseller_id: uuid!) {
+        mst_wallet(
+          where: { reseller_id: { _eq: $reseller_id } }
+          order_by: { id: asc }
+        ) {
           id
         }
       }
     `;
-    const earlyWalletData = await client.client.request(earlyWalletQuery, {
+    const walletsData = await client.client.request(walletsForResellerQuery, {
       reseller_id: effectiveResellerId,
     });
-    const walletIdForIdem = earlyWalletData?.mst_wallet?.[0]?.id;
-    if (!walletIdForIdem) {
+    const walletIdsForReseller =
+      walletsData?.mst_wallet?.map((w) => w.id).filter(Boolean) || [];
+    if (walletIdsForReseller.length === 0) {
       console.error(
         `[postPayment][walletDebit] CRITICAL: No mst_wallet for reseller — wallet not debited`,
       );
       return "debit_failed";
     }
 
-    // Idempotency: only a SUCCESS ledger row (or legacy NULL debit_status) counts.
-    const idempotencySuccessQuery = `
-      query CheckWalletDebitSuccess($reference: String!, $wallet_id: uuid!) {
+    const referenceStr = String(transactionId);
+
+    // Finalized ledger only (success or legacy NULL). `pending` is handled in the claim phase.
+    const idempotencyFinalizedQuery = `
+      query CheckWalletDebitFinalizedReseller(
+        $reference: String!
+        $wallet_ids: [uuid!]!
+      ) {
         mst_wallet_transaction(
           where: {
             reference: { _eq: $reference }
-            wallet_id: { _eq: $wallet_id }
+            wallet_id: { _in: $wallet_ids }
             _or: [
               { debit_status: { _eq: "success" } }
               { debit_status: { _is_null: true } }
@@ -1383,19 +2127,194 @@ async function _debitResellerWalletForOnlinePayment(
         ) {
           id
           debit_status
+          wallet_id
+          amount
+          balance_before
+          balance_after
+          created_at
+          customer_id
+          virtual_number_id
         }
       }
     `;
-    try {
-      const idem = await client.client.request(idempotencySuccessQuery, {
-        reference: String(transactionId),
-        wallet_id: walletIdForIdem,
-      });
-      if (idem?.mst_wallet_transaction?.length > 0) {
-        console.log(
-          `[postPayment][walletDebit] Already debited (success ledger) transactionId=${transactionId} id=${idem.mst_wallet_transaction[0].id}`,
+
+    const ledgerAnyStateQuery = `
+      query CheckWalletDebitLedgerAnyState(
+        $reference: String!
+        $wallet_ids: [uuid!]!
+      ) {
+        mst_wallet_transaction(
+          where: {
+            reference: { _eq: $reference }
+            wallet_id: { _in: $wallet_ids }
+          }
+          limit: 1
+        ) {
+          id
+          debit_status
+          wallet_id
+          amount
+          balance_before
+          balance_after
+          created_at
+          customer_id
+          virtual_number_id
+        }
+      }
+    `;
+
+    async function referenceAlreadyFinalizedLedger() {
+      if (!walletIdsForReseller?.length) {
+        console.warn(
+          `[postPayment][walletDebit] referenceAlreadyFinalizedLedger skipped — walletIdsForReseller empty`,
         );
-        return "already_debited";
+        return null;
+      }
+      try {
+        const idem = await client.client.request(idempotencyFinalizedQuery, {
+          reference: referenceStr,
+          wallet_ids: walletIdsForReseller,
+        });
+        return idem?.mst_wallet_transaction?.length > 0
+          ? idem.mst_wallet_transaction[0]
+          : null;
+      } catch (idemErr) {
+        if (
+          String(idemErr?.message || "").includes("debit_status") ||
+          String(idemErr?.response?.errors?.[0]?.message || "").includes(
+            "debit_status",
+          )
+        ) {
+          throw idemErr;
+        }
+        console.warn(
+          `[postPayment][walletDebit] Ledger idempotency query failed (non-fatal):`,
+          idemErr.message,
+        );
+        return null;
+      }
+    }
+
+    async function fetchLedgerRowAnyState() {
+      const idem = await client.client.request(ledgerAnyStateQuery, {
+        reference: referenceStr,
+        wallet_ids: walletIdsForReseller,
+      });
+      return idem?.mst_wallet_transaction?.[0] || null;
+    }
+
+    async function patchFinalizedLedgerContext(ledgerRow, virtualNumberIdToSet) {
+      if (!ledgerRow?.id || !virtualNumberIdToSet) return;
+      if (ledgerRow.virtual_number_id) return;
+      try {
+        await client.client.request(
+          `mutation PatchOnlineWalletDebitLedgerContext(
+            $id: uuid!
+            $customer_id: uuid
+            $virtual_number_id: uuid!
+          ) {
+            update_mst_wallet_transaction(
+              where: {
+                _and: [
+                  { id: { _eq: $id } }
+                  { virtual_number_id: { _is_null: true } }
+                ]
+              }
+              _set: {
+                customer_id: $customer_id
+                virtual_number_id: $virtual_number_id
+              }
+            ) {
+              affected_rows
+            }
+          }`,
+          {
+            id: ledgerRow.id,
+            customer_id: customer?.id || null,
+            virtual_number_id: virtualNumberIdToSet,
+          },
+        );
+      } catch (patchErr) {
+        console.warn(
+          `[postPayment][walletDebit] finalized ledger context patch skipped ref=${referenceStr} ledger=${ledgerRow.id}:`,
+          patchErr.message,
+        );
+      }
+    }
+
+    async function deleteWalletLedgerRow(ledgerId, expectedStatus = null) {
+      if (!ledgerId) return false;
+      try {
+        if (expectedStatus) {
+          const res = await client.client.request(
+            `mutation DeleteWalletLedgerRowIfStatus(
+              $id: uuid!
+              $debit_status: String!
+            ) {
+              delete_mst_wallet_transaction(
+                where: {
+                  _and: [
+                    { id: { _eq: $id } }
+                    { debit_status: { _eq: $debit_status } }
+                  ]
+                }
+              ) {
+                affected_rows
+              }
+            }`,
+            { id: ledgerId, debit_status: expectedStatus },
+          );
+          return (
+            (res?.delete_mst_wallet_transaction?.affected_rows ?? 0) === 1
+          );
+        }
+        await client.client.request(
+          `mutation DeleteWalletLedgerRow($id: uuid!) {
+            delete_mst_wallet_transaction_by_pk(id: $id) { id }
+          }`,
+          { id: ledgerId },
+        );
+        return true;
+      } catch (e) {
+        console.warn(
+          `[postPayment][walletDebit] delete ledger row failed:`,
+          e.message,
+        );
+        return false;
+      }
+    }
+
+    async function waitWhilePeerPendingLedger(maxAttempts = 50, pollMs = 120) {
+      let lastRow = null;
+      for (let i = 0; i < maxAttempts; i++) {
+        const row = await fetchLedgerRowAnyState();
+        if (!row) return { kind: "absent" };
+        lastRow = row;
+        if (row.debit_status === "pending") {
+          await sleep(pollMs);
+          continue;
+        }
+        if (row.debit_status === "success" || row.debit_status == null) {
+          return { kind: "finalized" };
+        }
+        if (row.debit_status === "failed") {
+          return { kind: "failed", row };
+        }
+        await sleep(pollMs);
+      }
+      return { kind: "timeout", row: lastRow };
+    }
+
+    // The atomic database function below now owns idempotency. This legacy
+    // pre-check is intentionally bypassed so retries still pass through the
+    // wallet row lock instead of trusting a stale ledger-only read.
+    try {
+      const existingFinal = await referenceAlreadyFinalizedLedger();
+      if (existingFinal) {
+        await patchFinalizedLedgerContext(existingFinal, virtualNumberId || null);
+        console.log(
+          `[postPayment][walletDebit] Existing finalized ledger found transactionId=${transactionId} id=${existingFinal.id}; continuing through atomic DB idempotency`,
+        );
       }
     } catch (idemErr) {
       if (
@@ -1416,9 +2335,77 @@ async function _debitResellerWalletForOnlinePayment(
       );
     }
 
+    let resolvedVirtualNumberId = virtualNumberId || null;
+    if (!resolvedVirtualNumberId) {
+      try {
+        const vnResolveQ = await client.client.request(
+          `query ResolveVnForWalletDebit($id: uuid!) {
+            mst_transaction_by_pk(id: $id) {
+              virtual_number_id
+              notes
+            }
+          }`,
+          { id: transactionId },
+        );
+        const trow = vnResolveQ?.mst_transaction_by_pk;
+        resolvedVirtualNumberId =
+          trow?.virtual_number_id || trow?.notes?.virtual_number_id || null;
+      } catch (resolveErr) {
+        console.warn(
+          `[postPayment][walletDebit] VN resolve from txn failed:`,
+          resolveErr.message,
+        );
+      }
+    }
+    if (!resolvedVirtualNumberId) {
+      console.log(
+        `[postPayment][walletDebit] skip — no virtual_number_id for txn ${transactionId} (VN not linked yet — concurrent fulfillment or retry later)`,
+      );
+      return "skipped_no_vn";
+    }
+
+    const atomicDebit = await debitWalletLedgerFirst(client, {
+      walletId: walletIdsForReseller[0],
+      amount: pricePerNumber,
+      description: "Customer online payment - virtual number assigned",
+      reference: referenceStr,
+      customerId: customer?.id || null,
+      virtualNumberId: resolvedVirtualNumberId,
+    });
+
+    if (atomicDebit.ok) {
+      console.log(
+        `[postPayment][walletDebit] ATOMIC ${atomicDebit.status}: txn=${transactionId} ledger=${atomicDebit.ledgerId || "n/a"} balance ${atomicDebit.balanceBefore} -> ${atomicDebit.balanceAfter}`,
+      );
+      await _markTransactionWalletDebitSuccess(
+        client,
+        transactionId,
+        atomicDebit.status,
+      );
+      return atomicDebit.status === "debited" ? "debited" : "already_debited";
+    }
+
+    console.error(
+      `[postPayment][walletDebit] ATOMIC failed txn=${transactionId} status=${atomicDebit.status} message=${atomicDebit.message || "n/a"}`,
+    );
+    if (transactionId) {
+      await _flagTransactionWalletDebitPending(
+        client,
+        transactionId,
+        atomicDebit.status || "atomic_debit_failed",
+      );
+    }
+    return atomicDebit.status === "insufficient_balance"
+      ? "insufficient_balance"
+      : "debit_failed";
+
     const walletQuery = `
       query GetResellerWalletForDebit($reseller_id: uuid!) {
-        mst_wallet(where: { reseller_id: { _eq: $reseller_id } }, limit: 1) {
+        mst_wallet(
+          where: { reseller_id: { _eq: $reseller_id } }
+          order_by: { id: asc }
+          limit: 1
+        ) {
           id
           balance
           debit_amount
@@ -1460,26 +2447,38 @@ async function _debitResellerWalletForOnlinePayment(
     const rollbackMutation = `
       mutation RollbackWalletDebit(
         $id: uuid!
+        $balanceEq: numeric!
+        $debitAmountEq: numeric!
         $balance: numeric!
         $debit_amount: numeric!
         $last_transaction_at: timestamp!
       ) {
-        update_mst_wallet_by_pk(
-          pk_columns: { id: $id }
+        update_mst_wallet(
+          where: {
+            _and: [
+              { id: { _eq: $id } }
+              { balance: { _eq: $balanceEq } }
+              { debit_amount: { _eq: $debitAmountEq } }
+            ]
+          }
           _set: {
             balance: $balance
             debit_amount: $debit_amount
             last_transaction_at: $last_transaction_at
           }
         ) {
-          id
-          balance
+          affected_rows
+          returning {
+            id
+            balance
+            debit_amount
+          }
         }
       }
     `;
 
-    const insertWalletTxnMutation = `
-      mutation CreateWalletTxnOnlinePayment(
+    const insertPendingWalletTxnMutation = `
+      mutation CreateWalletTxnOnlinePaymentPending(
         $wallet_id: uuid!
         $amount: numeric!
         $balance_before: numeric!
@@ -1500,6 +2499,25 @@ async function _debitResellerWalletForOnlinePayment(
             reference: $reference
             customer_id: $customer_id
             virtual_number_id: $virtual_number_id
+            debit_status: "pending"
+          }
+        ) {
+          id
+        }
+      }
+    `;
+
+    const finalizeWalletTxnMutation = `
+      mutation FinalizeWalletDebitLedger(
+        $id: uuid!
+        $balance_before: numeric!
+        $balance_after: numeric!
+      ) {
+        update_mst_wallet_transaction_by_pk(
+          pk_columns: { id: $id }
+          _set: {
+            balance_before: $balance_before
+            balance_after: $balance_after
             debit_status: "success"
           }
         ) {
@@ -1508,17 +2526,183 @@ async function _debitResellerWalletForOnlinePayment(
       }
     `;
 
+    const updatePendingWalletTxnBalancesMutation = `
+      mutation RefreshPendingWalletDebitLedgerBalances(
+        $id: uuid!
+        $balance_before: numeric!
+        $balance_after: numeric!
+      ) {
+        update_mst_wallet_transaction(
+          where: {
+            _and: [
+              { id: { _eq: $id } }
+              { debit_status: { _eq: "pending" } }
+            ]
+          }
+          _set: {
+            balance_before: $balance_before
+            balance_after: $balance_after
+          }
+        ) {
+          affected_rows
+        }
+      }
+    `;
+
+    const walletByPkQuery = `
+      query GetWalletByPkForStaleDebitRecovery($id: uuid!) {
+        mst_wallet_by_pk(id: $id) {
+          id
+          balance
+          debit_amount
+        }
+      }
+    `;
+
+    const sameMoney = (a, b) =>
+      Math.abs(_normalizeWalletNumeric(a) - _normalizeWalletNumeric(b)) <
+      0.0001;
+
+    async function recoverStalePendingLedger(ledgerRow) {
+      if (!ledgerRow?.id || ledgerRow.debit_status !== "pending") {
+        return { kind: "not_pending" };
+      }
+
+      const createdMs = Date.parse(ledgerRow.created_at || "");
+      const stale =
+        !Number.isFinite(createdMs) ||
+        Date.now() - createdMs >= STALE_PENDING_WALLET_LEDGER_MS;
+      if (!stale) {
+        return { kind: "fresh" };
+      }
+
+      const ledgerAmount = _normalizeWalletNumeric(ledgerRow.amount);
+      const ledgerBefore = _normalizeWalletNumeric(ledgerRow.balance_before);
+      const ledgerAfter = _normalizeWalletNumeric(ledgerRow.balance_after);
+
+      if (
+        !sameMoney(ledgerAmount, pricePerNumber) ||
+        ledgerRow.customer_id !== (customer?.id || null) ||
+        ledgerRow.virtual_number_id !== resolvedVirtualNumberId
+      ) {
+        console.error(
+          `[postPayment][walletDebit] CRITICAL: stale pending ledger does not match expected txn context ref=${referenceStr} ledger=${ledgerRow.id}`,
+        );
+        await _flagTransactionWalletDebitPending(
+          client,
+          transactionId,
+          "stale_pending_wallet_ledger_context_mismatch",
+        );
+        return { kind: "manual_reconcile" };
+      }
+
+      const walletNowResult = await client.client.request(walletByPkQuery, {
+        id: ledgerRow.wallet_id,
+      });
+      const walletNow = walletNowResult?.mst_wallet_by_pk;
+      if (!walletNow?.id) {
+        console.error(
+          `[postPayment][walletDebit] CRITICAL: wallet missing during stale pending recovery wallet=${ledgerRow.wallet_id}`,
+        );
+        await _flagTransactionWalletDebitPending(
+          client,
+          transactionId,
+          "stale_pending_wallet_missing",
+        );
+        return { kind: "manual_reconcile" };
+      }
+
+      const currentBalance = _normalizeWalletNumeric(walletNow.balance);
+      if (sameMoney(currentBalance, ledgerBefore)) {
+        const released = await deleteWalletLedgerRow(ledgerRow.id, "pending");
+        if (released) {
+          console.warn(
+            `[postPayment][walletDebit] stale pending ledger released before CAS ref=${referenceStr} ledger=${ledgerRow.id}`,
+          );
+          return { kind: "released" };
+        }
+        return { kind: "race" };
+      }
+
+      if (sameMoney(currentBalance, ledgerAfter)) {
+        await client.client.request(finalizeWalletTxnMutation, {
+          id: ledgerRow.id,
+          balance_before: ledgerBefore,
+          balance_after: ledgerAfter,
+        });
+        console.warn(
+          `[postPayment][walletDebit] stale pending ledger finalized after recovered CAS ref=${referenceStr} ledger=${ledgerRow.id}`,
+        );
+        return { kind: "finalized" };
+      }
+
+      console.error(
+        `[postPayment][walletDebit] CRITICAL: stale pending ledger cannot be reconciled automatically ref=${referenceStr} ledger=${ledgerRow.id} walletBalance=${currentBalance} ledgerBefore=${ledgerBefore} ledgerAfter=${ledgerAfter}`,
+      );
+      await _flagTransactionWalletDebitPending(
+        client,
+        transactionId,
+        "stale_pending_wallet_ledger_manual_reconcile",
+      );
+      return { kind: "manual_reconcile" };
+    }
+
     let wallet = null;
     let balanceBefore = 0;
     let balanceAfter = 0;
     let existingDebitAmount = 0;
-    let casSucceeded = false;
+    let pendingLedgerId = null;
 
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const walletData = await client.client.request(walletQuery, {
+    const maxClaimRounds = 6;
+    for (let claimRound = 0; claimRound < maxClaimRounds; claimRound++) {
+      const existingRow = await fetchLedgerRowAnyState();
+      if (existingRow) {
+        if (
+          existingRow.debit_status === "success" ||
+          existingRow.debit_status == null
+        ) {
+          await patchFinalizedLedgerContext(existingRow, resolvedVirtualNumberId);
+          return "already_debited";
+        }
+        if (existingRow.debit_status === "pending") {
+          const waited = await waitWhilePeerPendingLedger();
+          if (waited.kind === "finalized") {
+            return "already_debited";
+          }
+          if (waited.kind === "failed" && waited.row?.id) {
+            await deleteWalletLedgerRow(waited.row.id, "failed");
+            continue;
+          }
+          if (waited.kind === "timeout") {
+            const recovery = await recoverStalePendingLedger(
+              waited.row || existingRow,
+            );
+            if (recovery.kind === "finalized") {
+              return "debited";
+            }
+            if (
+              recovery.kind === "released" ||
+              recovery.kind === "race"
+            ) {
+              continue;
+            }
+            console.error(
+              `[postPayment][walletDebit] CRITICAL: timeout waiting for peer pending ledger ref=${referenceStr} recovery=${recovery.kind}`,
+            );
+            return "debit_failed";
+          }
+          continue;
+        }
+        if (existingRow.debit_status === "failed") {
+          await deleteWalletLedgerRow(existingRow.id, "failed");
+          continue;
+        }
+      }
+
+      const walletDataClaim = await client.client.request(walletQuery, {
         reseller_id: effectiveResellerId,
       });
-      wallet = walletData?.mst_wallet?.[0];
+      wallet = walletDataClaim?.mst_wallet?.[0];
       if (!wallet?.id) {
         console.error(
           `[postPayment][walletDebit] CRITICAL: No row in mst_wallet for reseller_id=${effectiveResellerId}`,
@@ -1528,10 +2712,6 @@ async function _debitResellerWalletForOnlinePayment(
 
       balanceBefore = _normalizeWalletNumeric(wallet.balance);
       existingDebitAmount = _normalizeWalletNumeric(wallet.debit_amount);
-
-      console.log(
-        `[postPayment][walletDebit] wallet.id=${wallet.id}, balanceBefore=${balanceBefore}, pricePerNumber=${pricePerNumber} attempt=${attempt + 1}`,
-      );
 
       if (balanceBefore < pricePerNumber) {
         console.error(
@@ -1548,9 +2728,165 @@ async function _debitResellerWalletForOnlinePayment(
         return "insufficient_balance";
       }
 
+      const provisionalAfter = balanceBefore - pricePerNumber;
+      try {
+        const pendRes = await client.client.request(
+          insertPendingWalletTxnMutation,
+          {
+            wallet_id: wallet.id,
+            amount: pricePerNumber,
+            balance_before: balanceBefore,
+            balance_after: provisionalAfter,
+            description: `Customer online payment - virtual number assigned`,
+            reference: referenceStr,
+            customer_id: customer?.id || null,
+            virtual_number_id: resolvedVirtualNumberId,
+          },
+        );
+        pendingLedgerId =
+          pendRes?.insert_mst_wallet_transaction_one?.id || null;
+        if (!pendingLedgerId) {
+          throw new Error("pending ledger insert returned no id");
+        }
+        break;
+      } catch (insErr) {
+        const errMsg = String(
+          insErr?.message || insErr?.response?.errors?.[0]?.message || "",
+        );
+        if (
+          errMsg.includes("duplicate key") ||
+          errMsg.includes("unique constraint") ||
+          errMsg.includes("Uniqueness violation") ||
+          errMsg.includes("uq_wallet_txn_wallet_reference")
+        ) {
+          continue;
+        }
+        if (
+          errMsg.includes("debit_status") ||
+          String(insErr?.response?.errors?.[0]?.message || "").includes(
+            "debit_status",
+          )
+        ) {
+          console.error(
+            `[postPayment][walletDebit] debit_status missing on pending insert — run migration and reload Hasura.`,
+            insErr,
+          );
+          return "debit_failed";
+        }
+        console.error(
+          `[postPayment][walletDebit] CRITICAL: pending ledger insert failed`,
+          insErr,
+        );
+        return "debit_failed";
+      }
+    }
+
+    if (!pendingLedgerId || !wallet?.id) {
+      console.error(
+        `[postPayment][walletDebit] CRITICAL: could not claim exclusive pending ledger for ref=${referenceStr}`,
+      );
+      return "debit_failed";
+    }
+
+    let casSucceeded = false;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) {
+        try {
+          const peerLedger = await referenceAlreadyFinalizedLedger();
+          if (peerLedger) {
+            await deleteWalletLedgerRow(pendingLedgerId, "pending");
+            console.log(
+              `[postPayment][walletDebit] CAS retry aborted — peer finalized ledger id=${peerLedger.id} attempt=${attempt + 1}`,
+            );
+            return "already_debited";
+          }
+        } catch (idemErr) {
+          if (
+            String(idemErr?.message || "").includes("debit_status") ||
+            String(idemErr?.response?.errors?.[0]?.message || "").includes(
+              "debit_status",
+            )
+          ) {
+            console.warn(
+              `[postPayment][walletDebit] debit_status column missing during CAS retry:`,
+              idemErr.message,
+            );
+            await deleteWalletLedgerRow(pendingLedgerId, "pending");
+            return "debit_failed";
+          }
+        }
+      }
+
+      const walletData = await client.client.request(walletQuery, {
+        reseller_id: effectiveResellerId,
+      });
+      wallet = walletData?.mst_wallet?.[0];
+      if (!wallet?.id) {
+        await deleteWalletLedgerRow(pendingLedgerId, "pending");
+        console.error(
+          `[postPayment][walletDebit] CRITICAL: No row in mst_wallet for reseller_id=${effectiveResellerId}`,
+        );
+        return "debit_failed";
+      }
+
+      balanceBefore = _normalizeWalletNumeric(wallet.balance);
+      existingDebitAmount = _normalizeWalletNumeric(wallet.debit_amount);
+
+      console.log(
+        `[postPayment][walletDebit] wallet.id=${wallet.id}, balanceBefore=${balanceBefore}, pricePerNumber=${pricePerNumber} casAttempt=${attempt + 1}`,
+      );
+
+      if (balanceBefore < pricePerNumber) {
+        console.error(
+          `[postPayment][walletDebit] CRITICAL: Insufficient balance for reseller ${effectiveResellerId}. ` +
+            `Required: ₹${pricePerNumber.toFixed(2)}, Available: ₹${balanceBefore.toFixed(2)}`,
+        );
+        await deleteWalletLedgerRow(pendingLedgerId, "pending");
+        if (transactionId) {
+          await _flagTransactionWalletDebitPending(
+            client,
+            transactionId,
+            "insufficient_balance",
+          );
+        }
+        return "insufficient_balance";
+      }
+
       balanceAfter = balanceBefore - pricePerNumber;
       const newDebitTotal = existingDebitAmount + pricePerNumber;
       const ts = new Date().toISOString();
+
+      try {
+        const refreshLedger = await client.client.request(
+          updatePendingWalletTxnBalancesMutation,
+          {
+            id: pendingLedgerId,
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+          },
+        );
+        const refreshedRows =
+          refreshLedger?.update_mst_wallet_transaction?.affected_rows ?? 0;
+        if (refreshedRows !== 1) {
+          const peerLedger = await referenceAlreadyFinalizedLedger();
+          if (peerLedger) {
+            await deleteWalletLedgerRow(pendingLedgerId, "pending");
+            return "already_debited";
+          }
+          await deleteWalletLedgerRow(pendingLedgerId, "pending");
+          console.error(
+            `[postPayment][walletDebit] CRITICAL: could not refresh pending ledger before CAS ref=${referenceStr}`,
+          );
+          return "debit_failed";
+        }
+      } catch (refreshErr) {
+        await deleteWalletLedgerRow(pendingLedgerId, "pending");
+        console.error(
+          `[postPayment][walletDebit] CRITICAL: pending ledger refresh before CAS failed`,
+          refreshErr,
+        );
+        return "debit_failed";
+      }
 
       const casResult = await client.client.request(casMutation, {
         id: wallet.id,
@@ -1560,8 +2896,7 @@ async function _debitResellerWalletForOnlinePayment(
         ts,
       });
 
-      const affected =
-        casResult?.update_mst_wallet?.affected_rows ?? 0;
+      const affected = casResult?.update_mst_wallet?.affected_rows ?? 0;
       const returned = casResult?.update_mst_wallet?.returning?.[0];
 
       if (affected === 1 && returned) {
@@ -1571,11 +2906,60 @@ async function _debitResellerWalletForOnlinePayment(
       }
 
       console.warn(
-        `[postPayment][walletDebit] CAS miss (attempt ${attempt + 1}) affected_rows=${affected} — retry`,
+        `[postPayment][walletDebit] CAS miss (attempt ${attempt + 1}) affected_rows=${affected} — check peer ledger before retry`,
       );
+      try {
+        const peerLedgerAfterMiss = await referenceAlreadyFinalizedLedger();
+        if (peerLedgerAfterMiss) {
+          await deleteWalletLedgerRow(pendingLedgerId, "pending");
+          console.log(
+            `[postPayment][walletDebit] CAS miss: peer finalized ledger id=${peerLedgerAfterMiss.id} — stopping`,
+          );
+          return "already_debited";
+        }
+      } catch (idemErr) {
+        if (
+          String(idemErr?.message || "").includes("debit_status") ||
+          String(idemErr?.response?.errors?.[0]?.message || "").includes(
+            "debit_status",
+          )
+        ) {
+          console.warn(
+            `[postPayment][walletDebit] debit_status missing during post-CAS idem check:`,
+            idemErr.message,
+          );
+          await deleteWalletLedgerRow(pendingLedgerId, "pending");
+          return "debit_failed";
+        }
+      }
     }
 
     if (!casSucceeded || !wallet?.id) {
+      try {
+        const ledgerAfterCas = await referenceAlreadyFinalizedLedger();
+        if (ledgerAfterCas) {
+          await deleteWalletLedgerRow(pendingLedgerId, "pending");
+          console.log(
+            `[postPayment][walletDebit] CAS exhausted but peer finalized ledger id=${ledgerAfterCas.id}`,
+          );
+          return "already_debited";
+        }
+      } catch (idemErr) {
+        if (
+          String(idemErr?.message || "").includes("debit_status") ||
+          String(idemErr?.response?.errors?.[0]?.message || "").includes(
+            "debit_status",
+          )
+        ) {
+          console.warn(
+            `[postPayment][walletDebit] debit_status missing after CAS exhaustion:`,
+            idemErr.message,
+          );
+          await deleteWalletLedgerRow(pendingLedgerId, "pending");
+          return "debit_failed";
+        }
+      }
+      await deleteWalletLedgerRow(pendingLedgerId, "pending");
       console.error(
         `[postPayment][walletDebit] CRITICAL: CAS update failed after retries`,
       );
@@ -1583,76 +2967,51 @@ async function _debitResellerWalletForOnlinePayment(
     }
 
     try {
-      const walletTxnResult = await client.client.request(
-        insertWalletTxnMutation,
-        {
-          wallet_id: wallet.id,
-          amount: pricePerNumber,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-          description: `Customer online payment - virtual number assigned`,
-          reference: String(transactionId),
-          customer_id: customer?.id || null,
-          virtual_number_id: virtualNumberId || null,
-        },
+      await client.client.request(finalizeWalletTxnMutation, {
+        id: pendingLedgerId,
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+      });
+    } catch (finErr) {
+      console.error(
+        `[postPayment][walletDebit] CRITICAL: finalize ledger failed — rolling back wallet CAS`,
+        finErr,
       );
-
-      if (!walletTxnResult?.insert_mst_wallet_transaction_one?.id) {
-        throw new Error("insert_mst_wallet_transaction_one returned no id");
-      }
-    } catch (insertErr) {
-      const errMsg = String(
-        insertErr?.message || insertErr?.response?.errors?.[0]?.message || "",
-      );
-      if (
-        errMsg.includes("duplicate key") ||
-        errMsg.includes("unique constraint") ||
-        errMsg.includes("uq_wallet_txn_wallet_reference")
-      ) {
-        console.log(
-          `[postPayment][walletDebit] Duplicate ledger row — treating as already_debited`,
-        );
-        return "already_debited";
-      }
-      if (
-        errMsg.includes("debit_status") ||
-        String(insertErr?.response?.errors?.[0]?.message || "").includes(
-          "debit_status",
-        )
-      ) {
-        console.error(
-          `[postPayment][walletDebit] debit_status missing on insert — run DB migration and reload Hasura. Rolling back balance change.`,
-          insertErr,
-        );
-      } else {
-        console.error(
-          `[postPayment][walletDebit] CRITICAL: Ledger insert failed after CAS — rolling back balance`,
-          insertErr,
-        );
-      }
-
+      let rolledBack = false;
       try {
-        await client.client.request(rollbackMutation, {
+        const rollbackRes = await client.client.request(rollbackMutation, {
           id: wallet.id,
+          balanceEq: balanceAfter,
+          debitAmountEq: existingDebitAmount + pricePerNumber,
           balance: balanceBefore,
           debit_amount: existingDebitAmount,
           last_transaction_at: new Date().toISOString(),
         });
-        console.warn(
-          `[postPayment][walletDebit] Rollback applied: balance restored to ${balanceBefore}`,
-        );
+        rolledBack =
+          (rollbackRes?.update_mst_wallet?.affected_rows ?? 0) === 1;
+        if (rolledBack) {
+          console.warn(
+            `[postPayment][walletDebit] Rollback after finalize failure: balance restored toward ${balanceBefore}`,
+          );
+        } else {
+          console.error(
+            `[postPayment][walletDebit] CRITICAL: rollback CAS miss after finalize failure — leaving pending ledger for retry/manual reconciliation`,
+          );
+        }
       } catch (rbErr) {
         console.error(
-          `[postPayment][walletDebit] CRITICAL: Rollback failed — manual reconciliation required`,
+          `[postPayment][walletDebit] CRITICAL: Rollback after finalize failure failed — manual reconciliation`,
           rbErr,
         );
       }
-
+      if (rolledBack) {
+        await deleteWalletLedgerRow(pendingLedgerId, "pending");
+      }
       if (transactionId) {
         await _flagTransactionWalletDebitPending(
           client,
           transactionId,
-          "ledger_insert_failed",
+          "ledger_finalize_failed",
         );
       }
       return "debit_failed";
@@ -1740,6 +3099,7 @@ async function updateCustomerStatusAfterPayment(
   }
 
   const client = getHasuraClient();
+  let createdVirtualNumberIdForRecovery = null;
 
   try {
     // ── 1. Fetch customer details + transaction state ─────────────────────────
@@ -1760,7 +3120,11 @@ async function updateCustomerStatusAfterPayment(
             brand_name
             price_per_number
           }
-          mst_virtual_numbers(limit: 1, order_by: { created_at: desc }) {
+          mst_virtual_numbers(
+            where: { status: { _eq: "active" } }
+            limit: 1
+            order_by: { created_at: desc }
+          ) {
             id
             virtual_number
             status
@@ -1771,6 +3135,7 @@ async function updateCustomerStatusAfterPayment(
           virtual_number_id
           status
           notes
+          razorpay_payment_id
         }
       }
     `;
@@ -1801,19 +3166,151 @@ async function updateCustomerStatusAfterPayment(
       return false;
     }
 
-    // Guard A: transaction already has a VN linked, or is already claimed/processing
+    // Repair invalid row: `success` without linked VN confuses STEP2 and prevents clean re-claim.
+    // This must be guarded. Two webhooks can both read `success/null`; an
+    // unconditional repair would overwrite a peer's fresh `processing_vn` lock.
     if (
       transactionId &&
-      (txnRecord?.virtual_number_id || txnRecord?.status === "processing_vn")
+      txnRecord &&
+      txnRecord.status === TRANSACTION_STATES.SUCCESS &&
+      !txnRecord.virtual_number_id &&
+      txnRecord.notes?.transaction_type !== "renewal"
+    ) {
+      try {
+        const rep = await client.client.request(
+          `mutation RepairSuccessTxnWithoutVn($id: uuid!) {
+            update_mst_transaction(
+              where: {
+                id: { _eq: $id }
+                status: { _eq: "success" }
+                virtual_number_id: { _is_null: true }
+              }
+              _set: { status: "captured" }
+            ) {
+              affected_rows
+              returning {
+                id
+                status
+                virtual_number_id
+                notes
+                razorpay_payment_id
+              }
+            }
+          }`,
+          { id: transactionId },
+        );
+        const repairedRow = rep?.update_mst_transaction?.returning?.[0] || null;
+        if (repairedRow) {
+          console.warn(
+            `[postPayment] Repaired txn ${transactionId}: success→captured (virtual_number_id was null; non-renewal)`,
+          );
+          Object.assign(txnRecord, repairedRow);
+        } else {
+          const refreshed = await client.client.request(
+            `query RefreshTxnAfterRepairMiss($id: uuid!) {
+              mst_transaction_by_pk(id: $id) {
+                id
+                status
+                virtual_number_id
+                notes
+                razorpay_payment_id
+              }
+            }`,
+            { id: transactionId },
+          );
+          const latestTxn = refreshed?.mst_transaction_by_pk || null;
+          if (latestTxn) {
+            console.warn(
+              `[postPayment] Repair skipped for txn ${transactionId}; peer state is status=${latestTxn.status} vn_id=${latestTxn.virtual_number_id || latestTxn.notes?.virtual_number_id || "null"}`,
+            );
+            Object.assign(txnRecord, latestTxn);
+          }
+        }
+      } catch (re) {
+        console.warn(`[postPayment] Repair success-without-VN failed:`, re.message);
+      }
+    }
+
+    if (
+      transactionId &&
+      txnRecord?.status === "processing_vn" &&
+      !txnRecord?.virtual_number_id &&
+      !txnRecord?.notes?.virtual_number_id
+    ) {
+      console.log(
+        `[postPayment] processing_vn without linked VN for txn=${transactionId}; waiting/recovering before deciding`,
+      );
+
+      const provisionalRecovered =
+        await recoverProvisionalVirtualNumberForTransaction(client, {
+          transactionId,
+          txnRecord,
+          customerId,
+          resellerId,
+          customer,
+        });
+      if (provisionalRecovered) return true;
+
+      const recoveredTxn = await waitOrRecoverProcessingVnLock(
+        client,
+        transactionId,
+        txnRecord?.razorpay_payment_id || null,
+        null,
+      );
+      const recoveredVnId =
+        recoveredTxn?.virtual_number_id ||
+        recoveredTxn?.notes?.virtual_number_id ||
+        null;
+
+      if (recoveredVnId) {
+        await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+          customerId,
+          resellerId,
+          transactionId,
+          virtualNumberId: recoveredVnId,
+          customer,
+        });
+        return true;
+      }
+
+      if (recoveredTxn?.status === "processing_vn") {
+        console.log(
+          `[postPayment] processing_vn still fresh for txn=${transactionId}; peer is still provisioning, retry can re-enter later`,
+        );
+        return true;
+      }
+
+      if (recoveredTxn) {
+        txnRecord.status = recoveredTxn.status || txnRecord.status;
+        txnRecord.virtual_number_id = recoveredTxn.virtual_number_id || null;
+        txnRecord.notes = recoveredTxn.notes || txnRecord.notes;
+      } else {
+        txnRecord.status = "captured";
+      }
+      console.warn(
+        `[postPayment] processing_vn lock recovered for txn=${transactionId}; continuing to VN claim`,
+      );
+    }
+
+    // Guard A: transaction already has a VN linked, or carries a linked VN in notes.
+    if (
+      transactionId &&
+      (txnRecord?.virtual_number_id || txnRecord?.notes?.virtual_number_id)
     ) {
       const isRenewal = txnRecord?.notes?.transaction_type === "renewal";
-      console.log(
-        `[postPayment] Guard A hit — Transaction ${transactionId} already claimed (vn_id=${txnRecord.virtual_number_id}, status=${txnRecord.status}, renewal=${isRenewal}) — skipping VN creation, attempting wallet debit`,
-      );
       const guardAVnId =
         txnRecord?.virtual_number_id ||
         txnRecord?.notes?.virtual_number_id ||
         null;
+      if (false && txnRecord?.status === "processing_vn" && !guardAVnId) {
+        console.log(
+          `[postPayment] Guard A — status=processing_vn, no VN id yet — peer provisioning; skip wallet debit`,
+        );
+        return true;
+      }
+      console.log(
+        `[postPayment] Guard A hit — Transaction ${transactionId} already claimed (vn_id=${txnRecord.virtual_number_id}, status=${txnRecord.status}, renewal=${isRenewal}) — skipping VN creation, attempting wallet debit`,
+      );
       const debitResult = await _debitResellerWalletForOnlinePayment(
         client,
         customer,
@@ -1904,9 +3401,8 @@ async function updateCustomerStatusAfterPayment(
     // ── 3. Claim the transaction slot atomically BEFORE creating VN ──────────
     // Use a conditional UPDATE on mst_transaction as a DB-level mutex.
     // The condition: virtual_number_id IS NULL.
-    // Only claim from pending / authorized / success (capture may have set success
-    // before postPayment). Never claim from failed / refunded / processing_vn.
-    // processing_vn is excluded by not listing it in _in (and VN null still required).
+    // Claim from pre-fulfillment paid states: pending, authorized, captured, or legacy
+    // success-without-VN (before backfill). Never claim failed / refunded / processing_vn.
     if (transactionId) {
       const claimTxnMutation = `
         mutation ClaimTransactionForVN($txn_id: uuid!) {
@@ -1914,7 +3410,7 @@ async function updateCustomerStatusAfterPayment(
             where: {
               id: { _eq: $txn_id }
               virtual_number_id: { _is_null: true }
-              status: { _in: ["pending", "authorized", "success"] }
+              status: { _in: ["pending", "authorized", "captured", "success"] }
             }
             _set: { status: "processing_vn" }
           ) {
@@ -1926,16 +3422,90 @@ async function updateCustomerStatusAfterPayment(
         txn_id: transactionId,
       });
 
-      if ((claimResult?.update_mst_transaction?.affected_rows ?? 0) === 0) {
+      let claimRows =
+        (claimResult?.update_mst_transaction?.affected_rows ?? 0);
+
+      if (claimRows === 0) {
         console.log(
-          `[postPayment] Claim lost — transaction ${transactionId} already claimed by concurrent call — skipping VN creation, attempting wallet debit`,
+          `[postPayment] Claim lost — transaction ${transactionId} — checking peer VN / lock recovery`,
         );
-        await _debitResellerWalletForOnlinePayment(
-          client,
-          customer,
-          resellerId,
-          transactionId,
-          null,
+        try {
+          const peerRowQ = await client.client.request(
+            `query PeerTxnVn($id: uuid!) {
+              mst_transaction_by_pk(id: $id) {
+                virtual_number_id
+                notes
+                status
+              }
+            }`,
+            { id: transactionId },
+          );
+          const prow = peerRowQ?.mst_transaction_by_pk;
+          const peerVnId =
+            prow?.virtual_number_id || prow?.notes?.virtual_number_id || null;
+          if (peerVnId) {
+            await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+              customerId,
+              resellerId,
+              transactionId,
+              virtualNumberId: peerVnId,
+              customer,
+            });
+            return true;
+          }
+          await waitOrRecoverProcessingVnLock(
+            client,
+            transactionId,
+            null,
+            null,
+          );
+          const claimRetry = await client.client.request(claimTxnMutation, {
+            txn_id: transactionId,
+          });
+          claimRows =
+            claimRetry?.update_mst_transaction?.affected_rows ?? 0;
+
+          // Peer linked VN while we waited: claim retries get 0 rows because
+          // virtual_number_id is no longer null — finalize instead of "still lost".
+          if (claimRows === 0) {
+            const latePeer = await client.client.request(
+              `query PeerTxnVnAfterWait($id: uuid!) {
+                mst_transaction_by_pk(id: $id) {
+                  virtual_number_id
+                  notes
+                  status
+                }
+              }`,
+              { id: transactionId },
+            );
+            const lp = latePeer?.mst_transaction_by_pk;
+            const lateVn =
+              lp?.virtual_number_id || lp?.notes?.virtual_number_id || null;
+            if (lateVn) {
+              console.log(
+                `[postPayment] VN appeared after lock wait — completing fulfillment (txn=${transactionId}, status=${lp?.status})`,
+              );
+              await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+                customerId,
+                resellerId,
+                transactionId,
+                virtualNumberId: lateVn,
+                customer,
+              });
+              return true;
+            }
+          }
+        } catch (peerErr) {
+          console.warn(
+            `[postPayment] Claim lost — peer / retry failed:`,
+            peerErr.message,
+          );
+        }
+      }
+
+      if (claimRows === 0) {
+        console.log(
+          `[postPayment] Claim still lost for ${transactionId} — debit deferred (webhook retry or ops)`,
         );
         return true;
       }
@@ -1973,10 +3543,60 @@ async function updateCustomerStatusAfterPayment(
 
     // ── 4a. Fetch available number from VN API ────────────────────────────────
     // Hard failure: no VN available = no charge.
+    // Final DB re-check before touching the external VN API. Razorpay can deliver
+    // order.paid, payment.authorized, payment.captured, and payment_link.paid in
+    // parallel; another worker may have linked the VN after this worker won the
+    // transaction claim but before the API allocation below.
+    const latestBeforeVnApi = await client.client.request(
+      `query TxnBeforeVnApiAllocation($id: uuid!) {
+        mst_transaction_by_pk(id: $id) {
+          id
+          status
+          virtual_number_id
+          notes
+          razorpay_payment_id
+        }
+      }`,
+      { id: transactionId },
+    );
+    const latestTxnBeforeVnApi =
+      latestBeforeVnApi?.mst_transaction_by_pk || null;
+    const latestLinkedVnBeforeApi =
+      latestTxnBeforeVnApi?.virtual_number_id ||
+      latestTxnBeforeVnApi?.notes?.virtual_number_id ||
+      null;
+    if (latestLinkedVnBeforeApi) {
+      console.warn(
+        `[postPayment] Pre-VN allocation guard: txn=${transactionId} already linked to vn=${latestLinkedVnBeforeApi}; skipping VN API allocation`,
+      );
+      await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+        customerId,
+        resellerId,
+        transactionId,
+        virtualNumberId: latestLinkedVnBeforeApi,
+        customer,
+      });
+      return true;
+    }
+    if (latestTxnBeforeVnApi?.status !== "processing_vn") {
+      console.warn(
+        `[postPayment] Pre-VN allocation guard: txn=${transactionId} status=${latestTxnBeforeVnApi?.status || "missing"}; skipping VN API allocation`,
+      );
+      if (latestTxnBeforeVnApi?.razorpay_payment_id) {
+        await releaseRazorpayPaymentFulfillmentClaim(
+          client,
+          latestTxnBeforeVnApi.razorpay_payment_id,
+        );
+      }
+      return true;
+    }
+
     const availableRes = await VnApiClient.getAvailableNumbers();
     const availableNumbers = availableRes?.data || [];
     if (availableNumbers.length === 0) {
-      throw new Error("[postPayment] No virtual numbers available from VN API — aborting, wallet not debited");
+      throw new Error(
+        "[postPayment] No virtual numbers available from VN API — aborting, wallet not debited",
+      );
     }
     const virtualNumber = availableNumbers[0].number;
     console.log(`[postPayment] Got VN from API: ${virtualNumber}`);
@@ -1992,9 +3612,16 @@ async function updateCustomerStatusAfterPayment(
       txnRecord?.notes?.call_forwarding_number || customer.phone || null;
     if (callForwardNumber) {
       try {
-        await VnApiClient.configureCallForwarding(virtualNumber, "mobile", callForwardNumber);
+        await VnApiClient.configureCallForwarding(
+          virtualNumber,
+          "mobile",
+          callForwardNumber,
+        );
       } catch (cfErr) {
-        console.warn(`[postPayment] Call forwarding config failed (non-fatal):`, cfErr.message);
+        console.warn(
+          `[postPayment] Call forwarding config failed (non-fatal):`,
+          cfErr.message,
+        );
       }
     }
 
@@ -2050,19 +3677,99 @@ async function updateCustomerStatusAfterPayment(
     const vnRecord = vnResult?.insert_mst_virtual_number_one;
     if (!vnRecord?.id) {
       // DB returned null — hard failure so wallet is not debited.
-      throw new Error(`[postPayment] DB insert returned null for VN ${virtualNumber} — aborting, wallet not debited`);
+      throw new Error(
+        `[postPayment] DB insert returned null for VN ${virtualNumber} — aborting, wallet not debited`,
+      );
     }
-    console.log(`[postPayment] VN ${virtualNumber} (id=${vnRecord.id}) persisted in DB for customer ${customerId}`);
+    console.log(
+      `[postPayment] VN ${virtualNumber} (id=${vnRecord.id}) persisted in DB for customer ${customerId}`,
+    );
+    await patchTransactionProvisionalVirtualNumber(
+      client,
+      transactionId,
+      vnRecord,
+    );
 
     // ── 5. Debit reseller wallet ──────────────────────────────────────────────
     // Runs ONLY after VN is confirmed in DB (step 4c succeeded).
     // Has its own idempotency guard — safe to retry for same transactionId.
+    createdVirtualNumberIdForRecovery = vnRecord.id;
+
+    let linkedVirtualNumberId = vnRecord.id;
+    if (transactionId && vnRecord.id) {
+      const linkResult = await client.client.request(
+        `mutation LinkVirtualNumberToTransactionOnce($txn_id: uuid!, $vn_id: uuid!) {
+          update_mst_transaction(
+            where: {
+              id: { _eq: $txn_id }
+              _or: [
+                { virtual_number_id: { _is_null: true } }
+                { virtual_number_id: { _eq: $vn_id } }
+              ]
+            }
+            _set: { virtual_number_id: $vn_id, status: "success" }
+          ) {
+            affected_rows
+            returning {
+              id
+              virtual_number_id
+            }
+          }
+        }`,
+        {
+          txn_id: transactionId,
+          vn_id: vnRecord.id,
+        },
+      );
+      const linkRows = linkResult?.update_mst_transaction?.affected_rows ?? 0;
+      const linkedRow =
+        linkResult?.update_mst_transaction?.returning?.[0] || null;
+      if (linkRows !== 1 || !linkedRow?.virtual_number_id) {
+        const existingLink = await client.client.request(
+          `query ExistingTxnVnAfterLinkMiss($id: uuid!) {
+            mst_transaction_by_pk(id: $id) {
+              id
+              status
+              virtual_number_id
+            }
+          }`,
+          { id: transactionId },
+        );
+        linkedVirtualNumberId =
+          existingLink?.mst_transaction_by_pk?.virtual_number_id || null;
+        if (linkedVirtualNumberId && linkedVirtualNumberId !== vnRecord.id) {
+          console.warn(
+            `[postPayment] VN link race lost txn=${transactionId}; existing vn_id=${linkedVirtualNumberId}, new vn_id=${vnRecord.id} will not be charged`,
+          );
+          await suspendUnlinkedVirtualNumberAfterRace(client, {
+            vnId: vnRecord.id,
+            virtualNumber: vnRecord.virtual_number,
+            transactionId,
+          });
+          await finalizeOnlinePaymentWhenVnAlreadyLinked(client, {
+            customerId,
+            resellerId,
+            transactionId,
+            virtualNumberId: linkedVirtualNumberId,
+            customer,
+          });
+          return true;
+        }
+        throw new Error(
+          `[postPayment] VN ${vnRecord.id} persisted but transaction ${transactionId} could not be linked; leaving processing lock for retry/ops`,
+        );
+      }
+      console.log(
+        `[postPayment] VN ${vnRecord.id} linked to transaction ${transactionId} before wallet debit`,
+      );
+    }
+
     const debitResult = await _debitResellerWalletForOnlinePayment(
       client,
       customer,
       resellerId,
       transactionId,
-      vnRecord.id,
+      linkedVirtualNumberId,
     );
     const walletOk =
       debitResult === "debited" || debitResult === "already_debited";
@@ -2070,28 +3777,45 @@ async function updateCustomerStatusAfterPayment(
     // ── 6. ALWAYS link VN to transaction ─────────────────────────────────────
     // The VN row is already committed to DB and the VN API. We must link it now
     // regardless of wallet outcome. If we skip linking on debit failure the txn
-    // stays in `processing_vn` with virtual_number_id=NULL — every webhook retry
-    // re-enters the claim, wins (status flipped back to success by
-    // updateTransactionStatus), and provisions yet another VN. Linking the VN
-    // here prevents all future duplicate VN creation; wallet reconciliation is
-    // handled separately via `ensureWalletDebitedForProcessedTxn`.
+    // stays in `processing_vn` with virtual_number_id=NULL — webhook retries
+    // re-enter the claim. Linking the VN here prevents duplicate VN creation;
+    // wallet reconciliation is handled separately via `ensureWalletDebitedForProcessedTxn`.
     if (transactionId && vnRecord.id) {
       try {
         const linkMutation = `
-          mutation LinkVirtualNumberToTransaction($txn_id: uuid!, $vn_id: uuid!) {
-            update_mst_transaction_by_pk(
-              pk_columns: { id: $txn_id }
-              _set: { virtual_number_id: $vn_id, status: "success" }
-            ) { id }
+          mutation PatchWalletLedgerVirtualNumber(
+            $vn_id: uuid!
+            $reference: String!
+            $customer_id: uuid
+          ) {
+            update_mst_wallet_transaction(
+              where: {
+                _and: [
+                  { reference: { _eq: $reference } }
+                  { transaction_type: { _eq: "DEBIT" } }
+                  { virtual_number_id: { _is_null: true } }
+                ]
+              }
+              _set: {
+                virtual_number_id: $vn_id
+                customer_id: $customer_id
+              }
+            ) {
+              affected_rows
+            }
           }
         `;
         await client.client.request(linkMutation, {
-          txn_id: transactionId,
-          vn_id: vnRecord.id,
+          vn_id: linkedVirtualNumberId,
+          reference: String(transactionId),
+          customer_id: customerId || null,
         });
       } catch (linkErr) {
-        console.warn(`[postPayment] Could not link VN to transaction (non-fatal): ${linkErr.message}`);
+        console.warn(
+          `[postPayment] Could not link VN to transaction (non-fatal): ${linkErr.message}`,
+        );
       }
+
     }
 
     // ── 7. Gate comms on wallet outcome ──────────────────────────────────────
@@ -2103,7 +3827,11 @@ async function updateCustomerStatusAfterPayment(
       console.error(
         `[postPayment] CRITICAL: wallet not debited (outcome=${debitResult}) — VN linked but skipping activation/comms customerId=${customerId} txn=${transactionId}`,
       );
-      await _flagTransactionWalletDebitPending(client, transactionId, debitResult);
+      await _flagTransactionWalletDebitPending(
+        client,
+        transactionId,
+        debitResult,
+      );
       return false;
     }
 
@@ -2121,7 +3849,9 @@ async function updateCustomerStatusAfterPayment(
       await client.client.request(statusMutation, { customer_id: customerId });
       console.log(`[postPayment] Customer ${customerId} activated`);
     } catch (activateErr) {
-      console.warn(`[postPayment] Customer activation failed (non-fatal): ${activateErr.message}`);
+      console.warn(
+        `[postPayment] Customer activation failed (non-fatal): ${activateErr.message}`,
+      );
     }
 
     // ── 7. Send virtual-number email (best-effort) ────────────────────────────
@@ -2162,12 +3892,10 @@ async function updateCustomerStatusAfterPayment(
       );
 
       try {
-        const { sendNumberActivatedAdminEmail } = await import(
-          "./transactionalEmail.service.js",
-        );
-        const { notifyCustomerNumberActivatedWhatsApp } = await import(
-          "./transactionalWhatsApp.service.js",
-        );
+        const { sendNumberActivatedAdminEmail } =
+          await import("./transactionalEmail.service.js");
+        const { notifyCustomerNumberActivatedWhatsApp } =
+          await import("./transactionalWhatsApp.service.js");
         if (customer.phone) {
           await notifyCustomerNumberActivatedWhatsApp({
             phone: customer.phone,
@@ -2253,12 +3981,77 @@ async function updateCustomerStatusAfterPayment(
       );
     }
 
+    await clearTransactionProvisionalVirtualNumber(client, transactionId);
+    if (txnRecord?.razorpay_payment_id) {
+      await releaseRazorpayPaymentFulfillmentClaim(
+        client,
+        txnRecord.razorpay_payment_id,
+      );
+    }
+
     return true;
   } catch (error) {
     console.error(
       `[postPayment] Error completing post-payment flow for customer ${customerId}:`,
       error.message,
     );
+
+    // ── CRITICAL: Release the processing_vn claim so another webhook can retry ──
+    // If we claimed the transaction but VN creation failed (API error, no numbers available, etc.),
+    // the txn is stuck in processing_vn. Roll it back to captured so future webhooks can re-claim.
+    // Once a VN row exists, keep the lock instead; rolling back would let retries allocate another VN.
+    if (transactionId && !createdVirtualNumberIdForRecovery) {
+      try {
+        const rollbackResult = await client.client.request(
+          `mutation RollbackProcessingVnClaim($txn_id: uuid!) {
+            update_mst_transaction(
+              where: {
+                id: { _eq: $txn_id }
+                status: { _eq: "processing_vn" }
+                virtual_number_id: { _is_null: true }
+              }
+              _set: { status: "captured" }
+            ) {
+              affected_rows
+            }
+          }`,
+          { txn_id: transactionId },
+        );
+        const rolledBack =
+          rollbackResult?.update_mst_transaction?.affected_rows ?? 0;
+        if (rolledBack > 0) {
+          console.warn(
+            `[postPayment] Rolled back processing_vn claim for txn ${transactionId} → captured (VN creation failed: ${error.message})`,
+          );
+        }
+      } catch (rollbackErr) {
+        console.error(
+          `[postPayment] CRITICAL: Failed to rollback processing_vn claim for txn ${transactionId}:`,
+          rollbackErr.message,
+        );
+      }
+
+      // Also release the fulfillment claim so another webhook can retry
+      try {
+        const txnLookup = await client.client.request(
+          `query GetTxnPaymentIdForClaimRelease($id: uuid!) {
+            mst_transaction_by_pk(id: $id) { razorpay_payment_id }
+          }`,
+          { id: transactionId },
+        );
+        const payId = txnLookup?.mst_transaction_by_pk?.razorpay_payment_id;
+        if (payId) {
+          await releaseRazorpayPaymentFulfillmentClaim(client, payId);
+        }
+      } catch (releaseErr) {
+        console.warn(`[postPayment] Could not release fulfillment claim:`, releaseErr.message);
+      }
+    } else if (transactionId && createdVirtualNumberIdForRecovery) {
+      console.warn(
+        `[postPayment] VN ${createdVirtualNumberIdForRecovery} was created before failure; keeping transaction ${transactionId} locked instead of rolling back to avoid duplicate VN allocation`,
+      );
+    }
+
     return false;
   }
 }
@@ -2284,23 +4077,15 @@ export async function updateTransactionStatus(
 
   const statusMap = {
     authorized: "authorized",
-    captured: "success",
+    captured: "captured",
     failed: "failed",
     refunded: "refunded",
   };
 
   const mappedStatus = statusMap[status] || status;
 
-  // Prevent overwriting terminal rows (success/refunded) or in-flight rows (processing_vn).
-  // processing_vn means VN creation is in progress in another concurrent handler — do not clobber.
-  const whereStatusGuardForTxnId =
-    mappedStatus === "refunded"
-      ? `status: { _eq: "success" }`
-      : `status: { _nin: ["success", "refunded", "processing_vn"] }`;
-  const whereStatusGuardForPaymentId =
-    mappedStatus === "refunded"
-      ? `status: { _eq: "success" }`
-      : `status: { _nin: ["success", "refunded", "processing_vn"] }`;
+  const { txn: whereStatusGuardForTxnId, payment: whereStatusGuardForPaymentId } =
+    whereGuardsUpdateTransactionStatus(mappedStatus);
 
   // Try to find customer by email from payment data to link customer_id
   let customerId = null;
@@ -2608,9 +4393,9 @@ export async function processPaymentAuthorized(resellerId, payload) {
       return updateResult;
     }
 
-    // update failed because transaction reached success/refunded concurrently — that's fine
+    // update failed because transaction reached captured/success/refunded concurrently — that's fine
     console.log(
-      `[processPaymentAuthorized] Update skipped (terminal status) — payment.captured already handled it`,
+      `[processPaymentAuthorized] Update skipped (monotonic/terminal status) — payment.captured likely already handled it`,
     );
     return {
       success: true,
@@ -2631,6 +4416,60 @@ export async function processPaymentAuthorized(resellerId, payload) {
 }
 
 /**
+ * Post-capture fulfillment when mst_transaction is already in a paid terminal/pre-fulfillment
+ * state (`success` legacy or `captured`) or needs renewal wallet handling.
+ */
+async function runStep2FulfillmentWhenTxnSuccessful(
+  txnRow,
+  earlyEmail,
+  effectiveResellerId,
+) {
+  const isRenewalSuccessTxn = txnRow.notes?.transaction_type === "renewal";
+  if (!txnRow.virtual_number_id || isRenewalSuccessTxn) {
+    const resolvedCustomerId =
+      txnRow.customer_id ||
+      (earlyEmail
+        ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id
+        : null);
+
+    if (resolvedCustomerId) {
+      if (!txnRow.virtual_number_id) {
+        console.log(
+          `[processPaymentCaptured] STEP2 txn status=${txnRow.status} — VN not linked yet — running postPayment`,
+        );
+      } else {
+        console.log(
+          `[processPaymentCaptured] STEP2 txn status=${txnRow.status}, renewal with VN pre-linked — running postPayment for wallet debit + expiry`,
+        );
+      }
+      await updateCustomerStatusAfterPayment(
+        resolvedCustomerId,
+        effectiveResellerId,
+        txnRow.id,
+      );
+    }
+  } else {
+    const hc = getHasuraClient();
+    const resolvedCustomerId =
+      txnRow.customer_id ||
+      (earlyEmail
+        ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id
+        : null);
+    if (resolvedCustomerId) {
+      await _ensureWalletDebitedForProcessedTxn(hc, {
+        resellerId: txnRow.reseller_id,
+        customerId: resolvedCustomerId,
+        transactionId: txnRow.id,
+        virtualNumberId: txnRow.virtual_number_id,
+      });
+    }
+    console.log(
+      `[processPaymentCaptured] STEP2 txn status=${txnRow.status} and VN already linked (vn_id=${txnRow.virtual_number_id}) — wallet ensure only (Razorpay retry)`,
+    );
+  }
+}
+
+/**
  * Process payment.captured event (and payment_link.paid when not skipped by controller).
  * NOTE: Razorpay sends BOTH payment.captured AND payment_link.paid for payment-link flows.
  * The controller skips payment_link.paid when a transaction with this payment_id exists,
@@ -2642,8 +4481,10 @@ export async function processPaymentAuthorized(resellerId, payload) {
  * @returns {Promise<object>}
  */
 export async function processPaymentCaptured(resellerId, payload) {
-  const { paymentData: normalizedPayment, effectiveResellerId: normalizedResellerId } =
-    normalizePaymentDataFromPayload(payload);
+  const {
+    paymentData: normalizedPayment,
+    effectiveResellerId: normalizedResellerId,
+  } = normalizePaymentDataFromPayload(payload);
   const paymentData = normalizedPayment ?? payload.payload?.payment?.entity;
   const eventId = payload.event_id || payload.id; // Razorpay event ID
 
@@ -2665,16 +4506,60 @@ export async function processPaymentCaptured(resellerId, payload) {
     paymentData.notes?.customer_email ||
     null;
 
-  const razorpayPaymentLinkId = extractRazorpayPaymentLinkIdFromPayload(payload);
+  const razorpayPaymentLinkId =
+    extractRazorpayPaymentLinkIdFromPayload(payload);
 
   console.log(
     `[processPaymentCaptured] Processing payment ${paymentData.id}, Event: ${eventId}, effectiveReseller: ${effectiveResellerId}, email: ${earlyEmail}, payment_link_id: ${razorpayPaymentLinkId || "n/a"}, notes: ${JSON.stringify(paymentData.notes)}`,
   );
 
   // ========================================
-  // STEP 0: PAYMENT-ID EARLY EXIT (prevents duplicate VN from any webhook race)
+  // STEP 1: IDEMPOTENCY CHECK (Event-based)
   // ========================================
-  // If a transaction with this payment_id already has a VN linked, we're done.
+  if (eventId) {
+    const alreadyProcessed = await isWebhookEventProcessed(
+      eventId,
+      effectiveResellerId,
+    );
+    if (alreadyProcessed) {
+      const existing = await transactionExists(
+        paymentData.id,
+        paymentData.order_id || null,
+      );
+      console.log(
+        `[IDEMPOTENCY] Event ${eventId} already processed, returning existing transaction`,
+      );
+      return {
+        success: true,
+        data: existing,
+        message: "Webhook event already processed (idempotency)",
+      };
+    }
+  }
+
+  // ========================================
+  // STEP 1b: PAYMENT-SCOPED FULFILLMENT CLAIM (single worker per Razorpay payment)
+  // ========================================
+  if (paymentData.id) {
+    const hcForClaim = getHasuraClient();
+    const claim = await tryClaimRazorpayPaymentFulfillment(
+      hcForClaim,
+      paymentData.id,
+      effectiveResellerId,
+    );
+    if (!claim.won && !claim.skipped) {
+      return await handleLostRazorpayPaymentFulfillmentClaim({
+        paymentData,
+        effectiveResellerId,
+        eventId,
+        payload,
+      });
+    }
+  }
+
+  // ========================================
+  // STEP 0: PAYMENT-ID EARLY EXIT (after claim — avoids double wallet debit on concurrent webhooks)
+  // ========================================
   if (paymentData.id) {
     const existingByPayment = await transactionExists(
       paymentData.id,
@@ -2688,6 +4573,15 @@ export async function processPaymentCaptured(resellerId, payload) {
         transactionId: existingByPayment.id,
         virtualNumberId: existingByPayment.virtual_number_id,
       });
+      if (eventId) {
+        await maybeRecordWebhookEventIfTerminal({
+          eventId,
+          resellerId: effectiveResellerId,
+          paymentId: paymentData.id,
+          orderId: paymentData.order_id || null,
+          payload,
+        });
+      }
       console.log(
         `[processPaymentCaptured] STEP0 Payment ${paymentData.id} already has VN linked (vn_id=${existingByPayment.virtual_number_id}) — early exit after wallet ensure`,
       );
@@ -2700,32 +4594,11 @@ export async function processPaymentCaptured(resellerId, payload) {
   }
 
   // ========================================
-  // STEP 1: IDEMPOTENCY CHECK (Event-based)
-  // ========================================
-  if (eventId) {
-    const alreadyProcessed = await isWebhookEventProcessed(
-      eventId,
-      effectiveResellerId,
-    );
-    if (alreadyProcessed) {
-      const existing = await transactionExists(paymentData.id);
-      console.log(
-        `[IDEMPOTENCY] Event ${eventId} already processed, returning existing transaction`,
-      );
-      return {
-        success: true,
-        data: existing,
-        message: "Webhook event already processed (idempotency)",
-      };
-    }
-  }
-
-  // ========================================
   // STEP 2: CHECK IF TRANSACTION EXISTS - UPDATE STATUS IF NEEDED
   // ========================================
   const step2OrderId = paymentData.order_id || null;
   if (paymentData.id || step2OrderId) {
-    const existingTransaction = await transactionExists(
+    let existingTransaction = await transactionExists(
       paymentData.id,
       step2OrderId,
     );
@@ -2734,29 +4607,105 @@ export async function processPaymentCaptured(resellerId, payload) {
         `[processPaymentCaptured] STEP2 found existing txn=${existingTransaction.id} status=${existingTransaction.status} customer_id=${existingTransaction.customer_id}`,
       );
 
-      // processing_vn means another concurrent handler is in the middle of VN creation.
-      // Do NOT call updateTransactionStatus (would overwrite back to "success", breaking the mutex)
-      // and do NOT call postPayment. Return and let the active handler finish.
-      if (existingTransaction.status === "processing_vn") {
-        console.log(
-          `[processPaymentCaptured] STEP2 txn=${existingTransaction.id} is processing_vn — concurrent VN fulfillment in progress, returning early`,
+      if (
+        existingTransaction.status === "processing_vn" &&
+        !existingTransaction.virtual_number_id
+      ) {
+        const hcStep2 = getHasuraClient();
+        const afterLock = await waitOrRecoverProcessingVnLock(
+          hcStep2,
+          existingTransaction.id,
+          paymentData.id || null,
+          step2OrderId,
         );
-        if (eventId) {
-          await recordWebhookEvent(
-            eventId,
-            effectiveResellerId,
-            existingTransaction.id,
-            payload,
+        if (afterLock?.virtual_number_id && afterLock.customer_id) {
+          await _ensureWalletDebitedForProcessedTxn(hcStep2, {
+            resellerId: afterLock.reseller_id,
+            customerId: afterLock.customer_id,
+            transactionId: afterLock.id,
+            virtualNumberId: afterLock.virtual_number_id,
+          });
+          const merged = await transactionExists(
+            paymentData.id,
+            step2OrderId,
           );
+          if (eventId) {
+            await maybeRecordWebhookEventIfTerminal({
+              eventId,
+              resellerId: effectiveResellerId,
+              paymentId: paymentData.id,
+              orderId: step2OrderId,
+              payload,
+            });
+          }
+          return {
+            success: true,
+            data: merged || afterLock,
+            message: "VN fulfillment completed after processing_vn wait",
+          };
         }
-        return {
-          success: true,
-          data: existingTransaction,
-          message: "VN fulfillment already in progress (processing_vn)",
-        };
+        const refetched = await transactionExists(
+          paymentData.id,
+          step2OrderId,
+        );
+        if (refetched) existingTransaction = refetched;
+        if (
+          existingTransaction.status === "processing_vn" &&
+          !existingTransaction.virtual_number_id
+        ) {
+          // CRITICAL FIX: Check if wallet is already debited for this txn.
+          // If so, a previous attempt partially succeeded but failed to create VN.
+          // We MUST continue with VN creation, not return early.
+          const hcCheck = getHasuraClient();
+          const walletCheckQ = await hcCheck.client.request(
+            `query CheckWalletLedgerForTxn($ref: String!) {
+              mst_wallet_transaction(
+                where: { reference: { _eq: $ref }, debit_status: { _eq: "success" } }
+                limit: 1
+              ) { id }
+            }`,
+            { ref: existingTransaction.id },
+          );
+          const walletAlreadyDebited = (walletCheckQ?.mst_wallet_transaction?.length || 0) > 0;
+
+          if (walletAlreadyDebited) {
+            console.warn(
+              `[processPaymentCaptured] STEP2 CORRUPT STATE: txn=${existingTransaction.id} has wallet debited but no VN — forcing lock release to continue fulfillment`,
+            );
+            // Force release the processing_vn lock back to captured
+            await hcCheck.client.request(
+              `mutation ForceReleaseCorruptVnLock($id: uuid!) {
+                update_mst_transaction_by_pk(
+                  pk_columns: { id: $id }
+                  _set: { status: "captured" }
+                ) { id }
+              }`,
+              { id: existingTransaction.id },
+            );
+            existingTransaction.status = "captured";
+
+            // CRITICAL: Also release the payment fulfillment claim so VN creation can proceed
+            if (paymentData.id) {
+              await releaseRazorpayPaymentFulfillmentClaim(hcCheck, paymentData.id);
+              console.log(
+                `[processPaymentCaptured] STEP2 CORRUPT STATE: released fulfillment claim for pay=${paymentData.id}`,
+              );
+            }
+            // Fall through to continue with fulfillment below
+          } else {
+            console.log(
+              `[processPaymentCaptured] STEP2 txn=${existingTransaction.id} still processing_vn — peer active or fresh lock, returning early`,
+            );
+            return {
+              success: true,
+              data: existingTransaction,
+              message: "VN fulfillment already in progress (processing_vn)",
+            };
+          }
+        }
       }
 
-      // If transaction exists but status is not "success", update it
+      // If not yet terminal `success` (VN linked), apply capture fields and run fulfillment.
       if (existingTransaction.status !== "success") {
         const updateResult = await updateTransactionStatus(
           paymentData.id,
@@ -2767,8 +4716,124 @@ export async function processPaymentCaptured(resellerId, payload) {
           effectiveResellerId,
         );
 
-        // Resolve customer_id: from transaction or from email lookup
-        let resolvedCustomerId = existingTransaction.customer_id;
+        if (!updateResult.success) {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0) await sleep(200);
+            const refreshed = await transactionExists(
+              paymentData.id,
+              step2OrderId,
+            );
+            if (refreshed?.status === "processing_vn") {
+              // CRITICAL FIX: Check if wallet is already debited but VN not created
+              const hcRecovery = getHasuraClient();
+              const walletCheckRecovery = await hcRecovery.client.request(
+                `query CheckWalletLedgerForTxnRecovery($ref: String!) {
+                  mst_wallet_transaction(
+                    where: { reference: { _eq: $ref }, debit_status: { _eq: "success" } }
+                    limit: 1
+                  ) { id }
+                }`,
+                { ref: refreshed.id },
+              );
+              const walletDebitedRecovery = (walletCheckRecovery?.mst_wallet_transaction?.length || 0) > 0;
+
+              if (walletDebitedRecovery && !refreshed.virtual_number_id) {
+                console.warn(
+                  `[processPaymentCaptured] STEP2 recovery CORRUPT STATE: txn=${refreshed.id} has wallet debited but no VN — forcing lock release and running fulfillment`,
+                );
+                // Force release the processing_vn lock back to captured
+                await hcRecovery.client.request(
+                  `mutation ForceReleaseCorruptVnLockRecovery($id: uuid!) {
+                    update_mst_transaction_by_pk(
+                      pk_columns: { id: $id }
+                      _set: { status: "captured" }
+                    ) { id }
+                  }`,
+                  { id: refreshed.id },
+                );
+
+                // CRITICAL: Also release the payment fulfillment claim so VN creation can proceed
+                if (paymentData.id) {
+                  await releaseRazorpayPaymentFulfillmentClaim(hcRecovery, paymentData.id);
+                  console.log(
+                    `[processPaymentCaptured] STEP2 recovery CORRUPT STATE: released fulfillment claim for pay=${paymentData.id}`,
+                  );
+                }
+                // Run fulfillment directly with the corrected transaction
+                const correctedTxn = { ...refreshed, status: "captured" };
+                console.log(
+                  `[processPaymentCaptured] STEP2 recovery: running fulfillment after corrupt state fix for txn=${correctedTxn.id}`,
+                );
+                await runStep2FulfillmentWhenTxnSuccessful(
+                  correctedTxn,
+                  earlyEmail,
+                  effectiveResellerId,
+                );
+                if (eventId) {
+                  await maybeRecordWebhookEventIfTerminal({
+                    eventId,
+                    resellerId: effectiveResellerId,
+                    paymentId: paymentData.id,
+                    orderId: step2OrderId,
+                    payload,
+                  });
+                }
+                return {
+                  success: true,
+                  data: correctedTxn,
+                  message: "Payment processed (recovered from corrupt wallet-debited-no-VN state)",
+                };
+              }
+
+              console.log(
+                `[processPaymentCaptured] STEP2 recovery: txn=${refreshed.id} is processing_vn — peer owns VN fulfillment`,
+              );
+              return {
+                success: true,
+                data: refreshed,
+                message: "VN fulfillment already in progress (processing_vn)",
+                idempotentNoop: true,
+              };
+            }
+            if (
+              refreshed?.status === "success" ||
+              (refreshed?.status === "captured" &&
+                !refreshed?.virtual_number_id)
+            ) {
+              console.log(
+                `[processPaymentCaptured] STEP2 recovery: txn=${refreshed.id} status=${refreshed.status} after concurrent update — running fulfillment`,
+              );
+              await runStep2FulfillmentWhenTxnSuccessful(
+                refreshed,
+                earlyEmail,
+                effectiveResellerId,
+              );
+              if (eventId) {
+                await maybeRecordWebhookEventIfTerminal({
+                  eventId,
+                  resellerId: effectiveResellerId,
+                  paymentId: paymentData.id,
+                  orderId: step2OrderId,
+                  payload,
+                });
+              }
+              return {
+                success: true,
+                data: refreshed,
+                message:
+                  "Payment processed (recovered after concurrent status update)",
+                idempotentNoop: true,
+              };
+            }
+          }
+        }
+
+        const rowAfterUpdate =
+          updateResult.success && updateResult.data
+            ? { ...existingTransaction, ...updateResult.data }
+            : existingTransaction;
+
+        let resolvedCustomerId = rowAfterUpdate.customer_id;
         if (!resolvedCustomerId && earlyEmail) {
           const cust = await findCustomerByEmail(
             earlyEmail,
@@ -2777,28 +4842,25 @@ export async function processPaymentCaptured(resellerId, payload) {
           if (cust) resolvedCustomerId = cust.id;
         }
 
-        // Trigger full post-payment flow (virtual number + activation + email)
-        // For renewals: VN is pre-linked — postPayment still needed for wallet debit + expiry extension.
-        // For initial payments: skip if VN already linked (guards against duplicate VN on retries).
         const isRenewalTxn =
-          existingTransaction.notes?.transaction_type === "renewal";
+          rowAfterUpdate.notes?.transaction_type === "renewal";
         if (updateResult.success && resolvedCustomerId) {
-          if (existingTransaction.virtual_number_id && !isRenewalTxn) {
+          if (rowAfterUpdate.virtual_number_id && !isRenewalTxn) {
             const hc = getHasuraClient();
             await _ensureWalletDebitedForProcessedTxn(hc, {
-              resellerId: existingTransaction.reseller_id,
+              resellerId: rowAfterUpdate.reseller_id,
               customerId: resolvedCustomerId,
-              transactionId: existingTransaction.id,
-              virtualNumberId: existingTransaction.virtual_number_id,
+              transactionId: rowAfterUpdate.id,
+              virtualNumberId: rowAfterUpdate.virtual_number_id,
             });
             console.log(
-              `[processPaymentCaptured] STEP2 VN already linked (vn_id=${existingTransaction.virtual_number_id}) — wallet ensure only (non-renewal retry)`,
+              `[processPaymentCaptured] STEP2 VN already linked (vn_id=${rowAfterUpdate.virtual_number_id}) — wallet ensure only (non-renewal retry)`,
             );
           } else {
             await updateCustomerStatusAfterPayment(
               resolvedCustomerId,
               effectiveResellerId,
-              existingTransaction.id,
+              rowAfterUpdate.id,
             );
           }
         } else if (updateResult.success && !resolvedCustomerId) {
@@ -2807,79 +4869,47 @@ export async function processPaymentCaptured(resellerId, payload) {
           );
         }
 
-        // Record event
         if (eventId && updateResult.success) {
-          await recordWebhookEvent(
+          await maybeRecordWebhookEventIfTerminal({
             eventId,
-            effectiveResellerId,
-            existingTransaction.id,
+            resellerId: effectiveResellerId,
+            paymentId: paymentData.id,
+            orderId: step2OrderId,
             payload,
-          );
+          });
         }
 
+        if (updateResult.success) {
+          return {
+            success: true,
+            data: rowAfterUpdate,
+            message: "Transaction updated from webhook (captured)",
+          };
+        }
         return updateResult;
       }
 
-      // Transaction already exists and is "success"
-      // For renewals: VN is pre-linked but postPayment still needed for wallet debit + expiry extension.
-      // For initial payments: skip postPayment if VN already linked (prevents duplicate VN on retries).
-      const isRenewalSuccessTxn =
-        existingTransaction.notes?.transaction_type === "renewal";
-      if (!existingTransaction.virtual_number_id || isRenewalSuccessTxn) {
-        const resolvedCustomerId =
-          existingTransaction.customer_id ||
-          (earlyEmail
-            ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id
-            : null);
-
-        if (resolvedCustomerId) {
-          if (!existingTransaction.virtual_number_id) {
-            console.log(
-              `[processPaymentCaptured] STEP2 txn is success but VN not linked yet — running postPayment`,
-            );
-          } else {
-            console.log(
-              `[processPaymentCaptured] STEP2 txn is success, renewal with VN pre-linked — running postPayment for wallet debit + expiry`,
-            );
-          }
-          await updateCustomerStatusAfterPayment(
-            resolvedCustomerId,
-            effectiveResellerId,
-            existingTransaction.id,
-          );
-        }
-      } else {
-        const hc = getHasuraClient();
-        const resolvedCustomerId =
-          existingTransaction.customer_id ||
-          (earlyEmail
-            ? (await findCustomerByEmail(earlyEmail, effectiveResellerId))?.id
-            : null);
-        if (resolvedCustomerId) {
-          await _ensureWalletDebitedForProcessedTxn(hc, {
-            resellerId: existingTransaction.reseller_id,
-            customerId: resolvedCustomerId,
-            transactionId: existingTransaction.id,
-            virtualNumberId: existingTransaction.virtual_number_id,
-          });
-        }
-        console.log(
-          `[processPaymentCaptured] STEP2 txn is success and VN already linked (vn_id=${existingTransaction.virtual_number_id}) — wallet ensure only (Razorpay retry)`,
-        );
-      }
+      // Paid (legacy success without VN, or success with VN for wallet ensure-only retry)
+      await runStep2FulfillmentWhenTxnSuccessful(
+        existingTransaction,
+        earlyEmail,
+        effectiveResellerId,
+      );
 
       if (eventId) {
-        await recordWebhookEvent(
+        await maybeRecordWebhookEventIfTerminal({
           eventId,
-          effectiveResellerId,
-          existingTransaction.id,
+          resellerId: effectiveResellerId,
+          paymentId: paymentData.id,
+          orderId: step2OrderId,
           payload,
-        );
+        });
       }
       return {
         success: true,
         data: existingTransaction,
-        message: "Transaction already exists and is successful",
+        message:
+          "Transaction already recorded as paid (success); ran fulfillment or wallet ensure",
       };
     }
   }
@@ -2971,14 +5001,6 @@ export async function processPaymentCaptured(resellerId, payload) {
       console.log(
         `[RACE CONDITION] Transaction created by concurrent webhook, returning it`,
       );
-      if (eventId) {
-        await recordWebhookEvent(
-          eventId,
-          effectiveResellerId,
-          finalCheck.id,
-          payload,
-        );
-      }
 
       // If the race-found txn is processing_vn another handler owns VN creation — do not interfere.
       if (finalCheck.status === "processing_vn") {
@@ -3028,6 +5050,15 @@ export async function processPaymentCaptured(resellerId, payload) {
           `[processPaymentCaptured] STEP5 race-condition path — VN already linked (vn_id=${finalCheck.virtual_number_id}) — wallet ensure only (non-renewal retry)`,
         );
       }
+      if (eventId) {
+        await maybeRecordWebhookEventIfTerminal({
+          eventId,
+          resellerId: effectiveResellerId,
+          paymentId: paymentData.id,
+          orderId,
+          payload,
+        });
+      }
       return {
         success: true,
         data: finalCheck,
@@ -3049,15 +5080,16 @@ export async function processPaymentCaptured(resellerId, payload) {
   }
 
   // ========================================
-  // STEP 7: RECORD EVENT (Idempotency)
+  // STEP 7: RECORD EVENT (Idempotency) — only when terminal (VN linked or failed/refunded)
   // ========================================
-  if (eventId && transactionId) {
-    await recordWebhookEvent(
+  if (eventId && paymentData.id) {
+    await maybeRecordWebhookEventIfTerminal({
       eventId,
-      effectiveResellerId,
-      transactionId,
+      resellerId: effectiveResellerId,
+      paymentId: paymentData.id,
+      orderId: paymentData.order_id || orderId,
       payload,
-    );
+    });
   }
 
   return result;
@@ -3204,8 +5236,7 @@ export async function processPaymentFailed(resellerId, payload) {
         }`,
         { cid: customerId },
       );
-      vnForRenewalFail =
-        vnq?.mst_virtual_number?.[0]?.virtual_number || "";
+      vnForRenewalFail = vnq?.mst_virtual_number?.[0]?.virtual_number || "";
     } catch (_) {}
   }
 
@@ -3285,7 +5316,9 @@ export async function processPaymentFailed(resellerId, payload) {
         }
       }
     } catch (e) {
-      console.warn(`[processPaymentFailed] Failure email skipped: ${e.message}`);
+      console.warn(
+        `[processPaymentFailed] Failure email skipped: ${e.message}`,
+      );
     }
   }
 
@@ -3766,6 +5799,13 @@ export async function getTransactionStats() {
           count
         }
       }
+      fulfillment_in_progress: mst_transaction_aggregate(
+        where: { status: { _in: ["captured", "processing_vn"] } }
+      ) {
+        aggregate {
+          count
+        }
+      }
       refunded: mst_transaction_aggregate(where: { status: { _eq: "refunded" } }) {
         aggregate {
           count
@@ -3801,6 +5841,8 @@ export async function getTransactionStats() {
         successful_amount: result.successful?.aggregate?.sum?.amount || 0,
         failed_count: result.failed?.aggregate?.count || 0,
         pending_count: result.pending?.aggregate?.count || 0,
+        fulfillment_in_progress_count:
+          result.fulfillment_in_progress?.aggregate?.count || 0,
         refunded_count: result.refunded?.aggregate?.count || 0,
         today_count: result.today?.aggregate?.count || 0,
         today_amount: result.today?.aggregate?.sum?.amount || 0,

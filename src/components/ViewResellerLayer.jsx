@@ -23,10 +23,10 @@ const ViewResellerLayer = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [validity, setValidity] = useState(null);
-  const [domainData, setDomainData] = useState<any>(null);
+  const [domainData, setDomainData] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<any>({});
+  const [editingField, setEditingField] = useState(null);
+  const [editValues, setEditValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -125,7 +125,7 @@ const ViewResellerLayer = () => {
     return diffDays;
   };
 
-  const handleEditField = (field: string, currentValue: any) => {
+  const handleEditField = (field, currentValue) => {
     setEditingField(field);
     setEditValues({ [field]: currentValue || "" });
     setSuccessMessage("");
@@ -136,7 +136,7 @@ const ViewResellerLayer = () => {
     setEditValues({});
   };
 
-  const handleSaveField = async (field: string) => {
+  const handleSaveField = async (field) => {
     if (!reseller || !id) return;
 
     setSaving(true);
@@ -144,7 +144,7 @@ const ViewResellerLayer = () => {
     setSuccessMessage("");
 
     try {
-      const updateData: any = {};
+      const updateData = {};
       const value = editValues[field];
 
       if (field === "dob") {
@@ -174,7 +174,7 @@ const ViewResellerLayer = () => {
       } else {
         setError(result.message || "Failed to update field");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error updating field:", err);
       setError(err.message || "An error occurred while updating");
     } finally {

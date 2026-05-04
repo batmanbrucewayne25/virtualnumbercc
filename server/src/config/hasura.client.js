@@ -216,6 +216,12 @@ class HasuraClient {
 let hasuraClientInstance = null;
 
 export const getHasuraClient = () => {
+  if (!process.env.HASURA_GRAPHQL_ENDPOINT && process.env.VITE_HASURA_GRAPHQL_ENDPOINT) {
+    process.env.HASURA_GRAPHQL_ENDPOINT = process.env.VITE_HASURA_GRAPHQL_ENDPOINT;
+  }
+  if (!process.env.HASURA_ADMIN_SECRET && process.env.VITE_HASURA_ADMIN_SECRET) {
+    process.env.HASURA_ADMIN_SECRET = process.env.VITE_HASURA_ADMIN_SECRET;
+  }
   if (!hasuraClientInstance) {
     if (!process.env.HASURA_GRAPHQL_ENDPOINT) {
       throw new Error(

@@ -1,0 +1,11 @@
+Apply these SQL files in order when bringing an environment in line with the wallet-debit fix (in addition to your existing project migrations):
+
+1. add-wallet-transaction-debit-status.sql
+2. add-wallet-transaction-unique-constraint.sql
+3. add-webhook-idempotency.sql        (if not already applied)
+4. add-razorpay-payment-fulfillment-claim.sql
+5. add-debit-wallet-once-function.sql
+
+Then: Hasura Console → reload metadata / track new tables & columns → grant permissions as needed.
+
+Verify: run VERIFY_WALLET_DEBIT_INVARIANTS.sql in psql.

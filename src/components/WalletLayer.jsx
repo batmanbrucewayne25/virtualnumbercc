@@ -14,6 +14,19 @@ const normalizeWalletTxType = (raw) => {
   return null;
 };
 
+const getWalletCustomerDisplay = (transaction) => {
+  const customer = transaction?.mst_customer;
+  return (
+    customer?.business_name ||
+    customer?.profile_name ||
+    customer?.pan_full_name ||
+    customer?.email ||
+    customer?.phone ||
+    transaction?.customer_id ||
+    "-"
+  );
+};
+
 const WalletLayer = () => {
   const [transactions, setTransactions] = useState([]);
   const [wallet, setWallet] = useState(null);
@@ -366,10 +379,7 @@ const WalletLayer = () => {
                               <td>{formatDate(transaction.created_at)}</td>
                               <td>
                                 <span className='text-sm fw-medium'>
-                                  {transaction.mst_customer?.business_name ||
-                                   transaction.mst_customer?.profile_name ||
-                                   transaction.mst_customer?.pan_full_name ||
-                                   "-"}
+                                  {getWalletCustomerDisplay(transaction)}
                                 </span>
                               </td>
                               <td>
